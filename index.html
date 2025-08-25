@@ -28,6 +28,42 @@
     .video-wrap iframe{position:absolute;top:0;left:0;width:100%;height:100%;border:0}
     .narrative-bg{background: radial-gradient(1200px 400px at 0% 0%, rgba(124,58,237,.08), transparent 60%), radial-gradient(800px 400px at 100% 0%, rgba(14,165,233,.08), transparent 60%)}
     .link{color:#4f46e5}
+
+    /* --- Holographic narrative styles --- */
+    .narrative-wrap{
+      position:relative; overflow:hidden; border-radius:16px;
+      background:
+        radial-gradient(1200px 500px at 20% -10%, rgba(99,102,241,.12), transparent 55%),
+        radial-gradient(900px 400px at 115% 0%, rgba(14,165,233,.12), transparent 60%),
+        linear-gradient(180deg, rgba(255,255,255,.92), rgba(248,250,252,.92));
+      border:1px solid rgba(124,58,237,.25);
+      box-shadow:0 30px 60px rgba(2,6,23,.12), inset 0 0 0 1px rgba(255,255,255,.35);
+    }
+    .narrative-grid:before{
+      content:""; position:absolute; inset:0;
+      background:
+        linear-gradient(rgba(124,58,237,.12) 1px, transparent 1px) 0 0 / 36px 36px,
+        linear-gradient(90deg, rgba(14,165,233,.12) 1px, transparent 1px) 0 0 / 36px 36px;
+      mask: linear-gradient(180deg, rgba(0,0,0,.7), transparent 70%);
+      pointer-events:none;
+    }
+    .scanline:after{
+      content:""; position:absolute; inset:0;
+      background: repeating-linear-gradient(180deg, rgba(2,6,23,.06) 0 2px, transparent 2px 4px);
+      mix-blend-mode:multiply; pointer-events:none;
+    }
+    .holo-chip{
+      display:inline-flex; align-items:center; gap:.5rem;
+      padding:.4rem .7rem; border-radius:999px; font-size:.72rem;
+      border:1px solid rgba(148,163,184,.6); background:rgba(255,255,255,.7);
+      box-shadow:0 0 0 2px rgba(255,255,255,.5) inset, 0 6px 14px rgba(2,6,23,.08);
+    }
+    .holo-glow{ text-shadow:0 2px 18px rgba(99,102,241,.5); }
+    .holo-divider{
+      height:1px; background:linear-gradient(90deg, transparent, rgba(99,102,241,.5), transparent);
+      opacity:.6;
+    }
+    .holo-lede{ font-size:1.05rem; line-height:1.7; }
   </style>
 </head>
 <body class="bg-gradient-to-b from-slate-50 to-slate-100 text-slate-900">
@@ -261,13 +297,24 @@
       </div>
     </section>
 
-    <!-- NARRATIVE -->
+    <!-- NARRATIVE (holographic) -->
     <section id="view-narrative" class="hidden space-y-4">
-      <div class="card narrative-bg p-6">
-        <h3 class="font-semibold text-lg mb-2">Immersive Mission Narrative</h3>
-        <p class="text-sm text-slate-600 mb-4">
-          Auto-generated from the current filtered view. Adjust filters in the Publications tab to change this story.
+      <div class="card narrative-wrap narrative-grid scanline p-6 md:p-8">
+        <div class="flex flex-wrap items-center gap-2 mb-4">
+          <span id="nar-chip-total" class="holo-chip">Total: —</span>
+          <span id="nar-chip-years" class="holo-chip">Window: —</span>
+          <span id="nar-chip-cites" class="holo-chip">Citations: —</span>
+          <span id="nar-chip-retr" class="holo-chip">Retractions: —</span>
+        </div>
+
+        <h3 class="font-semibold text-xl mb-2 holo-glow">Mission Console · Immersive Narrative</h3>
+        <p class="text-slate-600 holo-lede mb-4">
+          The scene renders like a control deck: panes of data levitate, a wireframe globe rotates,
+          and vectors trace paths where ideas have touched down. This story is generated from your current filters.
+          Adjust the Publications view to re-compose the hologram.
         </p>
+
+        <div class="holo-divider my-4"></div>
         <div id="narrativeBox" class="prose prose-slate max-w-none text-slate-800 leading-relaxed space-y-4"></div>
       </div>
     </section>
@@ -407,19 +454,16 @@ async function autoLoad(){
   };
 
   try{
-    // cache-busting to avoid stale caches
     const res = await fetch('institution_data.json?v=' + Date.now(), { cache:'no-store' });
     if (!res.ok){ err('institution_data.json not found at the same path as index.html'); return; }
     const j = await res.json();
 
-    // Accept two shapes: {items:[...]} or just [...]
     const items = Array.isArray(j?.items) ? j.items : (Array.isArray(j) ? j : []);
     if (!Array.isArray(items) || items.length === 0){
       err('institution_data.json loaded but contains no items (expected an array of publications).');
       return;
     }
 
-    // Hide error box if any
     const box = document.getElementById('errorBox'); if (box) box.classList.add('hidden');
 
     all = items;
@@ -432,12 +476,10 @@ async function autoLoad(){
       p.authors = (p.authorships||[]).map(a => a.author?.display_name || a.author_name || '').filter(Boolean);
     }
 
-    // Timestamp (if present)
     const ts = (j.updated || null);
     document.getElementById('lastSynced').textContent =
       ts ? `Last synced: ${dayjs(ts).format('DD MMM YYYY, HH:mm')}` : 'Loaded';
 
-    // year options
     const years = [...new Set(all.map(x=>x.year).filter(Boolean))].sort((a,b)=>b-a);
     const yearSel = document.getElementById('yearFilter');
     if (yearSel){
@@ -878,9 +920,10 @@ function rawForExport(key,p){
   return p[key];
 }
 
-/* ---------------- Narrative ---------------- */
+/* ---------------- Narrative (holographic) ---------------- */
 function renderNarrative(){
   const box = document.getElementById('narrativeBox'); if (!box) return;
+
   const total = filtered.length;
   const years = [...new Set(filtered.map(x=>x.year).filter(Boolean))].sort((a,b)=>a-b);
   const startY = years[0] || '—', endY = years[years.length-1] || '—';
@@ -892,28 +935,34 @@ function renderNarrative(){
   const sdgTop = [...bySdg.entries()].sort((a,b)=>b[1]-a[1]).slice(0,2)
                   .map(([id,c])=>`${id} (${c})`).join(', ') || '—';
 
-  const text = `
-    <p>Inside the command center, the wall of holographic panes hums to life. A digital globe
-    rotates slowly, constellated with glowing nodes that pulse where research has landed. Between
-    <strong>${startY}</strong> and <strong>${endY}</strong>, our mission has launched
-    <strong>${num(total)}</strong> signals—each a publication—fanning out like orbital trajectories.</p>
+  // header chips
+  document.getElementById('nar-chip-total').textContent = `Total: ${num(total)}`;
+  document.getElementById('nar-chip-years').textContent = `Window: ${startY}–${endY}`;
+  document.getElementById('nar-chip-cites').textContent = `Citations: ${num(cites)}`;
+  document.getElementById('nar-chip-retr').textContent = `Retractions: ${num(retractions)}`;
 
-    <p>On the left, a bar array climbs year by year while a neon line threads across it—cumulative output
-    rising like altitude. To the right, journals align as stacked vectors, their quartile bands revealing
-    the strength of our staging grounds. SDG frequencies arc into a luminous ring; today’s strongest beacons:
-    <strong>${sdgTop}</strong>. Downlink counters flicker: <strong>${num(cites)}</strong> citations received,
-    feedback from the wider cosmos.</p>
+  const html = `
+    <p>Lights dim. The <em>mission console</em> spins up. A polygonal Earth blooms at center, threaded by
+    luminous routes. Between <strong>${startY}</strong> and <strong>${endY}</strong>, this station launched
+    <strong>${num(total)}</strong> research vectors—each one a publication—arcing outward like satellites
+    acquiring orbit.</p>
 
-    <p>Retraction sentinels sweep for anomalies—${num(retractions)} markers flare, each linked to a corrective
-    maneuver. Authors affiliated with our station are highlighted on every track, their signatures etched
-    in the telemetry for clarity and credit.</p>
+    <p>On the left rail, bars rise year-on-year while a pulse-line climbs through them—output compounding,
+    altitude increasing. To starboard, journals align as stacked bands; quartiles glow from Q1 to Q4,
+    revealing the strength of our staging grounds. At the top of the console, SDG markers form a bright ring;
+    current strongest channels: <strong>${sdgTop}</strong>. Telemetry reads <strong>${num(cites)}</strong>
+    citations—returns from the field.</p>
 
-    <p>As filters adjust, the holograms recompose instantly—routes recalc, clusters regroup, impact ripples shift.
-    Breakthroughs and collaborations sketch luminous arcs over the globe, charting a flightpath of inquiry
-    and innovation. The analyst nods, palms out to the air, and new layers bloom: subject domains, SDG corridors,
-    quartile terrain. The mission continues—precise, adaptive, and brilliantly lit by data.</p>
+    <p>Retraction sentinels sweep across the grid: <strong>${num(retractions)}</strong> flickers mark course-corrections,
+    each linked back to its origin. Affiliated authors are highlighted along every trajectory, their signatures
+    inscribed in the stream for clarity and credit.</p>
+
+    <p>Touch any filter and the hologram recomposes: routes recalc, clusters re-form, impact rings expand or fade.
+    Subject strata, SDG corridors, and quartile terrain layer into view, giving an at-a-glance map of where effort
+    concentrates and where new ground is opening. The effect is less a dashboard than a <em>flight deck</em>—precise,
+    adaptive, and brilliantly lit by data.</p>
   `;
-  box.innerHTML = text;
+  box.innerHTML = html;
 }
 
 /* ---------------- Utils ---------------- */
