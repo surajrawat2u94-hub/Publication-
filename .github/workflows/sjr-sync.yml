@@ -1,0 +1,42 @@
+name: Sync SJR Quartiles
+
+on:
+  workflow_dispatch: {}
+  schedule:
+    - cron: "40 21 * * *"  # 03:10 IST daily
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Fetch SJR CSV
+        run: |
+          mkdir -p data
+          # Global CSV (you can replace with a filtered 'Download data' link from SCImago)
+          curl -L "https://www.scimagojr.com/journalrank.php?out=xls" -o data/sjr_download.csv
+
+      - name: Convert CSV → JSON map
+        run: |
+          python tools/sjr_to_json.py data/sjr_download.csv sjr_quartiles.json
+
+      - name: Commit changes if any
+        run: |
+          if ! git diff --quiet sjr_quartiles.json; then
+            git config user.name "sjr-sync-bot"
+            git config user.email "actions@github.com"
+            git add sjr_quartiles.json
+            git commit -m "chore: update SJR quartiles JSON"
+            git push
+          else
+            echo "No changes in sjr_quartiles.json"
+          fi
