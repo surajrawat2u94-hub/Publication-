@@ -2,560 +2,127 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Publication Data</title>
-  <!-- Tailwind CSS -->
-  <script src="https://cdn.tailwindcss.com"></script>
-  <!-- Icons -->
-  <script src="https://unpkg.com/lucide@latest/dist/umd/lucide.js"></script>
-  <!-- Chart.js -->
-  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
-  <!-- Day.js -->
   <script src="https://cdn.jsdelivr.net/npm/dayjs@1/dayjs.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
   <style>
-    .thin-scrollbar::-webkit-scrollbar { height: 8px; width: 8px; }
-    .thin-scrollbar::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 6px; }
-    .thin-scrollbar::-webkit-scrollbar-track { background: #f8fafc; }
+    body { font-family: Arial, sans-serif; margin: 20px; }
+    h1 { margin-bottom: 0.5rem; }
+    .filters { margin: 1rem 0; }
+    table { width: 100%; border-collapse: collapse; margin-top: 1rem; }
+    th, td { border: 1px solid #ccc; padding: 6px; font-size: 0.9rem; }
+    th { background: #f4f4f4; }
+    #lastSynced { color: #666; font-size: 0.85rem; margin-left: 1rem; }
   </style>
 </head>
-<body class="bg-slate-50">
-  <!-- HEADER -->
-  <header class="sticky top-0 z-20 bg-white/90 backdrop-blur border-b border-slate-200">
-    <div class="max-w-7xl mx-auto px-4 py-4 flex items-center justify-between">
-      <h1 class="text-xl font-semibold leading-tight">Publication Data</h1>
-      <div class="hidden md:flex items-center gap-2 text-sm text-slate-500">
-        <span class="hidden sm:inline">Static load · No live API</span>
-      </div>
-    </div>
-  </header>
+<body>
+  <h1>Publication Data <span id="lastSynced"></span></h1>
+  <div class="filters">
+    <button onclick="loadData()">Load publications</button>
+    <select id="yearFilter" onchange="applyFilters()">
+      <option value="">All Years</option>
+    </select>
+    <select id="retractionFilter" onchange="applyFilters()">
+      <option value="">All</option>
+      <option value="exclude">Exclude retracted</option>
+      <option value="only">Only retracted</option>
+    </select>
+  </div>
 
-  <!-- CONTROLS -->
-  <section class="max-w-7xl mx-auto px-4 py-6">
-    <div class="grid grid-cols-1 lg:grid-cols-12 gap-4">
-      <!-- Filters -->
-      <div class="lg:col-span-8 bg-white rounded-2xl shadow-sm border border-slate-200 p-4">
-        <div class="flex flex-wrap items-center gap-4">
+  <canvas id="yearChart" width="600" height="200"></canvas>
+  <div id="count"></div>
+  <table id="pubTable">
+    <thead>
+      <tr>
+        <th>Year</th>
+        <th>Title</th>
+        <th>Journal</th>
+        <th>Authors</th>
+        <th>Citations</th>
+        <th>Retracted?</th>
+      </tr>
+    </thead>
+    <tbody></tbody>
+  </table>
 
-          <!-- Years -->
-          <div class="flex items-end gap-2">
-            <div>
-              <label class="text-xs font-medium text-slate-600">From year</label>
-              <input id="fromYear" type="number" class="w-28 px-3 py-2 rounded-xl border border-slate-300 text-sm focus:ring-2 focus:ring-indigo-500" />
-            </div>
-            <div>
-              <label class="text-xs font-medium text-slate-600">To year</label>
-              <input id="toYear" type="number" class="w-28 px-3 py-2 rounded-xl border border-slate-300 text-sm focus:ring-2 focus:ring-indigo-500" />
-            </div>
-          </div>
+<script>
+let publications = [];
 
-          <!-- Quartile + Type + Retraction -->
-          <div class="flex flex-col">
-            <div class="flex gap-3">
-              <div>
-                <label class="text-xs font-medium text-slate-600">Quartile (Q1–Q4)</label>
-                <select id="quartileFilter" class="w-32 px-3 py-2 rounded-xl border border-slate-300 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500">
-                  <option value="">All</option>
-                  <option value="Q1">Q1</option>
-                  <option value="Q2">Q2</option>
-                  <option value="Q3">Q3</option>
-                  <option value="Q4">Q4</option>
-                </select>
-              </div>
-              <div>
-                <label class="text-xs font-medium text-slate-600">Type</label>
-                <select id="typeFilter" class="w-48 px-3 py-2 rounded-xl border border-slate-300 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500">
-                  <option value="">All</option>
-                </select>
-              </div>
-              <div>
-                <label class="text-xs font-medium text-slate-600">Retraction</label>
-                <select id="retractionFilter" class="w-44 px-3 py-2 rounded-xl border border-slate-300 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500">
-                  <option value="">All</option>
-                  <option value="exclude">Exclude retracted</option>
-                  <option value="only">Only retracted</option>
-                </select>
-              </div>
-            </div>
+async function loadData() {
+  try {
+    // ✅ Updated to load institution_data.json
+    const res = await fetch('institution_data.json', { cache: 'no-store' });
+    if (!res.ok) throw new Error("File not found");
+    const j = await res.json();
+    publications = j.items || [];
+    document.getElementById("count").textContent = "Total: " + j.count;
 
-            <div class="mt-2 flex items-center gap-2">
-              <input type="file" id="sjrFile" accept=".csv,.json,.xls" class="hidden" />
-              <button id="loadSjrBtn" class="px-3 py-2 rounded-xl bg-slate-100 text-slate-700 text-xs">Load SJR file</button>
-              <span id="sjrStatus" class="text-[11px] text-slate-500"></span>
-              <span id="mapCoverage" class="text-[11px] text-slate-500"></span>
-            </div>
-          </div>
-
-          <!-- Toggle -->
-          <div class="flex items-end gap-3">
-            <div class="flex items-center gap-2 mt-5">
-              <input id="useCache" type="checkbox" class="rounded border-slate-300" checked />
-              <label class="text-sm text-slate-700">Use local cache</label>
-            </div>
-          </div>
-
-          <!-- Actions -->
-          <div class="ml-auto flex items-end gap-2">
-            <span id="loadProgress" class="text-xs text-slate-500 mr-2"></span>
-            <button id="cancelBtn" class="px-3 py-2.5 rounded-xl bg-slate-100 text-slate-700 text-sm">Cancel</button>
-            <button id="loadBtn" class="px-4 py-2.5 rounded-xl bg-indigo-600 text-white text-sm font-medium flex items-center gap-2">
-              <i data-lucide="download"></i> Load publications
-            </button>
-            <button id="resetBtn" class="px-3 py-2.5 rounded-xl bg-slate-100 text-slate-700 text-sm">Reset</button>
-          </div>
-        </div>
-        <p class="text-xs text-slate-500 mt-3">
-          This page reads from <code>openalex_upes.json</code> in the repo root (generated via GitHub Action). Quartiles from <code>sjr_quartiles.json</code>/<code>.csv</code>.
-        </p>
-      </div>
-
-      <!-- Search & Export -->
-      <div class="lg:col-span-4 bg-white rounded-2xl shadow-sm border border-slate-200 p-4">
-        <label class="text-xs font-medium text-slate-600">Quick search</label>
-        <input id="searchBox" class="mt-1 w-full px-3 py-2 rounded-xl border border-slate-300 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500" placeholder="Search title / author / journal" />
-        <div class="flex gap-2 mt-3">
-          <button id="exportCsv" class="w-full px-3 py-2 rounded-xl bg-emerald-600 text-white text-sm flex items-center justify-center gap-2"><i data-lucide="download"></i> Export CSV</button>
-          <button id="exportJson" class="w-full px-3 py-2 rounded-xl bg-emerald-50 text-emerald-700 border border-emerald-200 text-sm">Export JSON</button>
-        </div>
-        <p class="text-[11px] text-slate-500 mt-3">Source: static <code>openalex_upes.json</code>. No live API calls from the browser.</p>
-      </div>
-    </div>
-  </section>
-
-  <!-- KPI CARDS -->
-  <section class="max-w-7xl mx-auto px-4">
-    <div class="grid grid-cols-2 md:grid-cols-4 gap-4" id="kpiGrid"></div>
-  </section>
-
-  <!-- CHARTS -->
-  <section class="max-w-7xl mx-auto px-4 mt-6 grid grid-cols-1 xl:grid-cols-2 gap-4">
-    <div class="bg-white rounded-2xl shadow-sm border border-slate-200 p-4">
-      <h3 class="font-semibold mb-2">Publications by Year</h3>
-      <canvas id="chartByYear" height="220"></canvas>
-    </div>
-    <div class="bg-white rounded-2xl shadow-sm border border-slate-200 p-4">
-      <h3 class="font-semibold mb-2">Publication Types</h3>
-      <canvas id="chartByType" height="220"></canvas>
-    </div>
-    <div class="bg-white rounded-2xl shadow-sm border border-slate-200 p-4">
-      <h3 class="font-semibold mb-2">Top Journals</h3>
-      <canvas id="chartTopJournals" height="240"></canvas>
-    </div>
-    <div class="bg-white rounded-2xl shadow-sm border border-slate-200 p-4">
-      <h3 class="font-semibold mb-2">Top Authors</h3>
-      <canvas id="chartTopAuthors" height="240"></canvas>
-    </div>
-    <div class="bg-white rounded-2xl shadow-sm border border-slate-200 p-4">
-      <h3 class="font-semibold mb-2">AI-related Publications by Year</h3>
-      <canvas id="chartAIByYear" height="220"></canvas>
-    </div>
-  </section>
-
-  <!-- TABLE -->
-  <section class="max-w-7xl mx-auto px-4 mt-6 mb-16">
-    <div class="bg-white rounded-2xl shadow-sm border border-slate-200">
-      <div class="px-4 py-3 border-b border-slate-200 flex items-center justify-between">
-        <h3 class="font-semibold">All Publications <span id="pubCount" class="text-slate-500 font-normal"></span></h3>
-        <span id="lastUpdated" class="text-xs text-slate-500"></span>
-      </div>
-      <div class="overflow-x-auto thin-scrollbar">
-        <table class="w-full text-sm" id="pubTable">
-          <thead class="bg-slate-50 text-slate-600">
-            <tr>
-              <th class="text-left px-4 py-2 cursor-pointer" data-sort="year">Year</th>
-              <th class="text-left px-4 py-2">Title</th>
-              <th class="text-left px-4 py-2">Authors</th>
-              <th class="text-left px-4 py-2 cursor-pointer" data-sort="journal">Journal</th>
-              <th class="text-left px-4 py-2 cursor-pointer" data-sort="type">Type</th>
-              <th class="text-left px-4 py-2 cursor-pointer" data-sort="citations">Citations</th>
-              <th class="text-left px-4 py-2">Quartile</th>
-            </tr>
-          </thead>
-          <tbody id="pubBody"></tbody>
-        </table>
-      </div>
-    </div>
-  </section>
-
-  <!-- FOOTER -->
-  <footer class="text-center text-xs text-slate-500 pb-8">
-    Data: openalex_upes.json · Quartiles: SJR mapping (CSV/JSON).
-  </footer>
-
-  <script>
-    // ---------- State ----------
-    const state = {
-      fromYear: 2015,
-      toYear: new Date().getFullYear(),
-      useCache: true,
-      data: [],
-      charts: {}
-    };
-
-    // ---------- Progress / Cancel ----------
-    let inFlightControllers = [];
-    function setProgress(msg){ const el=document.getElementById('loadProgress'); if(el) el.textContent=msg||''; }
-    function abortAll(){ inFlightControllers.forEach(c=>{try{c.abort()}catch{}}); inFlightControllers=[]; }
-
-    // ---------- SJR Mapping (ISSN-first, then title) ----------
-    let quartileMap = {};     // title -> Qx
-    let issnToQuartile = {};  // ISSN -> Qx
-
-    function cleanText(text){ return text.replace(/^\uFEFF/,'').replace(/\r\n/g,'\n').replace(/\r/g,'\n'); }
-    function detectDelimiter(firstLine){ const c=[',',';','\t','|']; let best=',',cnt=-1; for(const d of c){ const n=(firstLine.match(new RegExp('\\'+d,'g'))||[]).length; if(n>cnt){cnt=n; best=d;} } return best; }
-    function parseSeparated(text){
-      text=cleanText(text); const lines=text.split('\n').filter(l=>l.trim().length>0); if(!lines.length) return [];
-      const delim=detectDelimiter(lines[0]); const rows=[];
-      for(const line of lines){ const row=[]; let cell='',q=false;
-        for(let i=0;i<line.length;i++){ const ch=line[i];
-          if(ch=='"'){ if(q && line[i+1]=='"'){cell+='"'; i++;} else q=!q; }
-          else if(ch===delim && !q){ row.push(cell); cell=''; }
-          else cell+=ch;
-        } row.push(cell); rows.push(row);
-      } return rows;
-    }
-    function addQuartilesFromObject(obj){
-      for (const [k,v] of Object.entries(obj||{})) {
-        const q=(v||'').toString().toUpperCase(); if(!/^Q[1-4]$/.test(q)) continue;
-        if (/^\d{4}-\d{3}[\dxX]$/.test(k)) issnToQuartile[k.toUpperCase()] = q;
-        else quartileMap[k.toLowerCase().replace(/\s+/g,' ').replace(/&/g,'and')] = q;
-      }
-    }
-    function buildMapFromRows(rows){
-      if(!rows || rows.length<2) return;
-      const norm=s=>(s||'').toString().trim().toLowerCase();
-      const hdr=rows[0].map(norm);
-      const idx=names=>hdr.findIndex(h=>names.some(n=>h===n || h.includes(n)));
-      const titleIdx=idx(['title','source title','journal title']);
-      const quartIdx =hdr.findIndex(h=>/(sjr\s*best\s*quartile|best\s*quartile|quartile)/.test(h));
-      const issnIdx  =idx(['issn']);
-      const eissnIdx =idx(['e-issn','eissn','electronic issn']);
-      const pushIssn=(s,q)=> (s||'').toString().split(/[;,]/).map(x=>x.trim()).filter(Boolean).forEach(code=>{
-        const m=code.match(/^\d{4}-\d{3}[\dxX]$/)?code.toUpperCase():null; if(m) issnToQuartile[m]=q;
-      });
-      for(let r=1;r<rows.length;r++){
-        const q=(rows[r][quartIdx]??'').toString().trim().toUpperCase(); if(!/^Q[1-4]$/.test(q)) continue;
-        const t=(rows[r][titleIdx]??'').toString().trim();
-        if (t) quartileMap[t.toLowerCase().replace(/\s+/g,' ').replace(/&/g,'and')] = q;
-        if (issnIdx!==-1)  pushIssn(rows[r][issnIdx], q);
-        if (eissnIdx!==-1) pushIssn(rows[r][eissnIdx], q);
-      }
-    }
-    async function tryFetchLocal(url){ try{ const r=await fetch(url,{cache:'no-store'}); return r.ok? r:null; }catch{ return null; } }
-    async function autoLoadSJR(){
-      let res=await tryFetchLocal('sjr_quartiles.json');
-      if (res){ addQuartilesFromObject(await res.json()); document.getElementById('sjrStatus').textContent='Loaded sjr_quartiles.json'; updateCoverageBadge(); return; }
-      res=await tryFetchLocal('sjr_quartiles.csv');
-      if (res){ buildMapFromRows(parseSeparated(await res.text())); document.getElementById('sjrStatus').textContent='Loaded sjr_quartiles.csv'; updateCoverageBadge(); }
-    }
-    function handleSjrUpload(file){
-      const reader=new FileReader();
-      reader.onload=()=>{ try{
-        if(file.name.toLowerCase().endsWith('.json')){ addQuartilesFromObject(JSON.parse(reader.result)); document.getElementById('sjrStatus').textContent='Loaded mapping (JSON)'; }
-        else { buildMapFromRows(parseSeparated(reader.result)); document.getElementById('sjrStatus').textContent='Loaded mapping (CSV)'; }
-        state.data.forEach(x=> x.quartile=getQuartile(x.journal,x.issns));
-        updateCoverageBadge(); applyAllFiltersAndRender();
-      }catch{ document.getElementById('sjrStatus').textContent='Failed to parse file'; } };
-      reader.readAsText(file);
-    }
-    function getQuartile(journal, issns){
-      for(const code of (issns||[])){ if(issnToQuartile[code]) return issnToQuartile[code]; }
-      return quartileMap[(journal||'').toLowerCase().replace(/\s+/g,' ').replace(/&/g,'and')] || '';
+    if (j.updated) {
+      document.getElementById("lastSynced").textContent =
+        "(Last synced: " + dayjs(j.updated).format('DD MMM YYYY, HH:mm') + ")";
     }
 
-    // ---------- Static JSON loader ----------
-    async function tryLoadOpenAlexDump(){
-      try{
-        const res=await fetch('openalex_upes.json',{cache:'no-store'});
-        if(!res.ok) return [];
-        const j=await res.json();
-        // Expected structure: { updated, count, items: [...] }
-        const arr = Array.isArray(j.items) ? j.items : (Array.isArray(j) ? j : []);
-        // Normalize minimal fields & include is_retracted if present
-        return arr.map(w=>{
-          const doi=(w.doi||'').replace(/^https?:\/\/doi\.org\//i,'');
-          return {
-            doi,
-            title: w.title || '',
-            year: w.year || w.publication_year || null,
-            type: w.type || '',
-            citations: w.citations || w.cited_by_count || 0,
-            authors: w.authors || (Array.isArray(w.authorships)? w.authorships.map(a=>a.author?.display_name).filter(Boolean): []),
-            journal: w.journal || w.host_venue?.display_name || '',
-            issns: (w.issns || w.host_venue?.issn || []).map(x=>(x||'').toString().toUpperCase()),
-            url: w.url || w.primary_location?.landing_page_url || (doi?`https://doi.org/${doi}`:''),
-            is_retracted: !!(w.is_retracted), // treat missing as false
-            quartile: ''
-          };
-        });
-      }catch{ return []; }
-    }
+    populateYearFilter();
+    applyFilters();
+  } catch (e) {
+    alert("Failed to load publications: " + e.message);
+  }
+}
 
-    // ---------- Filters / Helpers ----------
-    function isAIItem(it){
-      const txt=[(it.title||''),(it.journal||''),...(it.subjects||[])].join(' ').toLowerCase();
-      return /\b(ai|artificial intelligence|machine learning|deep learning|neural network|transformer|nlp|natural language|computer vision|reinforcement learning|data mining|pattern recognition)\b/.test(txt);
-    }
+function populateYearFilter() {
+  const years = [...new Set(publications.map(p => p.year).filter(Boolean))].sort((a,b)=>b-a);
+  const select = document.getElementById("yearFilter");
+  select.innerHTML = '<option value="">All Years</option>';
+  years.forEach(y => {
+    select.innerHTML += `<option value="${y}">${y}</option>`;
+  });
+}
 
-    function updateCoverageBadge(){
-      const uniqJ=new Set(state.data.map(x=>(x.journal||'').trim()).filter(Boolean));
-      let mapped=0; uniqJ.forEach(j=>{
-        const row=state.data.find(x=>x.journal===j);
-        const q=row? getQuartile(j,row.issns):'';
-        if(q) mapped++;
-      });
-      const el=document.getElementById('mapCoverage');
-      if(el) el.textContent = uniqJ.size? `· Mapping coverage: ${mapped}/${uniqJ.size}` : '';
-    }
+function applyFilters() {
+  const yearSel = document.getElementById("yearFilter").value;
+  const retractSel = document.getElementById("retractionFilter").value;
 
-    function populateTypeFilter(){
-      const sel=document.getElementById('typeFilter');
-      const types=Array.from(new Set(state.data.map(x=>x.type||'').filter(Boolean))).sort();
-      const cur=sel.value;
-      sel.innerHTML='<option value="">All</option>'+types.map(t=>`<option value="${t}">${t.replace(/-/g,' ')}</option>`).join('');
-      if(cur && types.includes(cur)) sel.value=cur;
-    }
+  let data = publications;
+  if (yearSel) data = data.filter(p => String(p.year) === yearSel);
+  if (retractSel === "exclude") data = data.filter(p => !p.is_retracted);
+  if (retractSel === "only") data = data.filter(p => p.is_retracted);
 
-    // ---------- Charts + KPIs ----------
-    function updateKPIs(rows){
-      const total=rows.length;
-      const uniqueJ=new Set(rows.map(x=>x.journal).filter(Boolean)).size;
-      const citations=rows.reduce((a,b)=>a+(b.citations||0),0);
-      const cits=rows.map(x=>x.citations||0).sort((a,b)=>b-a);
-      let h=0; for(let i=0;i<cits.length;i++){ if(cits[i]>=i+1) h=i+1; else break; }
-      const grid=document.getElementById('kpiGrid'); grid.innerHTML='';
-      [
-        {label:'Total Publications (shown)', value: total},
-        {label:'Unique Journals', value: uniqueJ},
-        {label:'Total Citations', value: citations},
-        {label:'h-index (from shown)', value: h},
-      ].forEach(c=>{
-        const div=document.createElement('div');
-        div.className='bg-white rounded-2xl shadow-sm border border-slate-200 p-4';
-        div.innerHTML=`<div class="text-slate-500 text-xs">${c.label}</div><div class="text-2xl font-semibold mt-1">${c.value}</div>`;
-        grid.appendChild(div);
-      });
-    }
-    function buildCharts(rows){
-      Object.values(state.charts).forEach(ch=>{try{ch.destroy()}catch{} }); state.charts={};
+  renderTable(data);
+  renderChart(data);
+}
 
-      const byYear={}; rows.forEach(x=>{ if(x.year) byYear[x.year]=(byYear[x.year]||0)+1; });
-      const years=Object.keys(byYear).sort();
-      state.charts.byYear=new Chart(document.getElementById('chartByYear'),{
-        type:'bar',
-        data:{labels:years, datasets:[{label:'Publications', data:years.map(y=>byYear[y])}]},
-        options:{responsive:true, plugins:{legend:{display:false}}, scales:{y:{beginAtZero:true}}}
-      });
+function renderTable(data) {
+  const tbody = document.querySelector("#pubTable tbody");
+  tbody.innerHTML = "";
+  data.forEach(p => {
+    const tr = document.createElement("tr");
+    tr.innerHTML = `
+      <td>${p.year || ""}</td>
+      <td><a href="${p.url}" target="_blank">${p.title}</a></td>
+      <td>${p.journal || ""}</td>
+      <td>${(p.authors || []).join(", ")}</td>
+      <td>${p.citations}</td>
+      <td>${p.is_retracted ? "Yes" : "No"}</td>
+    `;
+    tbody.appendChild(tr);
+  });
+}
 
-      const byType={}; rows.forEach(x=>{ const t=x.type||'other'; byType[t]=(byType[t]||0)+1; });
-      const types=Object.keys(byType).sort((a,b)=>byType[b]-byType[a]).slice(0,8);
-      state.charts.byType=new Chart(document.getElementById('chartByType'),{
-        type:'doughnut',
-        data:{labels:types.map(t=>t.replace(/-/g,' ')), datasets:[{data:types.map(t=>byType[t])}]},
-        options:{responsive:true, plugins:{legend:{position:'bottom'}}}
-      });
-
-      const byJ={}; rows.forEach(x=>{ const j=x.journal||'Unknown'; byJ[j]=(byJ[j]||0)+1; });
-      const topJ=Object.entries(byJ).sort((a,b)=>b[1]-a[1]).slice(0,10);
-      state.charts.topJ=new Chart(document.getElementById('chartTopJournals'),{
-        type:'bar',
-        data:{labels:topJ.map(x=>x[0]), datasets:[{label:'Count', data:topJ.map(x=>x[1])}]},
-        options:{indexAxis:'y', plugins:{legend:{display:false}}, scales:{x:{beginAtZero:true}}}
-      });
-
-      const byA={}; rows.forEach(x=> (x.authors||[]).forEach(a=>{ if(a) byA[a]=(byA[a]||0)+1; }));
-      const topA=Object.entries(byA).sort((a,b)=>b[1]-a[1]).slice(0,10);
-      state.charts.topA=new Chart(document.getElementById('chartTopAuthors'),{
-        type:'bar',
-        data:{labels:topA.map(x=>x[0]), datasets:[{label:'Count', data:topA.map(x=>x[1])}]},
-        options:{indexAxis:'y', plugins:{legend:{display:false}}, scales:{x:{beginAtZero:true}}}
-      });
-
-      const byYearAI={}; rows.filter(isAIItem).forEach(x=>{ if(x.year) byYearAI[x.year]=(byYearAI[x.year]||0)+1; });
-      const yAI=Object.keys(byYearAI).sort();
-      state.charts.aiByYear=new Chart(document.getElementById('chartAIByYear'),{
-        type:'line',
-        data:{labels:yAI, datasets:[{label:'AI-related', data:yAI.map(y=>byYearAI[y]), tension:0.25}]},
-        options:{responsive:true, plugins:{legend:{display:true}}, scales:{y:{beginAtZero:true}}}
-      });
-    }
-
-    // ---------- Table + Filters ----------
-    function escapeHtml(str){ return (str||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
-    let shownRows=[];
-
-    function renderTable(rows){
-      const body=document.getElementById('pubBody'); const count=document.getElementById('pubCount');
-      body.innerHTML=''; count.textContent=`(${rows.length} shown)`;
-      document.getElementById('lastUpdated').textContent='Updated: '+dayjs().format('DD MMM YYYY, HH:mm');
-
-      const frag=document.createDocumentFragment();
-      rows.forEach(r=>{
-        const tr=document.createElement('tr'); tr.className='border-b border-slate-100 hover:bg-slate-50';
-        const retractFlag = r.is_retracted ? `<span class="ml-2 text-[10px] px-1.5 py-0.5 rounded bg-rose-100 text-rose-700">Retracted</span>` : '';
-        tr.innerHTML=`
-          <td class="px-4 py-2 text-slate-700">${r.year ?? ''}</td>
-          <td class="px-4 py-2">${r.url? `<a class='text-indigo-600 hover:underline font-medium' href='${r.url}' target='_blank' rel='noopener'>${escapeHtml(r.title)}</a>` : escapeHtml(r.title)} ${retractFlag}</td>
-          <td class="px-4 py-2 text-slate-600">${escapeHtml((r.authors||[]).join(', '))}</td>
-          <td class="px-4 py-2 text-slate-700">${escapeHtml(r.journal || '')}</td>
-          <td class="px-4 py-2 text-slate-700">${escapeHtml((r.type||'').replace(/-/g,' '))}</td>
-          <td class="px-4 py-2 text-slate-700">${r.citations || 0}</td>
-          <td class="px-4 py-2 text-slate-700">${r.quartile || '-'}</td>
-        `;
-        frag.appendChild(tr);
-      });
-      body.appendChild(frag);
-    }
-
-    function applyAllFiltersAndRender(){
-      const q=document.getElementById('searchBox').value.trim().toLowerCase();
-      const qQuartile=document.getElementById('quartileFilter').value;
-      const qType=document.getElementById('typeFilter').value;
-      const qRet=document.getElementById('retractionFilter').value; // '' | 'exclude' | 'only'
-
-      let rows = state.data.filter(x => x.year && x.year>=state.fromYear && x.year<=state.toYear);
-
-      // ensure quartiles are set
-      rows.forEach(r=> r.quartile = getQuartile(r.journal, r.issns) || r.quartile || '');
-
-      // Filters
-      rows = rows.filter(r=>{
-        const matchSearch = !q
-          || (r.title||'').toLowerCase().includes(q)
-          || (r.journal||'').toLowerCase().includes(q)
-          || (r.authors||[]).some(a => (a||'').toLowerCase().includes(q));
-        const matchQuartile = !qQuartile || r.quartile===qQuartile;
-        const matchType = !qType || r.type===qType;
-        const matchRet = (qRet==='') || (qRet==='exclude' ? !r.is_retracted : r.is_retracted);
-        return matchSearch && matchQuartile && matchType && matchRet;
-      });
-
-      shownRows=rows;
-      renderTable(rows);
-      updateKPIs(rows);
-      buildCharts(rows);
-    }
-
-    function sortBy(key, ascending=true){
-      const sorted=[...shownRows].sort((a,b)=>{
-        const na=(a[key]??'').toString().toLowerCase();
-        const nb=(b[key]??'').toString().toLowerCase();
-        if (key==='citations' || key==='year') return (ascending?1:-1)*((na-nb));
-        if (na<nb) return ascending?-1:1;
-        if (na>nb) return ascending?1:-1;
-        return 0;
-      });
-      shownRows=sorted;
-      renderTable(shownRows);
-      updateKPIs(shownRows);
-      buildCharts(shownRows);
-    }
-
-    function exportCSV(){
-      const rows=shownRows.map(r=>({
-        year:r.year||'',
-        title:r.title||'',
-        authors:(r.authors||[]).join('; '),
-        journal:r.journal||'',
-        type:r.type||'',
-        citations:r.citations||0,
-        quartile:r.quartile||'',
-        retracted: r.is_retracted ? 'Yes' : 'No',
-        url:r.url||'',
-        doi:r.doi||''
-      }));
-      const header=Object.keys(rows[0]||{year:'',title:'',authors:'',journal:'',type:'',citations:'',quartile:'',retracted:'',url:'',doi:''});
-      const csv=[header.join(',')].concat(rows.map(o => header.map(h => `"${(o[h]??'').toString().replace(/\"/g,'\"\"')}"`).join(','))).join('\n');
-      const blob=new Blob([csv],{type:'text/csv;charset=utf-8;'}); const a=document.createElement('a');
-      a.href=URL.createObjectURL(blob); a.download='publications.csv'; a.click();
-    }
-    function exportJSON(){
-      const blob=new Blob([JSON.stringify(shownRows,null,2)],{type:'application/json'});
-      const a=document.createElement('a'); a.href=URL.createObjectURL(blob); a.download='publications.json'; a.click();
-    }
-
-    // ---------- Load Orchestration (Static only) ----------
-    function cacheKey(){ return 'openalex-static::'+JSON.stringify({from:state.fromYear,to:state.toYear}); }
-    function loadCache(){ try{ const raw=localStorage.getItem(cacheKey()); return raw? JSON.parse(raw)?.data : null }catch{ return null } }
-    function saveCache(data){ try{ localStorage.setItem(cacheKey(), JSON.stringify({t:Date.now(), data})) }catch{} }
-
-    async function runLoad(){
-      const fy=parseInt(document.getElementById('fromYear').value,10);
-      const ty=parseInt(document.getElementById('toYear').value,10);
-      if(Number.isFinite(fy)) state.fromYear=fy;
-      if(Number.isFinite(ty)) state.toYear=ty;
-      state.useCache=document.getElementById('useCache').checked;
-
-      abortAll(); setProgress('Preparing…');
-      const btn=document.getElementById('loadBtn');
-      btn.disabled=true; btn.innerHTML='<svg class="animate-spin h-4 w-4" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v4a4 4 0 00-4 4H4z"></path></svg> Loading…';
-
-      try{
-        let items=[];
-        if(state.useCache){ const cached=loadCache(); if(cached){ items=cached; setProgress('Loaded from local cache'); } }
-        if(!items.length){
-          items = await tryLoadOpenAlexDump();
-          if(!items.length){
-            alert('openalex_upes.json not found or empty.\n\nAdd the static file to your repo root (use the GitHub Action I shared) and reload.');
-            setProgress(''); return;
-          }
-          if(state.useCache) saveCache(items);
-        }
-
-        // Assign quartiles
-        items.forEach(x=> x.quartile = getQuartile(x.journal, x.issns));
-
-        state.data = items;
-        updateCoverageBadge();
-        populateTypeFilter();
-        applyAllFiltersAndRender();
-      }catch(e){
-        alert('Failed to load publications: ' + e.message);
-      }finally{
-        btn.disabled=false; btn.innerHTML='<i data-lucide="download"></i> Load publications'; lucide.createIcons();
-        setTimeout(()=>setProgress(''), 2000);
-      }
-    }
-
-    // ---------- Events ----------
-    document.addEventListener('DOMContentLoaded', async ()=>{
-      document.getElementById('fromYear').value=state.fromYear;
-      document.getElementById('toYear').value=state.toYear;
-
-      await autoLoadSJR(); // optional mapping from repo
-      runLoad();
-
-      document.getElementById('resetBtn').onclick=()=>{
-        state.fromYear=2015; state.toYear=new Date().getFullYear();
-        state.useCache=true; state.data=[];
-        document.getElementById('fromYear').value=state.fromYear;
-        document.getElementById('toYear').value=state.toYear;
-        document.getElementById('pubBody').innerHTML=''; document.getElementById('kpiGrid').innerHTML='';
-        Object.values(state.charts).forEach(ch=>{try{ch.destroy()}catch{}}); state.charts={}; setProgress('');
-      };
-      document.getElementById('loadBtn').onclick=runLoad;
-      document.getElementById('cancelBtn').onclick=()=>{ abortAll(); setProgress('Canceled.'); };
-
-      document.getElementById('exportCsv').onclick=exportCSV;
-      document.getElementById('exportJson').onclick=exportJSON;
-      document.getElementById('searchBox').addEventListener('input', applyAllFiltersAndRender);
-      document.getElementById('quartileFilter').addEventListener('change', applyAllFiltersAndRender);
-      document.getElementById('typeFilter').addEventListener('change', applyAllFiltersAndRender);
-      document.getElementById('retractionFilter').addEventListener('change', applyAllFiltersAndRender);
-
-      // Sorting
-      let sortState={ key:'year', asc:false };
-      document.querySelectorAll('#pubTable thead th[data-sort]').forEach(th=>{
-        th.addEventListener('click',()=>{
-          const key=th.getAttribute('data-sort');
-          if (sortState.key===key) sortState.asc=!sortState.asc; else { sortState.key=key; sortState.asc=true; }
-          sortBy(key, sortState.asc);
-        });
-      });
-
-      // SJR upload
-      document.getElementById('loadSjrBtn').addEventListener('click',()=>document.getElementById('sjrFile').click());
-      document.getElementById('sjrFile').addEventListener('change',(e)=>{ if(e.target.files && e.target.files[0]) handleSjrUpload(e.target.files[0]); });
-    });
-  </script>
+function renderChart(data) {
+  const ctx = document.getElementById("yearChart").getContext("2d");
+  const grouped = {};
+  data.forEach(p => {
+    if (p.year) grouped[p.year] = (grouped[p.year] || 0) + 1;
+  });
+  const labels = Object.keys(grouped).sort();
+  const counts = labels.map(y => grouped[y]);
+  if (window.yearChartObj) window.yearChartObj.destroy();
+  window.yearChartObj = new Chart(ctx, {
+    type: 'bar',
+    data: { labels, datasets: [{ label: "Publications", data: counts }] },
+  });
+}
+</script>
 </body>
 </html>
