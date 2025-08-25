@@ -4,13 +4,13 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>Publication Data</title>
-  <!-- Tailwind CSS (CDN) -->
+  <!-- Tailwind CSS -->
   <script src="https://cdn.tailwindcss.com"></script>
   <!-- Icons -->
   <script src="https://unpkg.com/lucide@latest/dist/umd/lucide.js"></script>
-  <!-- Chart.js (CDN) -->
+  <!-- Chart.js -->
   <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
-  <!-- Day.js (dates) -->
+  <!-- Day.js -->
   <script src="https://cdn.jsdelivr.net/npm/dayjs@1/dayjs.min.js"></script>
   <style>
     .thin-scrollbar::-webkit-scrollbar { height: 8px; width: 8px; }
@@ -19,12 +19,12 @@
   </style>
 </head>
 <body class="bg-slate-50">
-  <!-- HEADER (minimal) -->
+  <!-- HEADER -->
   <header class="sticky top-0 z-20 bg-white/90 backdrop-blur border-b border-slate-200">
     <div class="max-w-7xl mx-auto px-4 py-4 flex items-center justify-between">
       <h1 class="text-xl font-semibold leading-tight">Publication Data</h1>
       <div class="hidden md:flex items-center gap-2 text-sm text-slate-500">
-        <span class="hidden sm:inline">UPES via OpenAlex (ROR)</span>
+        <span class="hidden sm:inline">Static load · No live API</span>
       </div>
     </div>
   </header>
@@ -32,7 +32,7 @@
   <!-- CONTROLS -->
   <section class="max-w-7xl mx-auto px-4 py-6">
     <div class="grid grid-cols-1 lg:grid-cols-12 gap-4">
-      <!-- Years + Filters -->
+      <!-- Filters -->
       <div class="lg:col-span-8 bg-white rounded-2xl shadow-sm border border-slate-200 p-4">
         <div class="flex flex-wrap items-center gap-4">
 
@@ -48,7 +48,7 @@
             </div>
           </div>
 
-          <!-- Quartile + Type + SJR loader -->
+          <!-- Quartile + Type + Retraction -->
           <div class="flex flex-col">
             <div class="flex gap-3">
               <div>
@@ -67,7 +67,16 @@
                   <option value="">All</option>
                 </select>
               </div>
+              <div>
+                <label class="text-xs font-medium text-slate-600">Retraction</label>
+                <select id="retractionFilter" class="w-44 px-3 py-2 rounded-xl border border-slate-300 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500">
+                  <option value="">All</option>
+                  <option value="exclude">Exclude retracted</option>
+                  <option value="only">Only retracted</option>
+                </select>
+              </div>
             </div>
+
             <div class="mt-2 flex items-center gap-2">
               <input type="file" id="sjrFile" accept=".csv,.json,.xls" class="hidden" />
               <button id="loadSjrBtn" class="px-3 py-2 rounded-xl bg-slate-100 text-slate-700 text-xs">Load SJR file</button>
@@ -76,7 +85,7 @@
             </div>
           </div>
 
-          <!-- Toggles -->
+          <!-- Toggle -->
           <div class="flex items-end gap-3">
             <div class="flex items-center gap-2 mt-5">
               <input id="useCache" type="checkbox" class="rounded border-slate-300" checked />
@@ -95,11 +104,11 @@
           </div>
         </div>
         <p class="text-xs text-slate-500 mt-3">
-          Loads from <code>openalex_upes.json</code> if present (fast), else queries OpenAlex live by UPES ROR. Quartiles from <code>sjr_quartiles.json</code>/<code>.csv</code>.
+          This page reads from <code>openalex_upes.json</code> in the repo root (generated via GitHub Action). Quartiles from <code>sjr_quartiles.json</code>/<code>.csv</code>.
         </p>
       </div>
 
-      <!-- Search & Export Card -->
+      <!-- Search & Export -->
       <div class="lg:col-span-4 bg-white rounded-2xl shadow-sm border border-slate-200 p-4">
         <label class="text-xs font-medium text-slate-600">Quick search</label>
         <input id="searchBox" class="mt-1 w-full px-3 py-2 rounded-xl border border-slate-300 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500" placeholder="Search title / author / journal" />
@@ -107,7 +116,7 @@
           <button id="exportCsv" class="w-full px-3 py-2 rounded-xl bg-emerald-600 text-white text-sm flex items-center justify-center gap-2"><i data-lucide="download"></i> Export CSV</button>
           <button id="exportJson" class="w-full px-3 py-2 rounded-xl bg-emerald-50 text-emerald-700 border border-emerald-200 text-sm">Export JSON</button>
         </div>
-        <p class="text-[11px] text-slate-500 mt-3">Source: OpenAlex by ROR (04q2jes40). Optional local cache speeds reloads.</p>
+        <p class="text-[11px] text-slate-500 mt-3">Source: static <code>openalex_upes.json</code>. No live API calls from the browser.</p>
       </div>
     </div>
   </section>
@@ -169,20 +178,11 @@
 
   <!-- FOOTER -->
   <footer class="text-center text-xs text-slate-500 pb-8">
-    Data: OpenAlex (ROR: 04q2jes40) · Quartiles: SJR mapping (CSV/JSON).
+    Data: openalex_upes.json · Quartiles: SJR mapping (CSV/JSON).
   </footer>
 
   <script>
-    // ----------- CONFIG -----------
-    const OPENALEX_ENDPOINT = 'https://api.openalex.org/works';
-    const UPES_ROR = '04q2jes40'; // UPES ROR ID
-    const FETCH_TIMEOUT_MS = 15000; // timeouts for live API
-
-    // Quartile maps (ISSN-first, then journal title fallback)
-    let quartileMap = {};     // title -> Qx
-    let issnToQuartile = {};  // ISSN -> Qx
-
-    // State
+    // ---------- State ----------
     const state = {
       fromYear: 2015,
       toYear: new Date().getFullYear(),
@@ -191,173 +191,138 @@
       charts: {}
     };
 
-    // Progress / cancel infra
+    // ---------- Progress / Cancel ----------
     let inFlightControllers = [];
-    function setProgress(msg) {
-      const el = document.getElementById('loadProgress');
-      if (el) el.textContent = msg || '';
-    }
-    function abortAll() { inFlightControllers.forEach(c => { try { c.abort(); } catch {} }); inFlightControllers = []; }
-    async function fetchWithTimeout(url, opts={}) {
-      const controller = new AbortController();
-      const id = setTimeout(() => controller.abort(), FETCH_TIMEOUT_MS);
-      inFlightControllers.push(controller);
-      try { return await fetch(url, { ...opts, signal: controller.signal }); }
-      finally { clearTimeout(id); }
-    }
+    function setProgress(msg){ const el=document.getElementById('loadProgress'); if(el) el.textContent=msg||''; }
+    function abortAll(){ inFlightControllers.forEach(c=>{try{c.abort()}catch{}}); inFlightControllers=[]; }
 
-    // ---------- SJR CSV/JSON loading (ISSN-first) ----------
-    function cleanText(text) { return text.replace(/^\uFEFF/, '').replace(/\r\n/g, '\n').replace(/\r/g, '\n'); }
-    function detectDelimiter(firstLine) {
-      const cands = [';', ',', '\t', '|']; let best = ',', bestCount = -1;
-      for (const d of cands) { const c = (firstLine.match(new RegExp('\\' + d, 'g'))||[]).length; if (c>bestCount){best=c;bestCount=c;} }
-      return best;
-    }
-    function parseSeparated(text) {
-      text = cleanText(text);
-      const lines = text.split('\n').filter(l => l.trim().length>0);
-      if (!lines.length) return [];
-      const delim = detectDelimiter(lines[0]);
-      const rows=[]; for (const line of lines) {
-        const row=[]; let cell='', q=false;
-        for (let i=0;i<line.length;i++){ const ch=line[i];
-          if (ch==='"'){ if(q && line[i+1]==='"'){cell+='"';i++;} else q=!q; }
-          else if (ch===delim && !q){ row.push(cell); cell=''; }
+    // ---------- SJR Mapping (ISSN-first, then title) ----------
+    let quartileMap = {};     // title -> Qx
+    let issnToQuartile = {};  // ISSN -> Qx
+
+    function cleanText(text){ return text.replace(/^\uFEFF/,'').replace(/\r\n/g,'\n').replace(/\r/g,'\n'); }
+    function detectDelimiter(firstLine){ const c=[',',';','\t','|']; let best=',',cnt=-1; for(const d of c){ const n=(firstLine.match(new RegExp('\\'+d,'g'))||[]).length; if(n>cnt){cnt=n; best=d;} } return best; }
+    function parseSeparated(text){
+      text=cleanText(text); const lines=text.split('\n').filter(l=>l.trim().length>0); if(!lines.length) return [];
+      const delim=detectDelimiter(lines[0]); const rows=[];
+      for(const line of lines){ const row=[]; let cell='',q=false;
+        for(let i=0;i<line.length;i++){ const ch=line[i];
+          if(ch=='"'){ if(q && line[i+1]=='"'){cell+='"'; i++;} else q=!q; }
+          else if(ch===delim && !q){ row.push(cell); cell=''; }
           else cell+=ch;
         } row.push(cell); rows.push(row);
       } return rows;
     }
-    function addQuartilesFromObject(obj) {
+    function addQuartilesFromObject(obj){
       for (const [k,v] of Object.entries(obj||{})) {
-        const q = (v||'').toString().toUpperCase();
-        if (!/^Q[1-4]$/.test(q)) continue;
-        if (/^\d{4}-\d{3}[\dxX]$/.test(k)) { issnToQuartile[k.toUpperCase()] = q; }
-        else { quartileMap[k.toLowerCase().replace(/\s+/g,' ').replace(/&/g,'and')] = q; }
+        const q=(v||'').toString().toUpperCase(); if(!/^Q[1-4]$/.test(q)) continue;
+        if (/^\d{4}-\d{3}[\dxX]$/.test(k)) issnToQuartile[k.toUpperCase()] = q;
+        else quartileMap[k.toLowerCase().replace(/\s+/g,' ').replace(/&/g,'and')] = q;
       }
     }
-    function buildMapFromRows(rows) {
-      if (!rows || rows.length < 2) return;
-      const norm = s => (s||'').toString().trim().toLowerCase();
-      const hdr = rows[0].map(norm);
-      const idx = (names) => hdr.findIndex(h => names.some(n => h===n || h.includes(n)));
-      const titleIdx = idx(['title','source title','journal title']);
-      const quartIdx  = hdr.findIndex(h => /(sjr\s*best\s*quartile|best\s*quartile|quartile)/.test(h));
-      const issnIdx   = idx(['issn']);
-      const eissnIdx  = idx(['e-issn','eissn','electronic issn']);
-      const pushIssn = (s,q) => (s||'').toString().split(/[;,]/).map(x=>x.trim()).filter(Boolean).forEach(code=>{
+    function buildMapFromRows(rows){
+      if(!rows || rows.length<2) return;
+      const norm=s=>(s||'').toString().trim().toLowerCase();
+      const hdr=rows[0].map(norm);
+      const idx=names=>hdr.findIndex(h=>names.some(n=>h===n || h.includes(n)));
+      const titleIdx=idx(['title','source title','journal title']);
+      const quartIdx =hdr.findIndex(h=>/(sjr\s*best\s*quartile|best\s*quartile|quartile)/.test(h));
+      const issnIdx  =idx(['issn']);
+      const eissnIdx =idx(['e-issn','eissn','electronic issn']);
+      const pushIssn=(s,q)=> (s||'').toString().split(/[;,]/).map(x=>x.trim()).filter(Boolean).forEach(code=>{
         const m=code.match(/^\d{4}-\d{3}[\dxX]$/)?code.toUpperCase():null; if(m) issnToQuartile[m]=q;
       });
-      for (let r=1;r<rows.length;r++){
+      for(let r=1;r<rows.length;r++){
         const q=(rows[r][quartIdx]??'').toString().trim().toUpperCase(); if(!/^Q[1-4]$/.test(q)) continue;
-        const t=(rows[r][titleIdx]??'').toString().trim(); if (t) quartileMap[t.toLowerCase().replace(/\s+/g,' ').replace(/&/g,'and')] = q;
-        if (issnIdx!==-1) pushIssn(rows[r][issnIdx], q);
+        const t=(rows[r][titleIdx]??'').toString().trim();
+        if (t) quartileMap[t.toLowerCase().replace(/\s+/g,' ').replace(/&/g,'and')] = q;
+        if (issnIdx!==-1)  pushIssn(rows[r][issnIdx], q);
         if (eissnIdx!==-1) pushIssn(rows[r][eissnIdx], q);
       }
     }
-    async function tryFetchLocal(url) { try { const r=await fetch(url,{cache:'no-store'}); return r.ok? r: null; } catch { return null; } }
-    async function autoLoadSJR() {
-      let res = await tryFetchLocal('sjr_quartiles.json');
-      if (res) { addQuartilesFromObject(await res.json()); document.getElementById('sjrStatus').textContent='Loaded sjr_quartiles.json'; updateCoverageBadge(); return; }
-      res = await tryFetchLocal('sjr_quartiles.csv');
-      if (res) { buildMapFromRows(parseSeparated(await res.text())); document.getElementById('sjrStatus').textContent='Loaded sjr_quartiles.csv'; updateCoverageBadge(); }
+    async function tryFetchLocal(url){ try{ const r=await fetch(url,{cache:'no-store'}); return r.ok? r:null; }catch{ return null; } }
+    async function autoLoadSJR(){
+      let res=await tryFetchLocal('sjr_quartiles.json');
+      if (res){ addQuartilesFromObject(await res.json()); document.getElementById('sjrStatus').textContent='Loaded sjr_quartiles.json'; updateCoverageBadge(); return; }
+      res=await tryFetchLocal('sjr_quartiles.csv');
+      if (res){ buildMapFromRows(parseSeparated(await res.text())); document.getElementById('sjrStatus').textContent='Loaded sjr_quartiles.csv'; updateCoverageBadge(); }
     }
-    function handleSjrUpload(file) {
+    function handleSjrUpload(file){
       const reader=new FileReader();
-      reader.onload=()=>{ try {
-        if (file.name.toLowerCase().endsWith('.json')) { addQuartilesFromObject(JSON.parse(reader.result)); document.getElementById('sjrStatus').textContent='Loaded mapping (JSON)'; }
-        else { const rows=parseSeparated(reader.result); buildMapFromRows(rows); document.getElementById('sjrStatus').textContent='Loaded mapping (CSV)'; }
-        state.data.forEach(x=> x.quartile = getQuartile(x.journal, x.issns));
+      reader.onload=()=>{ try{
+        if(file.name.toLowerCase().endsWith('.json')){ addQuartilesFromObject(JSON.parse(reader.result)); document.getElementById('sjrStatus').textContent='Loaded mapping (JSON)'; }
+        else { buildMapFromRows(parseSeparated(reader.result)); document.getElementById('sjrStatus').textContent='Loaded mapping (CSV)'; }
+        state.data.forEach(x=> x.quartile=getQuartile(x.journal,x.issns));
         updateCoverageBadge(); applyAllFiltersAndRender();
-      } catch { document.getElementById('sjrStatus').textContent='Failed to parse file'; } };
+      }catch{ document.getElementById('sjrStatus').textContent='Failed to parse file'; } };
       reader.readAsText(file);
     }
-
-    // ---------- OpenAlex loading ----------
-    async function tryLoadOpenAlexDump() {
-      try { const res = await fetch('openalex_upes.json', { cache: 'no-store' }); if (!res.ok) return []; const j = await res.json(); return Array.isArray(j.items)? j.items : []; }
-      catch { return []; }
-    }
-    async function fetchOpenAlexAll(fromYear, toYear, perPage=200, hardCap=20000) {
-      let cursor='*', total=0, all=[];
-      while (true) {
-        setProgress(`OpenAlex page ${(total/perPage|0)+1}`);
-        const params = new URLSearchParams({
-          'per-page': String(perPage),
-          cursor,
-          filter: `institutions.ror:${UPES_ROR},from_publication_date:${fromYear}-01-01,to_publication_date:${toYear}-12-31`,
-          select: 'id,doi,title,authorships,host_venue,publication_year,type,cited_by_count,primary_location'
-        });
-        const url = `${OPENALEX_ENDPOINT}?${params.toString()}`;
-        const res = await fetchWithTimeout(url);
-        if (!res.ok) throw new Error('OpenAlex error ' + res.status);
-        const json = await res.json();
-        const items = (json?.results||[]).map(w=>{
-          const doi=(w.doi||'').replace(/^https?:\/\/doi\.org\//i,'');
-          const title=w.title||'';
-          const year=w.publication_year||null;
-          const type=w.type||'';
-          const citations=w.cited_by_count||0;
-          const authors=(w.authorships||[]).map(a=>a.author?.display_name).filter(Boolean);
-          const journal=w.host_venue?.display_name||'';
-          const issns=(w.host_venue?.issn||[]).map(x=>x.toUpperCase());
-          const url=w.primary_location?.landing_page_url || (doi?`https://doi.org/${doi}`:'');
-          return { doi,title,year,type,citations,authors,journal,issns,url,source:'openalex', quartile:'' };
-        });
-        all.push(...items); total+=items.length;
-        const next=json?.meta?.next_cursor;
-        if (!next || items.length===0 || total>=hardCap) break;
-        cursor=next;
-      }
-      return all;
-    }
-
-    // ---------- Mapping + filters ----------
-    function getQuartile(journal, issns) {
-      for (const code of (issns||[])) { if (issnToQuartile[code]) return issnToQuartile[code]; }
+    function getQuartile(journal, issns){
+      for(const code of (issns||[])){ if(issnToQuartile[code]) return issnToQuartile[code]; }
       return quartileMap[(journal||'').toLowerCase().replace(/\s+/g,' ').replace(/&/g,'and')] || '';
     }
-    function isAIItem(it) {
+
+    // ---------- Static JSON loader ----------
+    async function tryLoadOpenAlexDump(){
+      try{
+        const res=await fetch('openalex_upes.json',{cache:'no-store'});
+        if(!res.ok) return [];
+        const j=await res.json();
+        // Expected structure: { updated, count, items: [...] }
+        const arr = Array.isArray(j.items) ? j.items : (Array.isArray(j) ? j : []);
+        // Normalize minimal fields & include is_retracted if present
+        return arr.map(w=>{
+          const doi=(w.doi||'').replace(/^https?:\/\/doi\.org\//i,'');
+          return {
+            doi,
+            title: w.title || '',
+            year: w.year || w.publication_year || null,
+            type: w.type || '',
+            citations: w.citations || w.cited_by_count || 0,
+            authors: w.authors || (Array.isArray(w.authorships)? w.authorships.map(a=>a.author?.display_name).filter(Boolean): []),
+            journal: w.journal || w.host_venue?.display_name || '',
+            issns: (w.issns || w.host_venue?.issn || []).map(x=>(x||'').toString().toUpperCase()),
+            url: w.url || w.primary_location?.landing_page_url || (doi?`https://doi.org/${doi}`:''),
+            is_retracted: !!(w.is_retracted), // treat missing as false
+            quartile: ''
+          };
+        });
+      }catch{ return []; }
+    }
+
+    // ---------- Filters / Helpers ----------
+    function isAIItem(it){
       const txt=[(it.title||''),(it.journal||''),...(it.subjects||[])].join(' ').toLowerCase();
       return /\b(ai|artificial intelligence|machine learning|deep learning|neural network|transformer|nlp|natural language|computer vision|reinforcement learning|data mining|pattern recognition)\b/.test(txt);
     }
 
-    // ---------- Cache ----------
-    function cacheKey() {
-      const k={ fromYear:state.fromYear, toYear:state.toYear };
-      return 'openalex::'+JSON.stringify(k);
-    }
-    function saveCache(data){ try{ localStorage.setItem(cacheKey(), JSON.stringify({t:Date.now(), data})) }catch{} }
-    function loadCache(){ try{ const raw=localStorage.getItem(cacheKey()); return raw? JSON.parse(raw)?.data : null }catch{ return null } }
-
-    // ---------- UI helpers ----------
-    function updateCoverageBadge() {
+    function updateCoverageBadge(){
       const uniqJ=new Set(state.data.map(x=>(x.journal||'').trim()).filter(Boolean));
       let mapped=0; uniqJ.forEach(j=>{
         const row=state.data.find(x=>x.journal===j);
-        const q=row? getQuartile(j,row.issns) : '';
-        if (q) mapped++;
+        const q=row? getQuartile(j,row.issns):'';
+        if(q) mapped++;
       });
       const el=document.getElementById('mapCoverage');
-      if (el) el.textContent = uniqJ.size? `· Mapping coverage: ${mapped}/${uniqJ.size}` : '';
+      if(el) el.textContent = uniqJ.size? `· Mapping coverage: ${mapped}/${uniqJ.size}` : '';
     }
-    function populateTypeFilter() {
+
+    function populateTypeFilter(){
       const sel=document.getElementById('typeFilter');
       const types=Array.from(new Set(state.data.map(x=>x.type||'').filter(Boolean))).sort();
       const cur=sel.value;
       sel.innerHTML='<option value="">All</option>'+types.map(t=>`<option value="${t}">${t.replace(/-/g,' ')}</option>`).join('');
-      if (cur && types.includes(cur)) sel.value=cur;
+      if(cur && types.includes(cur)) sel.value=cur;
     }
 
     // ---------- Charts + KPIs ----------
-    function updateKPIs(rows) {
+    function updateKPIs(rows){
       const total=rows.length;
-      const uniqueJ = new Set(rows.map(x=>x.journal).filter(Boolean)).size;
-      const citations = rows.reduce((a,b)=>a+(b.citations||0),0);
-      const cits = rows.map(x=>x.citations||0).sort((a,b)=>b-a);
-      let h=0; for (let i=0;i<cits.length;i++){ if (cits[i]>=i+1) h=i+1; else break; }
-
-      const grid=document.getElementById('kpiGrid');
-      grid.innerHTML='';
+      const uniqueJ=new Set(rows.map(x=>x.journal).filter(Boolean)).size;
+      const citations=rows.reduce((a,b)=>a+(b.citations||0),0);
+      const cits=rows.map(x=>x.citations||0).sort((a,b)=>b-a);
+      let h=0; for(let i=0;i<cits.length;i++){ if(cits[i]>=i+1) h=i+1; else break; }
+      const grid=document.getElementById('kpiGrid'); grid.innerHTML='';
       [
         {label:'Total Publications (shown)', value: total},
         {label:'Unique Journals', value: uniqueJ},
@@ -370,8 +335,8 @@
         grid.appendChild(div);
       });
     }
-    function buildCharts(rows) {
-      Object.values(state.charts).forEach(ch=>{try{ch.destroy()}catch{}}); state.charts={};
+    function buildCharts(rows){
+      Object.values(state.charts).forEach(ch=>{try{ch.destroy()}catch{} }); state.charts={};
 
       const byYear={}; rows.forEach(x=>{ if(x.year) byYear[x.year]=(byYear[x.year]||0)+1; });
       const years=Object.keys(byYear).sort();
@@ -381,7 +346,7 @@
         options:{responsive:true, plugins:{legend:{display:false}}, scales:{y:{beginAtZero:true}}}
       });
 
-      const byType={}; rows.forEach(x=>{const t=x.type||'other'; byType[t]=(byType[t]||0)+1;});
+      const byType={}; rows.forEach(x=>{ const t=x.type||'other'; byType[t]=(byType[t]||0)+1; });
       const types=Object.keys(byType).sort((a,b)=>byType[b]-byType[a]).slice(0,8);
       state.charts.byType=new Chart(document.getElementById('chartByType'),{
         type:'doughnut',
@@ -389,7 +354,7 @@
         options:{responsive:true, plugins:{legend:{position:'bottom'}}}
       });
 
-      const byJ={}; rows.forEach(x=>{const j=x.journal||'Unknown'; byJ[j]=(byJ[j]||0)+1;});
+      const byJ={}; rows.forEach(x=>{ const j=x.journal||'Unknown'; byJ[j]=(byJ[j]||0)+1; });
       const topJ=Object.entries(byJ).sort((a,b)=>b[1]-a[1]).slice(0,10);
       state.charts.topJ=new Chart(document.getElementById('chartTopJournals'),{
         type:'bar',
@@ -397,7 +362,7 @@
         options:{indexAxis:'y', plugins:{legend:{display:false}}, scales:{x:{beginAtZero:true}}}
       });
 
-      const byA={}; rows.forEach(x=> x.authors.forEach(a=>{ if(a) byA[a]=(byA[a]||0)+1; }));
+      const byA={}; rows.forEach(x=> (x.authors||[]).forEach(a=>{ if(a) byA[a]=(byA[a]||0)+1; }));
       const topA=Object.entries(byA).sort((a,b)=>b[1]-a[1]).slice(0,10);
       state.charts.topA=new Chart(document.getElementById('chartTopAuthors'),{
         type:'bar',
@@ -426,9 +391,10 @@
       const frag=document.createDocumentFragment();
       rows.forEach(r=>{
         const tr=document.createElement('tr'); tr.className='border-b border-slate-100 hover:bg-slate-50';
+        const retractFlag = r.is_retracted ? `<span class="ml-2 text-[10px] px-1.5 py-0.5 rounded bg-rose-100 text-rose-700">Retracted</span>` : '';
         tr.innerHTML=`
           <td class="px-4 py-2 text-slate-700">${r.year ?? ''}</td>
-          <td class="px-4 py-2">${r.url? `<a class='text-indigo-600 hover:underline font-medium' href='${r.url}' target='_blank' rel='noopener'>${escapeHtml(r.title)}</a>` : escapeHtml(r.title)}</td>
+          <td class="px-4 py-2">${r.url? `<a class='text-indigo-600 hover:underline font-medium' href='${r.url}' target='_blank' rel='noopener'>${escapeHtml(r.title)}</a>` : escapeHtml(r.title)} ${retractFlag}</td>
           <td class="px-4 py-2 text-slate-600">${escapeHtml((r.authors||[]).join(', '))}</td>
           <td class="px-4 py-2 text-slate-700">${escapeHtml(r.journal || '')}</td>
           <td class="px-4 py-2 text-slate-700">${escapeHtml((r.type||'').replace(/-/g,' '))}</td>
@@ -444,12 +410,14 @@
       const q=document.getElementById('searchBox').value.trim().toLowerCase();
       const qQuartile=document.getElementById('quartileFilter').value;
       const qType=document.getElementById('typeFilter').value;
+      const qRet=document.getElementById('retractionFilter').value; // '' | 'exclude' | 'only'
 
       let rows = state.data.filter(x => x.year && x.year>=state.fromYear && x.year<=state.toYear);
 
       // ensure quartiles are set
       rows.forEach(r=> r.quartile = getQuartile(r.journal, r.issns) || r.quartile || '');
 
+      // Filters
       rows = rows.filter(r=>{
         const matchSearch = !q
           || (r.title||'').toLowerCase().includes(q)
@@ -457,7 +425,8 @@
           || (r.authors||[]).some(a => (a||'').toLowerCase().includes(q));
         const matchQuartile = !qQuartile || r.quartile===qQuartile;
         const matchType = !qType || r.type===qType;
-        return matchSearch && matchQuartile && matchType;
+        const matchRet = (qRet==='') || (qRet==='exclude' ? !r.is_retracted : r.is_retracted);
+        return matchSearch && matchQuartile && matchType && matchRet;
       });
 
       shownRows=rows;
@@ -490,10 +459,11 @@
         type:r.type||'',
         citations:r.citations||0,
         quartile:r.quartile||'',
+        retracted: r.is_retracted ? 'Yes' : 'No',
         url:r.url||'',
         doi:r.doi||''
       }));
-      const header=Object.keys(rows[0]||{year:'',title:'',authors:'',journal:'',type:'',citations:'',quartile:'',url:'',doi:''});
+      const header=Object.keys(rows[0]||{year:'',title:'',authors:'',journal:'',type:'',citations:'',quartile:'',retracted:'',url:'',doi:''});
       const csv=[header.join(',')].concat(rows.map(o => header.map(h => `"${(o[h]??'').toString().replace(/\"/g,'\"\"')}"`).join(','))).join('\n');
       const blob=new Blob([csv],{type:'text/csv;charset=utf-8;'}); const a=document.createElement('a');
       a.href=URL.createObjectURL(blob); a.download='publications.csv'; a.click();
@@ -503,50 +473,44 @@
       const a=document.createElement('a'); a.href=URL.createObjectURL(blob); a.download='publications.json'; a.click();
     }
 
-    // ---------- Load orchestration ----------
-    function cacheKeyOpenAlex(){ return 'openalex::'+JSON.stringify({from:state.fromYear,to:state.toYear}); }
-    function loadCacheOpenAlex(){ try{ const raw=localStorage.getItem(cacheKeyOpenAlex()); return raw? JSON.parse(raw)?.data: null }catch{ return null } }
-    function saveCacheOpenAlex(data){ try{ localStorage.setItem(cacheKeyOpenAlex(), JSON.stringify({t:Date.now(), data})) }catch{} }
+    // ---------- Load Orchestration (Static only) ----------
+    function cacheKey(){ return 'openalex-static::'+JSON.stringify({from:state.fromYear,to:state.toYear}); }
+    function loadCache(){ try{ const raw=localStorage.getItem(cacheKey()); return raw? JSON.parse(raw)?.data : null }catch{ return null } }
+    function saveCache(data){ try{ localStorage.setItem(cacheKey(), JSON.stringify({t:Date.now(), data})) }catch{} }
 
     async function runLoad(){
       const fy=parseInt(document.getElementById('fromYear').value,10);
       const ty=parseInt(document.getElementById('toYear').value,10);
-      if (Number.isFinite(fy)) state.fromYear=fy;
-      if (Number.isFinite(ty)) state.toYear=ty;
-      state.useCache = document.getElementById('useCache').checked;
+      if(Number.isFinite(fy)) state.fromYear=fy;
+      if(Number.isFinite(ty)) state.toYear=ty;
+      state.useCache=document.getElementById('useCache').checked;
 
       abortAll(); setProgress('Preparing…');
       const btn=document.getElementById('loadBtn');
       btn.disabled=true; btn.innerHTML='<svg class="animate-spin h-4 w-4" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v4a4 4 0 00-4 4H4z"></path></svg> Loading…';
 
-      try {
-        // 1) Try local static dump (fast)
-        let items = await tryLoadOpenAlexDump();
-
-        // 2) Else cache
-        if (!items.length && state.useCache) {
-          const cached = loadCacheOpenAlex();
-          if (cached && Array.isArray(cached)) { items = cached; setProgress('Loaded from local cache'); }
+      try{
+        let items=[];
+        if(state.useCache){ const cached=loadCache(); if(cached){ items=cached; setProgress('Loaded from local cache'); } }
+        if(!items.length){
+          items = await tryLoadOpenAlexDump();
+          if(!items.length){
+            alert('openalex_upes.json not found or empty.\n\nAdd the static file to your repo root (use the GitHub Action I shared) and reload.');
+            setProgress(''); return;
+          }
+          if(state.useCache) saveCache(items);
         }
 
-        // 3) Else live fetch
-        if (!items.length) { items = await fetchOpenAlexAll(state.fromYear, state.toYear); }
-
         // Assign quartiles
-        items.forEach(x => x.quartile = getQuartile(x.journal, x.issns));
+        items.forEach(x=> x.quartile = getQuartile(x.journal, x.issns));
 
         state.data = items;
         updateCoverageBadge();
         populateTypeFilter();
         applyAllFiltersAndRender();
-
-        // Save cache (only for live fetch or static dump path)
-        if (state.useCache) saveCacheOpenAlex(items);
-      } catch (e) {
-        if (e.name==='AbortError') setProgress('Canceled.');
-        else alert('Failed to load publications: ' + e.message);
-      } finally {
-        abortAll();
+      }catch(e){
+        alert('Failed to load publications: ' + e.message);
+      }finally{
         btn.disabled=false; btn.innerHTML='<i data-lucide="download"></i> Load publications'; lucide.createIcons();
         setTimeout(()=>setProgress(''), 2000);
       }
@@ -554,29 +518,29 @@
 
     // ---------- Events ----------
     document.addEventListener('DOMContentLoaded', async ()=>{
-      document.getElementById('fromYear').value = state.fromYear;
-      document.getElementById('toYear').value = state.toYear;
+      document.getElementById('fromYear').value=state.fromYear;
+      document.getElementById('toYear').value=state.toYear;
 
-      await autoLoadSJR(); // try repo SJR mapping
+      await autoLoadSJR(); // optional mapping from repo
       runLoad();
 
-      document.getElementById('resetBtn').onclick = () => {
-        state.fromYear = 2015; state.toYear = new Date().getFullYear();
-        state.useCache = true; state.data = [];
-        document.getElementById('fromYear').value = state.fromYear;
-        document.getElementById('toYear').value = state.toYear;
+      document.getElementById('resetBtn').onclick=()=>{
+        state.fromYear=2015; state.toYear=new Date().getFullYear();
+        state.useCache=true; state.data=[];
+        document.getElementById('fromYear').value=state.fromYear;
+        document.getElementById('toYear').value=state.toYear;
         document.getElementById('pubBody').innerHTML=''; document.getElementById('kpiGrid').innerHTML='';
-        Object.values(state.charts).forEach(ch=>{ try{ ch.destroy() }catch{} }); state.charts={};
-        setProgress('');
+        Object.values(state.charts).forEach(ch=>{try{ch.destroy()}catch{}}); state.charts={}; setProgress('');
       };
-      document.getElementById('loadBtn').onclick = runLoad;
-      document.getElementById('cancelBtn').onclick = () => { abortAll(); setProgress('Canceled.'); };
+      document.getElementById('loadBtn').onclick=runLoad;
+      document.getElementById('cancelBtn').onclick=()=>{ abortAll(); setProgress('Canceled.'); };
 
-      document.getElementById('exportCsv').onclick = exportCSV;
-      document.getElementById('exportJson').onclick = exportJSON;
+      document.getElementById('exportCsv').onclick=exportCSV;
+      document.getElementById('exportJson').onclick=exportJSON;
       document.getElementById('searchBox').addEventListener('input', applyAllFiltersAndRender);
       document.getElementById('quartileFilter').addEventListener('change', applyAllFiltersAndRender);
       document.getElementById('typeFilter').addEventListener('change', applyAllFiltersAndRender);
+      document.getElementById('retractionFilter').addEventListener('change', applyAllFiltersAndRender);
 
       // Sorting
       let sortState={ key:'year', asc:false };
@@ -590,7 +554,7 @@
 
       // SJR upload
       document.getElementById('loadSjrBtn').addEventListener('click',()=>document.getElementById('sjrFile').click());
-      document.getElementById('sjrFile').addEventListener('change',(e)=>{ if (e.target.files && e.target.files[0]) handleSjrUpload(e.target.files[0]); });
+      document.getElementById('sjrFile').addEventListener('change',(e)=>{ if(e.target.files && e.target.files[0]) handleSjrUpload(e.target.files[0]); });
     });
   </script>
 </body>
