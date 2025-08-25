@@ -42,6 +42,7 @@
         <div>
           <h1 class="text-lg font-semibold tracking-tight">AI Publications Portal</h1>
           <div id="lastSynced" class="text-xs text-white/80">Loading…</div>
+          <div id="errorBox" class="hidden mt-2 text-xs bg-rose-50 text-rose-700 border border-rose-200 rounded-lg px-2 py-1"></div>
         </div>
       </div>
       <div class="hidden md:flex items-center gap-2 text-xs">
@@ -211,7 +212,7 @@
           <div>
             <h3 class="font-semibold">Quartile Mapping</h3>
             <p class="text-xs text-slate-500">
-              Upload SJR quartiles as <code>.csv</code> (columns: Title, ISSN, Quartile) or <code>.json</code>
+              Upload SJR quartiles as <code>.csv</code> (Title, ISSN, Quartile) or <code>.json</code>
               (array with <code>title</code>/<code>issn</code>/<code>quartile</code>).
             </p>
           </div>
@@ -399,44 +400,69 @@ function switchTab(name){
 
 /* ---------------- Load data ---------------- */
 async function autoLoad(){
+  const err = (msg) => {
+    const box = document.getElementById('errorBox');
+    if (box) { box.textContent = msg; box.classList.remove('hidden'); }
+    console.error(msg);
+  };
+
   try{
-    const res = await fetch('institution_data.json', { cache:'no-store' });
-    if (!res.ok) throw new Error('institution_data.json not found (place it at repo root)');
+    // cache-busting to avoid stale caches
+    const res = await fetch('institution_data.json?v=' + Date.now(), { cache:'no-store' });
+    if (!res.ok){ err('institution_data.json not found at the same path as index.html'); return; }
     const j = await res.json();
 
-    document.getElementById('lastSynced').textContent =
-      j.updated ? `Last synced: ${dayjs(j.updated).format('DD MMM YYYY, HH:mm')}` : '(no timestamp)';
+    // Accept two shapes: {items:[...]} or just [...]
+    const items = Array.isArray(j?.items) ? j.items : (Array.isArray(j) ? j : []);
+    if (!Array.isArray(items) || items.length === 0){
+      err('institution_data.json loaded but contains no items (expected an array of publications).');
+      return;
+    }
 
-    all = Array.isArray(j.items) ? j.items : [];
-    // flatten authors (all) for fallback
+    // Hide error box if any
+    const box = document.getElementById('errorBox'); if (box) box.classList.add('hidden');
+
+    all = items;
+
+    // Normalize citations & flatten authors for search
     for (const p of all){
+      if (typeof p.citations === 'undefined' && typeof p.cited_by_count !== 'undefined'){
+        p.citations = p.cited_by_count;
+      }
       p.authors = (p.authorships||[]).map(a => a.author?.display_name || a.author_name || '').filter(Boolean);
     }
 
-    // retraction + SDGs
+    // Timestamp (if present)
+    const ts = (j.updated || null);
+    document.getElementById('lastSynced').textContent =
+      ts ? `Last synced: ${dayjs(ts).format('DD MMM YYYY, HH:mm')}` : 'Loaded';
+
+    // year options
+    const years = [...new Set(all.map(x=>x.year).filter(Boolean))].sort((a,b)=>b-a);
+    const yearSel = document.getElementById('yearFilter');
+    if (yearSel){
+      yearSel.innerHTML = '<option value="">All years</option>' + years.map(y=>`<option>${y}</option>`).join('');
+    }
+
+    // SDG filter options
+    const opts = SDG_LIST.map(s=>`<option value="${s.id}">${s.id}. ${s.name}</option>`).join('');
+    const sdgFilter = document.getElementById('sdgFilter');
+    const sdgOnlyFilter = document.getElementById('sdgOnlyFilter');
+    if (sdgFilter) sdgFilter.innerHTML = '<option value="">All SDGs</option>' + opts;
+    if (sdgOnlyFilter) sdgOnlyFilter.innerHTML = '<option value="">All SDGs</option>' + opts;
+
+    pageSize = parseInt(document.getElementById('pageSize')?.value,10) || 50;
+
+    // Retraction + SDGs
     buildRetractionIndex(all);
     for (const p of all) p.sdg_tags = guessSDGs(p);
 
     document.getElementById('kpiTotal').textContent = num(all.length);
-
-    // year options
-    const years = [...new Set(all.map(x=>x.year).filter(Boolean))].sort((a,b)=>b-a);
-    document.getElementById('yearFilter').innerHTML =
-      '<option value="">All years</option>' + years.map(y=>`<option>${y}</option>`).join('');
-
-    // SDG options
-    const opts = SDG_LIST.map(s=>`<option value="${s.id}">${s.id}. ${s.name}</option>`).join('');
-    document.getElementById('sdgFilter').innerHTML = '<option value="">All SDGs</option>' + opts;
-    document.getElementById('sdgOnlyFilter').innerHTML = '<option value="">All SDGs</option>' + opts;
-
-    pageSize = parseInt(document.getElementById('pageSize').value,10) || 50;
-
     buildColumnsPanel();
     buildSDGLegend();
     applyFilters(1);
   }catch(e){
-    console.error(e);
-    document.getElementById('lastSynced').textContent = 'Error: '+e.message;
+    err('Failed to parse institution_data.json: ' + (e?.message || e));
   }
 }
 
@@ -504,7 +530,7 @@ function applyFilters(goToPage=1){
   if (!document.getElementById('view-narrative').classList.contains('hidden')) renderNarrative();
 }
 
-function changePageSize(){ pageSize = parseInt(document.getElementById('pageSize').value,10) || 50; currentPage=1; renderTable(); }
+function changePageSize(){ pageSize = parseInt(document.getElementById('pageSize')?.value,10) || 50; currentPage=1; renderTable(); }
 function totalPages(){ return Math.max(1, Math.ceil(filtered.length/pageSize)); }
 function goFirst(){ currentPage = 1; renderTable(); }
 function goPrev(){ if (currentPage>1) currentPage--; renderTable(); }
@@ -538,7 +564,7 @@ function renderTable(){
   if (rangeText) rangeText.textContent = countInfo ? countInfo.textContent : '';
 }
 
-// Only affiliated authors
+// Only affiliated authors appear
 function getAffilAuthors(p){
   if (!Array.isArray(p.authorships)) return [];
   return p.authorships
@@ -722,4 +748,200 @@ function renderSDGChart(forTab=false){
 /* ---------------- SDG mapping ---------------- */
 function guessSDGs(p){
   const text = [(p.title||''),(p.journal||''),extractSubjects(p)].join(' ').toLowerCase();
-  const hits=[]; for (const
+  const hits=[]; for (const s of SDG_LIST){ for (const kw of s.kw){ if (text.includes(kw.toLowerCase())){ hits.push(s.id); break; } } }
+  return Array.from(new Set(hits)).slice(0,2); // at most 2 tags
+}
+function renderSDGBadges(ids){
+  if (!ids.length) return '';
+  return ids.map(id=>`<span class="badge" style="border-color:${SDG_COLORS[id]};background:#fff">${id}</span>`).join(' ');
+}
+function buildSDGLegend(){
+  const box=document.getElementById('sdgLegend'); if (!box) return;
+  box.innerHTML='';
+  for (const s of SDG_LIST){
+    box.insertAdjacentHTML('beforeend', `<span class="badge" title="${s.name}" style="border-color:${SDG_COLORS[s.id]};background:#fff">${s.id} — ${s.name}</span>`);
+  }
+}
+
+/* ---------------- Quartiles (upload & map) ---------------- */
+document.getElementById('sjrFile')?.addEventListener('change', async (e)=>{
+  const file=e.target.files[0]; if(!file) return;
+  const name=file.name.toLowerCase(); const text=await file.text();
+  sjrByIssn.clear(); sjrByTitle.clear(); haveSJR=false;
+  try{
+    if (name.endsWith('.json')) { const arr=JSON.parse(text); for (const row of arr) addQuartileRow(row); }
+    else if (name.endsWith('.csv')){ parseCSV(text, addQuartileRow); }
+    else { throw new Error('Unsupported file type'); }
+    haveSJR = (sjrByIssn.size + sjrByTitle.size) > 0;
+    document.getElementById('sjrStatus').textContent = `Loaded ${sjrByIssn.size} ISSN entries and ${sjrByTitle.size} title entries`;
+    applyFilters();
+    updateCoverage();
+  }catch(err){ document.getElementById('sjrStatus').textContent = 'Failed: ' + err.message; }
+});
+
+function addQuartileRow(row){
+  const q = normQuartile(row.quartile || row.Quarter || row.Q || row.q || '');
+  const title = normTitle(row.title || row.Title || row.Journal || '');
+  const issn  = normIssn (row.issn  || row.ISSN  || row.issn_print || row.ISSN_print || '');
+  if (issn && q)  sjrByIssn.set(issn, q);
+  if (title && q) sjrByTitle.set(title, q);
+}
+function parseCSV(text, onRow){
+  const lines=text.split(/\r?\n/).filter(Boolean);
+  const header=lines.shift().split(',').map(h=>h.trim().toLowerCase());
+  const idxTitle=header.findIndex(h=>/title|journal/.test(h));
+  const idxIssn =header.findIndex(h=>/issn/.test(h));
+  const idxQuart=header.findIndex(h=>/quartile|^q$/.test(h));
+  if (idxQuart<0 || (idxTitle<0 && idxIssn<0)) throw new Error('CSV must include Title/ISSN and Quartile columns');
+  for (const line of lines){
+    const cols=splitCsv(line);
+    onRow({ title: idxTitle>=0?cols[idxTitle]:'', issn: idxIssn>=0?cols[idxIssn]:'', quartile: idxQuart>=0?cols[idxQuart]:'' });
+  }
+}
+function splitCsv(line){
+  const out=[]; let cur=''; let inQ=false;
+  for (let i=0;i<line.length;i++){
+    const ch=line[i];
+    if (ch==='\"'){ inQ=!inQ; continue; }
+    if (ch===',' && !inQ){ out.push(cur.trim()); cur=''; continue; }
+    cur+=ch;
+  }
+  out.push(cur.trim()); return out;
+}
+function resolveQuartile(p){
+  const issns=(p.issns||[]).map(normIssn).filter(Boolean);
+  for (const id of issns){ if (sjrByIssn.has(id)) return sjrByIssn.get(id); }
+  const t=normTitle(p.journal||''); if (t && sjrByTitle.has(t)) return sjrByTitle.get(t);
+  return '';
+}
+function updateCoverage(){
+  const el=document.getElementById('mapCoverage'); if (!el) return;
+  let mapped=0,total=filtered.length; for (const p of filtered) if (p.quartile) mapped++;
+  const pct= total? Math.round(mapped*100/total):0;
+  el.textContent = `${mapped} / ${total} in current view mapped (${pct}%)`;
+}
+
+/* ---------------- Retraction info rendering ---------------- */
+function renderRetractionInfo(p){
+  const parts=[];
+  if (p.retraction_notice){
+    parts.push('<span class="badge" style="border-color:#ef4444;background:#fff;color:#b91c1c">Retraction notice</span>');
+    if (p.retraction_of){
+      const t = esc(p.retraction_of.title || '');
+      const d = p.retraction_of.doi ? `<a href="https://doi.org/${p.retraction_of.doi}" target="_blank" rel="noopener">${esc(p.retraction_of.doi)}</a>` : '';
+      parts.push(`<div class="text-xs text-slate-600 mt-1">of: ${t} ${d}</div>`);
+    }
+  }
+  if (p.is_retracted){
+    parts.push('<span class="badge" style="border-color:#ef4444;background:#fff;color:#b91c1c">Retracted (OpenAlex)</span>');
+    if (p.retracted_by){
+      const t = esc(p.retracted_by.title || '');
+      const d = p.retracted_by.doi ? `<a href="https://doi.org/${p.retracted_by.doi}" target="_blank" rel="noopener">${esc(p.retracted_by.doi)}</a>` : '';
+      parts.push(`<div class="text-xs text-slate-600 mt-1">by: ${t} ${d}</div>`);
+    }
+  }
+  return parts.join(' ') || '';
+}
+
+/* ---------------- Export ---------------- */
+function exportCSV(){
+  if (!filtered.length) return;
+  const start=(currentPage-1)*pageSize, end=Math.min(start+pageSize, filtered.length);
+  const rows = filtered.slice(start,end);
+  const header = selectedColumns.map(c=>c.label);
+  const csv = [header.join(',')].concat(
+    rows.map(r => selectedColumns.map(c => q(textForExport(c.key, r))).join(','))
+  ).join('\n');
+  downloadBlob('publications_view.csv', csv, 'text/csv');
+}
+function exportJSON(){
+  const start=(currentPage-1)*pageSize, end=Math.min(start+pageSize, filtered.length);
+  const rows = filtered.slice(start,end).map(r=>{
+    const obj={}; for (const c of selectedColumns){ obj[c.key] = rawForExport(c.key, r); } return obj;
+  });
+  downloadBlob('publications_view.json', JSON.stringify(rows,null,2), 'application/json');
+}
+function textForExport(key,p){
+  switch(key){
+    case 'authors': return getAffilAuthors(p).join('; ');
+    case 'issns':   return (p.issns||[]).join('; ');
+    case 'subjects':return extractSubjects(p);
+    case 'sdg_tags':return (p.sdg_tags||[]).join('; ');
+    case 'retraction_info': return stripHtml(renderRetractionInfo(p));
+    case 'is_retracted': return p.is_retracted ? 'Yes' : 'No';
+    default: return rawForExport(key, p) ?? '';
+  }
+}
+function rawForExport(key,p){
+  if (key==='subjects') return extractSubjects(p);
+  if (key==='retraction_info') return stripHtml(renderRetractionInfo(p));
+  return p[key];
+}
+
+/* ---------------- Narrative ---------------- */
+function renderNarrative(){
+  const box = document.getElementById('narrativeBox'); if (!box) return;
+  const total = filtered.length;
+  const years = [...new Set(filtered.map(x=>x.year).filter(Boolean))].sort((a,b)=>a-b);
+  const startY = years[0] || '—', endY = years[years.length-1] || '—';
+  const cites = filtered.reduce((a,b)=>a+(b.citations||0),0);
+  const retractions = filtered.filter(x=>x.is_retracted || x.retraction_notice).length;
+
+  const bySdg = new Map();
+  for (const p of filtered){ for (const id of (p.sdg_tags||[])){ bySdg.set(id, (bySdg.get(id)||0)+1); } }
+  const sdgTop = [...bySdg.entries()].sort((a,b)=>b[1]-a[1]).slice(0,2)
+                  .map(([id,c])=>`${id} (${c})`).join(', ') || '—';
+
+  const text = `
+    <p>Inside the command center, the wall of holographic panes hums to life. A digital globe
+    rotates slowly, constellated with glowing nodes that pulse where research has landed. Between
+    <strong>${startY}</strong> and <strong>${endY}</strong>, our mission has launched
+    <strong>${num(total)}</strong> signals—each a publication—fanning out like orbital trajectories.</p>
+
+    <p>On the left, a bar array climbs year by year while a neon line threads across it—cumulative output
+    rising like altitude. To the right, journals align as stacked vectors, their quartile bands revealing
+    the strength of our staging grounds. SDG frequencies arc into a luminous ring; today’s strongest beacons:
+    <strong>${sdgTop}</strong>. Downlink counters flicker: <strong>${num(cites)}</strong> citations received,
+    feedback from the wider cosmos.</p>
+
+    <p>Retraction sentinels sweep for anomalies—${num(retractions)} markers flare, each linked to a corrective
+    maneuver. Authors affiliated with our station are highlighted on every track, their signatures etched
+    in the telemetry for clarity and credit.</p>
+
+    <p>As filters adjust, the holograms recompose instantly—routes recalc, clusters regroup, impact ripples shift.
+    Breakthroughs and collaborations sketch luminous arcs over the globe, charting a flightpath of inquiry
+    and innovation. The analyst nods, palms out to the air, and new layers bloom: subject domains, SDG corridors,
+    quartile terrain. The mission continues—precise, adaptive, and brilliantly lit by data.</p>
+  `;
+  box.innerHTML = text;
+}
+
+/* ---------------- Utils ---------------- */
+function esc(s){ return String(s).replace(/[&<>"']/g, m=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m])); }
+function q(s){ return `"${String(s).replace(/"/g,'""')}"`; }
+function downloadBlob(name, content, type){ const blob=new Blob([content],{type}); const a=document.createElement('a'); a.href=URL.createObjectURL(blob); a.download=name; a.click(); URL.revokeObjectURL(a.href); }
+function num(n){ return (n||0).toLocaleString(); }
+function normTitle(t){ return String(t||'').toLowerCase().replace(/\s+/g,' ').trim(); }
+function normIssn(s){ const x=String(s||'').replace(/[^0-9xX]/g,'').toUpperCase(); return x.length===8? x.slice(0,4)+'-'+x.slice(4): (x.length===7? x.slice(0,3)+'-'+x.slice(3): ''); }
+function normQuartile(q){ const s=String(q||'').toUpperCase().trim(); return /^Q[1-4]$/.test(s)? s : ''; }
+function extractSubjects(p){
+  if (Array.isArray(p.subjects) && p.subjects.length) return p.subjects.slice(0,3).join(', ');
+  if (Array.isArray(p.concepts) && p.concepts.length){
+    const arr = p.concepts.map(c=>c.display_name||c.name||'').filter(Boolean).slice(0,3); return arr.join(', ');
+  }
+  return '';
+}
+function stripHtml(html){ const d=document.createElement('div'); d.innerHTML=html; return d.textContent||d.innerText||''; }
+
+// Close dropdown on outside click
+document.addEventListener('click', (e)=>{
+  const panel=document.getElementById('columnsPanel'); const btn=document.getElementById('colBtn');
+  if (!panel || panel.classList.contains('hidden')) return;
+  if (!panel.contains(e.target) && !btn.contains(e.target)) panel.classList.add('hidden');
+});
+
+// Init
+document.addEventListener('DOMContentLoaded', ()=>{ buildSDGLegend(); autoLoad(); });
+</script>
+</body>
+</html>
