@@ -88,6 +88,12 @@
 
           <!-- Actions -->
           <div class="ml-auto flex items-end gap-2">
+            <div class="flex items-center gap-2 mr-3">
+              <input id="useKeywordFallback" type="checkbox" class="rounded border-slate-300" />
+              <label class="text-sm text-slate-700">Use keyword fallback</label>
+            </div>
+            <span id="loadProgress" class="text-xs text-slate-500 mr-2"></span>
+            <button id="cancelBtn" class="px-3 py-2.5 rounded-xl bg-slate-100 text-slate-700 text-sm">Cancel</button>
             <button id="loadBtn" class="px-4 py-2.5 rounded-xl bg-indigo-600 text-white text-sm font-medium flex items-center gap-2">
               <i data-lucide="download"></i> Load publications
             </button>
@@ -209,6 +215,34 @@
       charts: {},
       sjrLoaded: false
     };
+
+    // -------- fetch safety limits & infra --------
+    const PAGE_ROWS = 200;                 // Crossref rows per page
+    const MAX_PER_AFF = 800;               // cap per affiliation (≈ 4 pages)
+    const MAX_PER_KEYWORD = 400;           // cap per keyword fallback (≈ 2 pages)
+    const FETCH_TIMEOUT_MS = 15000;        // 15s per request timeout
+
+    let inFlightControllers = [];          // for cancel
+
+    function setProgress(msg) {
+      const el = document.getElementById('loadProgress');
+      if (el) el.textContent = msg || '';
+    }
+    function abortAll() {
+      inFlightControllers.forEach(c => { try { c.abort(); } catch {} });
+      inFlightControllers = [];
+    }
+    async function fetchWithTimeout(url, opts={}) {
+      const controller = new AbortController();
+      const id = setTimeout(() => controller.abort(), FETCH_TIMEOUT_MS);
+      inFlightControllers.push(controller);
+      try {
+        const res = await fetch(url, { ...opts, signal: controller.signal });
+        return res;
+      } finally {
+        clearTimeout(id);
+      }
+    }
 
     // ----------------------- Robust CSV/XLS parsing & mapping -----------------------
     function cleanText(text) {
@@ -341,34 +375,7 @@
       reader.readAsText(file);
     }
 
-    // -------------------- Crossref fetch + transforms --------------------
-    function renderAffPills() {
-      const wrap = document.getElementById('affPills');
-      wrap.innerHTML = '';
-      state.affiliations.forEach((aff, idx) => {
-        const pill = document.createElement('div');
-        pill.className = 'group inline-flex items-center gap-2 bg-slate-100 hover:bg-slate-200 text-slate-800 px-3 py-1 rounded-full';
-        pill.innerHTML = `<span class="text-xs">${aff}</span>`;
-        const x = document.createElement('button');
-        x.className = 'rounded-full p-1 hover:bg-white';
-        x.innerHTML = '<i data-lucide="x" class="w-4 h-4"></i>';
-        x.onclick = () => { state.affiliations.splice(idx,1); renderAffPills(); };
-        pill.appendChild(x);
-        wrap.appendChild(pill);
-      });
-      lucide.createIcons();
-    }
-
-    function setDefaults() {
-      document.getElementById('fromYear').value = state.fromYear;
-      document.getElementById('toYear').value = state.toYear;
-      document.getElementById('onlyWithAffInAuthors').checked = state.onlyStrictAff;
-      document.getElementById('useCache').checked = state.useCache;
-      document.getElementById('quartileFilter').value = '';
-      renderAffPills();
-      lucide.createIcons();
-    }
-
+    // -------------------- Crossref normalization --------------------
     function normalizeItem(it) {
       const year = Array.isArray(it?.issued?.['date-parts']) && it.issued['date-parts'][0] ? it.issued['date-parts'][0][0] : null;
       const title = Array.isArray(it.title) ? it.title[0] : (it.title || '');
@@ -386,19 +393,19 @@
       return { doi: it.DOI || '', title, authors, authorAffs: affs, journal, year, type: it.type || '', url, subjects, citations, quartile };
     }
 
-    // Primary: affiliation-based fetch (bigger cap)
-    async function fetchForAff(aff, fromYear, toYear, maxItems = 5000) {
+    // -------------------- Crossref fetch (capped, progress, timeout) --------------------
+    async function fetchForAff(aff, fromYear, toYear, maxItems = MAX_PER_AFF) {
       const from = `${fromYear}-01-01`;
       const until = `${toYear}-12-31`;
       let cursor = '*';
-      let done = false;
       let all = [];
-
-      while (!done && all.length < maxItems) {
+      let pages = 0;
+      while (all.length < maxItems && pages < Math.ceil(maxItems / PAGE_ROWS)) {
+        setProgress(`Affiliation "${aff}": page ${pages + 1}`);
         const params = new URLSearchParams({
           'query.affiliation': aff,
           filter: `from-pub-date:${from},until-pub-date:${until}`,
-          rows: '200',
+          rows: String(PAGE_ROWS),
           sort: 'published',
           order: 'desc',
           select: 'DOI,title,author,container-title,issued,type,URL,subject,is-referenced-by-count',
@@ -406,30 +413,31 @@
           mailto: CONTACT_EMAIL
         });
         const url = `${CROSSREF_ENDPOINT}?${params.toString()}`;
-        const res = await fetch(url);
+        const res = await fetchWithTimeout(url);
         if (!res.ok) throw new Error('Crossref error ' + res.status);
         const json = await res.json();
         const items = (json?.message?.items || []).map(normalizeItem);
         all.push(...items);
         const next = json?.message?.['next-cursor'];
-        if (!next || items.length === 0) done = true; else cursor = next;
+        pages++;
+        if (!next || items.length === 0) break;
+        cursor = next;
       }
-      return all;
+      return all.slice(0, maxItems);
     }
 
-    // Fallback: keyword-based fetch (helps when affiliation metadata missing)
-    async function fetchByKeyword(keyword, fromYear, toYear, maxItems = 2000) {
+    async function fetchByKeyword(keyword, fromYear, toYear, maxItems = MAX_PER_KEYWORD) {
       const from = `${fromYear}-01-01`;
       const until = `${toYear}-12-31`;
       let cursor = '*';
-      let done = false;
       let all = [];
-
-      while (!done && all.length < maxItems) {
+      let pages = 0;
+      while (all.length < maxItems && pages < Math.ceil(maxItems / PAGE_ROWS)) {
+        setProgress(`Keyword "${keyword}": page ${pages + 1}`);
         const params = new URLSearchParams({
           query: keyword,
           filter: `from-pub-date:${from},until-pub-date:${until}`,
-          rows: '200',
+          rows: String(PAGE_ROWS),
           sort: 'published',
           order: 'desc',
           select: 'DOI,title,author,container-title,issued,type,URL,subject,is-referenced-by-count',
@@ -437,67 +445,74 @@
           mailto: CONTACT_EMAIL
         });
         const url = `${CROSSREF_ENDPOINT}?${params.toString()}`;
-        const res = await fetch(url);
+        const res = await fetchWithTimeout(url);
         if (!res.ok) throw new Error('Crossref error ' + res.status);
         const json = await res.json();
         const items = (json?.message?.items || []).map(normalizeItem);
         all.push(...items);
         const next = json?.message?.['next-cursor'];
-        if (!next || items.length === 0) done = true; else cursor = next;
+        pages++;
+        if (!next || items.length === 0) break;
+        cursor = next;
       }
-      return all;
+      return all.slice(0, maxItems);
     }
 
+    // -------------------- Cache helpers --------------------
     function keyForCache() {
       const k = {
         affiliations: state.affiliations.map(s => s.toLowerCase()).sort(),
         fromYear: state.fromYear,
         toYear: state.toYear,
-        onlyStrictAff: state.onlyStrictAff
+        onlyStrictAff: state.onlyStrictAff,
+        keywordFallback: !!document.getElementById('useKeywordFallback')?.checked
       };
       return 'pubs::' + JSON.stringify(k);
     }
-
     function saveCache(data) {
       try { localStorage.setItem(keyForCache(), JSON.stringify({ t: Date.now(), data })); } catch {}
     }
-
     function loadCache() {
       try { const raw = localStorage.getItem(keyForCache()); return raw ? JSON.parse(raw)?.data : null; } catch { return null; }
     }
 
+    // -------------------- Orchestrate full fetch --------------------
     async function fetchAll() {
+      setProgress('Starting…');
       const affsLower = state.affiliations.map(a => a.toLowerCase());
       const cached = state.useCache ? loadCache() : null;
-      if (cached) { state.data = cached; return; }
+      if (cached) { state.data = cached; setProgress('Loaded from cache'); return; }
 
-      // 1) Primary by affiliation
-      const byAff = await Promise.all(
-        state.affiliations.map(a => fetchForAff(a, state.fromYear, state.toYear).catch(() => []))
-      );
+      // 1) By affiliation (sequential to avoid hammering)
+      const byAff = [];
+      for (const a of state.affiliations) {
+        try { byAff.push(await fetchForAff(a, state.fromYear, state.toYear)); }
+        catch (e) { console.warn('Aff fetch failed', a, e); }
+      }
 
-      // 2) Fallback by keyword (minimal seeds to limit dupes)
-      const keywordSeeds = Array.from(new Set([
-        'UPES',
-        'UPES Dehradun',
-        'University of Petroleum and Energy Studies',
-        'University of Petroleum & Energy Studies'
-      ]));
-
-      const byKeyword = await Promise.all(
-        keywordSeeds.map(k => fetchByKeyword(k, state.fromYear, state.toYear).catch(() => []))
-      );
+      // 2) By keyword (optional; OFF by default)
+      const byKeyword = [];
+      if (document.getElementById('useKeywordFallback')?.checked) {
+        const keywordSeeds = Array.from(new Set([
+          'UPES',
+          'UPES Dehradun',
+          'University of Petroleum and Energy Studies',
+          'University of Petroleum & Energy Studies'
+        ]));
+        for (const k of keywordSeeds) {
+          try { byKeyword.push(await fetchByKeyword(k, state.fromYear, state.toYear)); }
+          catch (e) { console.warn('Keyword fetch failed', k, e); }
+        }
+      }
 
       // 3) Merge + de-dup (DOI or title+year)
       const all = [...byAff.flat(), ...byKeyword.flat()];
-
       const keyFrom = (it) => {
         if (it.doi) return `doi:${it.doi.toLowerCase()}`;
         const t = (it.title || '').toLowerCase().replace(/\s+/g, ' ').trim();
         const y = it.year || '';
         return `ty:${t}|${y}`;
       };
-
       const map = new Map();
       for (const it of all) {
         if (state.onlyStrictAff) {
@@ -508,9 +523,9 @@
         const k = keyFrom(it);
         if (!map.has(k)) map.set(k, it);
       }
-
       state.data = Array.from(map.values());
       saveCache(state.data);
+      setProgress(`Done. ${state.data.length} unique records.`);
     }
 
     // -------------------- UI + charts + table --------------------
@@ -569,10 +584,10 @@
 
       const byA = {};
       shownRows.forEach(x => x.authors.forEach(a => { byA[a] = (byA[a]||0)+1; }));
-      const topA = Object.entries(byA).sort((a,b)=>b[1]-a[1]).slice(0,10);
+      const topA = Object.entries(byA).sort((a,b)=>b[1]-b[0]).slice(0,10);
       state.charts.topA = new Chart(document.getElementById('chartTopAuthors'), {
         type: 'bar',
-        data: { labels: topA.map(x=>x[0]), datasets: [{ label:'Count', data: topA.map(x=>x[1]) }] },
+        data: { labels: Object.keys(byA).slice(0,10), datasets: [{ label:'Count', data: Object.values(byA).slice(0,10) }] },
         options: { indexAxis: 'y', plugins: { legend: { display:false } }, scales: { x: { beginAtZero:true } } }
       });
     }
@@ -612,7 +627,7 @@
       const q = document.getElementById('searchBox').value.trim().toLowerCase();
       const qQuartile = document.getElementById('quartileFilter').value;
 
-      // Base set (year range applied below)
+      // Base set (year range applied)
       let rows = state.data.filter(x => x.year && x.year >= state.fromYear && x.year <= state.toYear);
 
       // Re-assign quartiles in case the map changed
@@ -686,6 +701,10 @@
       state.onlyStrictAff = document.getElementById('onlyWithAffInAuthors').checked;
       state.useCache = document.getElementById('useCache').checked;
 
+      // reset any previous run
+      abortAll();
+      setProgress('Preparing…');
+
       const btn = document.getElementById('loadBtn');
       btn.disabled = true; btn.innerHTML = '<svg class="animate-spin h-4 w-4" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v4a4 4 0 00-4 4H4z"></path></svg> Loading…';
 
@@ -693,15 +712,27 @@
         await fetchAll();
         applyAllFiltersAndRender();
       } catch (e) {
-        alert('Failed to load publications: ' + e.message);
+        if (e.name === 'AbortError') {
+          setProgress('Canceled.');
+        } else {
+          alert('Failed to load publications: ' + e.message);
+        }
       } finally {
+        abortAll();
         btn.disabled = false; btn.innerHTML = '<i data-lucide="download"></i> Load publications'; lucide.createIcons();
+        // leave progress text as-is; clear it after a short delay
+        setTimeout(() => setProgress(''), 2000);
       }
     }
 
     // -------------------- Event wiring --------------------
     document.addEventListener('DOMContentLoaded', async () => {
-      setDefaults();
+      // Defaults
+      document.getElementById('useKeywordFallback').checked = false; // OFF by default
+      document.getElementById('fromYear').value = state.fromYear;
+      document.getElementById('toYear').value = state.toYear;
+
+      // UI init
       renderAffPills();
       await autoLoadSJR();   // auto-load SJR map if present in repo root
       runLoad();
@@ -717,7 +748,9 @@
         state.affiliations = [...DEFAULT_AFFILIATIONS];
         state.fromYear = 2015; state.toYear = new Date().getFullYear();
         state.onlyStrictAff = false; state.useCache = true; state.data = []; state.filtered = [];
-        setDefaults();
+        document.getElementById('fromYear').value = state.fromYear;
+        document.getElementById('toYear').value = state.toYear;
+        renderAffPills();
         document.getElementById('pubBody').innerHTML = '';
         document.getElementById('kpiGrid').innerHTML = '';
         Object.values(state.charts).forEach(ch => { try { ch.destroy(); } catch {} });
@@ -725,6 +758,8 @@
       };
 
       document.getElementById('loadBtn').onclick = runLoad;
+      document.getElementById('cancelBtn').onclick = () => { abortAll(); setProgress('Canceled.'); };
+
       document.getElementById('exportCsv').onclick = exportCSV;
       document.getElementById('exportJson').onclick = exportJSON;
       document.getElementById('searchBox').addEventListener('input', applyAllFiltersAndRender);
@@ -746,6 +781,24 @@
         if (e.target.files && e.target.files[0]) handleSjrUpload(e.target.files[0]);
       });
     });
+
+    // Render affiliation pills
+    function renderAffPills() {
+      const wrap = document.getElementById('affPills');
+      wrap.innerHTML = '';
+      state.affiliations.forEach((aff, idx) => {
+        const pill = document.createElement('div');
+        pill.className = 'group inline-flex items-center gap-2 bg-slate-100 hover:bg-slate-200 text-slate-800 px-3 py-1 rounded-full';
+        pill.innerHTML = `<span class="text-xs">${aff}</span>`;
+        const x = document.createElement('button');
+        x.className = 'rounded-full p-1 hover:bg-white';
+        x.innerHTML = '<i data-lucide="x" class="w-4 h-4"></i>';
+        x.onclick = () => { state.affiliations.splice(idx,1); renderAffPills(); };
+        pill.appendChild(x);
+        wrap.appendChild(pill);
+      });
+      lucide.createIcons();
+    }
   </script>
 </body>
 </html>
