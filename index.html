@@ -14,8 +14,9 @@
   <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
 
   <style>
-    .glass { background: linear-gradient(180deg, rgba(255,255,255,.75), rgba(248,250,252,.85)); backdrop-filter: blur(10px); }
-    .card  { background: rgba(255,255,255,.85); border:1px solid rgba(226,232,240,.9); border-radius:16px; box-shadow: 0 10px 20px rgba(2,6,23,.06); }
+    /* AI aesthetic */
+    .card{ background: rgba(255,255,255,.9); border:1px solid rgba(226,232,240,.9);
+           border-radius:16px; box-shadow:0 12px 24px rgba(15,23,42,.06); }
     .thin-scrollbar::-webkit-scrollbar{height:8px;width:8px}
     .thin-scrollbar::-webkit-scrollbar-thumb{background:#CBD5E1;border-radius:6px}
     .thin-scrollbar::-webkit-scrollbar-track{background:#F8FAFC}
@@ -76,11 +77,11 @@
             <h3 class="font-semibold">Publications by Year</h3>
             <span id="rangeText" class="text-xs text-slate-500"></span>
           </div>
-          <div class="mt-2 h-[260px]"><canvas id="chartByYear"></canvas></div>
+          <div class="mt-2 h-[280px]"><canvas id="chartByYear"></canvas></div>
         </div>
         <div class="card p-4">
           <h3 class="font-semibold">Top Journals (view)</h3>
-          <div class="mt-2 h-[260px]"><canvas id="chartTopJournals"></canvas></div>
+          <div class="mt-2 h-[280px]"><canvas id="chartTopJournals"></canvas></div>
         </div>
       </div>
     </section>
@@ -221,7 +222,7 @@
       <div class="grid grid-cols-1 lg:grid-cols-2 gap-4">
         <div class="card p-4">
           <h4 class="font-semibold">SDG Distribution (view)</h4>
-          <div class="mt-2 h-[260px]"><canvas id="chartSDG"></canvas></div>
+          <div class="mt-2 h-[280px]"><canvas id="chartSDG"></canvas></div>
         </div>
         <div class="card p-4">
           <h4 class="font-semibold mb-2">Legend</h4>
@@ -238,7 +239,46 @@
 <script>
   lucide.createIcons();
 
-  // ----------------- STATE -----------------
+  /* ---------------- Chart.js "business" styling helpers ---------------- */
+  // Global tooltip & font style
+  Chart.defaults.font.family = "'Inter', system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial";
+  Chart.defaults.plugins.tooltip.backgroundColor = '#0f172a';
+  Chart.defaults.plugins.tooltip.borderColor = '#334155';
+  Chart.defaults.plugins.tooltip.borderWidth = 1;
+  Chart.defaults.plugins.tooltip.padding = 12;
+  Chart.defaults.plugins.legend.labels.boxWidth = 10;
+
+  // Drop shadow plugin
+  const shadowPlugin = {
+    id: 'shadowPlugin',
+    beforeDatasetsDraw(chart, args, pluginOptions) {
+      const {ctx, chartArea} = chart;
+      ctx.save();
+      ctx.shadowColor = pluginOptions?.shadowColor || 'rgba(2,6,23,.15)';
+      ctx.shadowBlur = pluginOptions?.shadowBlur || 16;
+      ctx.shadowOffsetX = pluginOptions?.offsetX || 0;
+      ctx.shadowOffsetY = pluginOptions?.offsetY || 8;
+    },
+    afterDatasetsDraw(chart, args, pluginOptions) {
+      chart.ctx.restore();
+    }
+  };
+  Chart.register(shadowPlugin);
+
+  function gradientVertical(ctx, colorTop='#6366f1', colorBottom='#a855f7'){
+    const g = ctx.createLinearGradient(0, 0, 0, ctx.canvas.height);
+    g.addColorStop(0, colorTop);
+    g.addColorStop(1, colorBottom);
+    return g;
+  }
+  function gradientHorizontal(ctx, colorLeft='#14b8a6', colorRight='#06b6d4'){
+    const g = ctx.createLinearGradient(0, 0, ctx.canvas.width, 0);
+    g.addColorStop(0, colorLeft);
+    g.addColorStop(1, colorRight);
+    return g;
+  }
+
+  /* --------------------- STATE --------------------- */
   let all = [];
   let filtered = [];
   let currentPage = 1;
@@ -272,7 +312,7 @@
   // Charts
   let chartByYear=null, chartTopJournals=null, chartSDG=null;
 
-  // ----------------- SDG KEYWORDS (heuristic) -----------------
+  // SDGs
   const SDG_LIST = [
     { id:1,  name:'No Poverty',                   kw:['poverty','low-income','income inequality'] },
     { id:2,  name:'Zero Hunger',                  kw:['hunger','food security','malnutrition','agriculture','crop','farm'] },
@@ -294,17 +334,11 @@
   ];
   const SDG_COLORS = {1:'#E5243B',2:'#DDA63A',3:'#4C9F38',4:'#C5192D',5:'#FF3A21',6:'#26BDE2',7:'#FCC30B',8:'#A21942',9:'#FD6925',10:'#DD1367',11:'#FD9D24',12:'#BF8B2E',13:'#3F7E44',14:'#0A97D9',15:'#56C02B',16:'#00689D',17:'#19486A'};
 
-  // ----------------- Retraction detection (heuristic for notices) -----------------
-  const RETRACT_PREFIXES = [
-    /^retraction\s*note\s*:/i,
-    /^retraction\s*of\s*:/i,
-    /^retraction\s*:/i,
-    /^notice\s+of\s+retraction\s*:/i,
-    /^withdrawn\s*:/i,
-  ];
+  // Retraction detection
+  const RETRACT_PREFIXES = [/^retraction\s*note\s*:/i,/^retraction\s*of\s*:/i,/^retraction\s*:/i,/^notice\s+of\s+retraction\s*:/i,/^withdrawn\s*:/i];
   const DOI_REGEX = /\b10\.\d{4,9}\/\S+\b/i;
 
-  // ----------------- TABS -----------------
+  /* ---------------- Tabs ---------------- */
   function switchTab(name){
     const tabs=['overview','publications','quartiles','sdg'];
     for (const t of tabs){
@@ -317,7 +351,7 @@
     if (name==='sdg') renderSDGChart();
   }
 
-  // ----------------- LOAD DATA -----------------
+  /* --------------- Load data --------------- */
   async function autoLoad(){
     try{
       const res = await fetch('institution_data.json', { cache:'no-store' });
@@ -329,28 +363,24 @@
 
       all = Array.isArray(j.items) ? j.items : [];
 
-      // Heuristics: mark retraction_notice + pair
+      // build retraction index + SDGs
       buildRetractionIndex(all);
-
-      // SDGs
       for (const p of all) p.sdg_tags = guessSDGs(p);
 
       document.getElementById('kpiTotal').textContent = num(all.length);
 
-      // Year filter
+      // year options
       const years = [...new Set(all.map(x=>x.year).filter(Boolean))].sort((a,b)=>b-a);
       document.getElementById('yearFilter').innerHTML =
         '<option value="">All years</option>' + years.map(y=>`<option>${y}</option>`).join('');
 
-      // SDG filter options
+      // SDG options
       const opts = SDG_LIST.map(s=>`<option value="${s.id}">${s.id}. ${s.name}</option>`).join('');
       document.getElementById('sdgFilter').innerHTML = '<option value="">All SDGs</option>' + opts;
       document.getElementById('sdgOnlyFilter').innerHTML = '<option value="">All SDGs</option>' + opts;
 
-      // Page size
       pageSize = parseInt(document.getElementById('pageSize').value,10) || 50;
 
-      // Build columns UI and render
       buildColumnsPanel();
       buildSDGLegend();
       applyFilters(1);
@@ -360,9 +390,7 @@
     }
   }
 
-  // Build an index for retraction matching
   function buildRetractionIndex(items){
-    // normalize title -> object
     const mapByTitle = new Map();
     const mapByDOI   = new Map();
     for (const p of items){
@@ -370,49 +398,29 @@
       const nt = normTitle(p.title||'');
       if (nt) mapByTitle.set(nt, p);
     }
-
     for (const p of items){
       const title = p.title || '';
-      const nt = normTitle(title);
       p.retraction_notice = isRetractionNotice(title);
-      p.retracted_by = null;     // (for originals) -> DOI/title of its retraction notice
-      p.retraction_of = null;    // (for notices)   -> DOI/title of original
-
+      p.retracted_by = null; p.retraction_of = null;
       if (p.retraction_notice){
-        // try to extract DOI of the original article from the notice title
         const m = title.match(DOI_REGEX);
         if (m){
           const target = mapByDOI.get(m[0].toLowerCase());
-          if (target){
-            p.retraction_of = { doi: target.doi, title: target.title };
-            target.retracted_by = { doi: p.doi, title: p.title };
-          }
+          if (target){ p.retraction_of = { doi: target.doi, title: target.title }; target.retracted_by = { doi: p.doi, title: p.title }; }
         } else {
-          // fallback: remove prefix and match by normalized title
           const stripped = stripRetractionPrefix(title);
           const candidate = mapByTitle.get(normTitle(stripped));
-          if (candidate){
-            p.retraction_of = { doi: candidate.doi, title: candidate.title };
-            candidate.retracted_by = { doi: p.doi, title: p.title };
-          }
+          if (candidate){ p.retraction_of = { doi: candidate.doi, title: candidate.title }; candidate.retracted_by = { doi: p.doi, title: p.title }; }
         }
       }
     }
   }
-
-  function isRetractionNotice(title){
-    const t = String(title||'');
-    return RETRACT_PREFIXES.some(rx => rx.test(t));
-  }
+  function isRetractionNotice(title){ return RETRACT_PREFIXES.some(rx => rx.test(String(title||''))); }
   function stripRetractionPrefix(title){
-    let t = String(title||'');
-    for (const rx of RETRACT_PREFIXES){
-      if (rx.test(t)) return t.replace(rx, '').trim();
-    }
-    return t;
+    let t=String(title||''); for (const rx of RETRACT_PREFIXES){ if (rx.test(t)) return t.replace(rx,'').trim(); } return t;
   }
 
-  // ----------------- FILTERS / SEARCH / PAGING -----------------
+  /* --------------- Filters / Search / Paging --------------- */
   function applyFilters(goToPage=1){
     const q = (document.getElementById('searchBox')?.value || '').toLowerCase().trim();
     const year = document.getElementById('yearFilter')?.value || '';
@@ -422,23 +430,11 @@
     filtered = all.filter(p=>{
       if (year && String(p.year)!==year) return false;
       if (sdg && !(p.sdg_tags||[]).includes(Number(sdg))) return false;
-
-      // retraction modes
-      if (retractMode === 'exclude'){
-        if (p.is_retracted || p.retraction_notice) return false;
-      } else if (retractMode === 'only_retracted'){
-        if (!p.is_retracted) return false;
-      } else if (retractMode === 'only_notices'){
-        if (!p.retraction_notice) return false;
-      }
-
+      if (retractMode === 'exclude'){ if (p.is_retracted || p.retraction_notice) return false; }
+      else if (retractMode === 'only_retracted'){ if (!p.is_retracted) return false; }
+      else if (retractMode === 'only_notices'){ if (!p.retraction_notice) return false; }
       if (q){
-        const hay = [
-          p.title||'',
-          p.journal||'',
-          p.doi||'',
-          ...(p.authors||[])
-        ].join(' ').toLowerCase();
+        const hay = [p.title||'',p.journal||'',p.doi||'',...(p.authors||[])].join(' ').toLowerCase();
         if (!hay.includes(q)) return false;
       }
       return true;
@@ -446,7 +442,6 @@
 
     if (haveSJR){ for (const p of filtered) p.quartile = resolveQuartile(p); }
 
-    // KPIs
     document.getElementById('kpiView').textContent = num(filtered.length);
     document.getElementById('kpiRetr').textContent = num(filtered.filter(x=>x.is_retracted || x.retraction_notice).length);
     const journals = new Set(filtered.map(x=>(x.journal||'').trim()).filter(Boolean));
@@ -459,65 +454,43 @@
     updateCoverage();
   }
 
-  function changePageSize(){ pageSize = parseInt(document.getElementById('pageSize').value,10) || 50; currentPage = 1; renderTable(); }
-  function totalPages(){ return Math.max(1, Math.ceil(filtered.length / pageSize)); }
+  function changePageSize(){ pageSize = parseInt(document.getElementById('pageSize').value,10) || 50; currentPage=1; renderTable(); }
+  function totalPages(){ return Math.max(1, Math.ceil(filtered.length/pageSize)); }
   function goFirst(){ currentPage = 1; renderTable(); }
   function goPrev(){ if (currentPage>1) currentPage--; renderTable(); }
   function goNext(){ if (currentPage<totalPages()) currentPage++; renderTable(); }
   function goLast(){ currentPage = totalPages(); renderTable(); }
 
-  // ----------------- TABLE (dynamic columns) -----------------
+  /* --------------- Table (dynamic columns) --------------- */
   function renderTable(){
-    // HEAD
-    const head = document.getElementById('pubHeadRow');
-    head.innerHTML = '';
-    for (const col of selectedColumns) {
-      const th = document.createElement('th');
-      th.className = 'text-left px-4 py-2';
-      th.textContent = col.label;
-      head.appendChild(th);
-    }
+    const head=document.getElementById('pubHeadRow'); head.innerHTML='';
+    for (const col of selectedColumns){ const th=document.createElement('th'); th.className='text-left px-4 py-2'; th.textContent=col.label; head.appendChild(th); }
 
-    // BODY
-    const start = (currentPage-1)*pageSize;
-    const end   = Math.min(start+pageSize, filtered.length);
-    const rows  = filtered.slice(start,end);
+    const start=(currentPage-1)*pageSize, end=Math.min(start+pageSize, filtered.length);
+    const rows=filtered.slice(start,end);
 
-    const body = document.getElementById('pubBody');
-    body.innerHTML = '';
+    const body=document.getElementById('pubBody'); body.innerHTML='';
     for (const p of rows){
-      const tds = selectedColumns.map(col => `<td class="px-4 py-2">${renderCell(col.key, p)}</td>`).join('');
-      const tr = document.createElement('tr');
-      tr.className = 'border-b border-slate-100 hover:bg-slate-50';
-      tr.innerHTML = tds;
-      body.appendChild(tr);
+      const tds = selectedColumns.map(col=>`<td class="px-4 py-2">${renderCell(col.key,p)}</td>`).join('');
+      const tr=document.createElement('tr'); tr.className='border-b border-slate-100 hover:bg-slate-50'; tr.innerHTML=tds; body.appendChild(tr);
     }
 
-    // Info
-    const info = `Page ${currentPage} / ${totalPages()}`;
-    document.getElementById('pageInfo').textContent = info;
-
-    const rangeText = filtered.length
-      ? `Showing ${num(start+1)}–${num(end)} of ${num(filtered.length)} (filtered)`
-      : `Showing 0 of 0`;
-    document.getElementById('countInfo').textContent = rangeText;
-    document.getElementById('rangeText').textContent = rangeText;
+    document.getElementById('pageInfo').textContent = `Page ${currentPage} / ${totalPages()}`;
+    document.getElementById('countInfo').textContent = filtered.length
+      ? `Showing ${num(start+1)}–${num(end)} of ${num(filtered.length)} (filtered)` : `Showing 0 of 0`;
+    document.getElementById('rangeText').textContent = document.getElementById('countInfo').textContent;
   }
 
-  function renderCell(key, p){
+  function renderCell(key,p){
     switch(key){
       case 'year': return p.year ?? '';
-      case 'title':
-        return p.url ? `<a class="text-indigo-600 hover:underline" href="${p.url}" target="_blank">${esc(p.title||'')}</a>` : esc(p.title||'');
+      case 'title': return p.url ? `<a class="text-indigo-600 hover:underline" href="${p.url}" target="_blank">${esc(p.title||'')}</a>` : esc(p.title||'');
       case 'journal': return esc(p.journal||'');
       case 'authors': return esc((p.authors||[]).join(', '));
       case 'citations': return p.citations ?? 0;
       case 'quartile': return esc(p.quartile || '');
       case 'retraction_info': return renderRetractionInfo(p);
-      case 'is_retracted':
-        return p.is_retracted
-          ? '<span class="px-2 py-0.5 rounded-md bg-rose-50 text-rose-700 border border-rose-200 text-xs">Yes</span>'
-          : 'No';
+      case 'is_retracted': return p.is_retracted ? '<span class="badge" style="border-color:#ef4444;background:#fff;color:#b91c1c">Yes</span>' : 'No';
       case 'type': return esc(p.type || '');
       case 'doi': return esc(p.doi || '');
       case 'url': return p.url ? `<a class="text-indigo-600" href="${p.url}" target="_blank">Open</a>` : '';
@@ -528,50 +501,20 @@
     }
   }
 
-  function renderRetractionInfo(p){
-    const parts = [];
-    if (p.retraction_notice){
-      parts.push('<span class="badge" style="border-color:#ef4444;background:#fff;color:#b91c1c">Retraction notice</span>');
-      if (p.retraction_of){
-        const t = esc(p.retraction_of.title || '');
-        const d = p.retraction_of.doi ? `<a href="https://doi.org/${p.retraction_of.doi}" target="_blank">${esc(p.retraction_of.doi)}</a>` : '';
-        parts.push(`<div class="text-xs text-slate-600 mt-1">of: ${t} ${d}</div>`);
-      }
-    }
-    if (p.is_retracted){
-      parts.push('<span class="badge" style="border-color:#ef4444;background:#fff;color:#b91c1c">Retracted (OpenAlex)</span>');
-      if (p.retracted_by){
-        const t = esc(p.retracted_by.title || '');
-        const d = p.retracted_by.doi ? `<a href="https://doi.org/${p.retracted_by.doi}" target="_blank">${esc(p.retracted_by.doi)}</a>` : '';
-        parts.push(`<div class="text-xs text-slate-600 mt-1">by: ${t} ${d}</div>`);
-      }
-    }
-    return parts.join(' ') || '';
-  }
-
-  // ----------------- COLUMNS UI -----------------
+  /* --------------- Column chooser --------------- */
   function buildColumnsPanel(){
-    const container = document.getElementById('columnsList');
-    container.innerHTML = '';
-    const selectedKeys = new Set(selectedColumns.map(c=>c.key));
+    const container=document.getElementById('columnsList'); container.innerHTML='';
+    const selectedKeys=new Set(selectedColumns.map(c=>c.key));
     for (const col of ALL_COLUMNS){
-      const id = `col_${col.key}`;
-      const checked = selectedKeys.has(col.key) ? 'checked' : '';
+      const id=`col_${col.key}`, checked=selectedKeys.has(col.key)?'checked':'';
       container.insertAdjacentHTML('beforeend', `
-        <label class="flex items-center gap-2">
-          <input type="checkbox" id="${id}" ${checked}/>
-          <span>${col.label}</span>
-        </label>
+        <label class="flex items-center gap-2"><input type="checkbox" id="${id}" ${checked}/><span>${col.label}</span></label>
       `);
     }
   }
   function toggleColumnsPanel(){ document.getElementById('columnsPanel').classList.toggle('hidden'); }
   function applyColumnSelection(){
-    const chosen=[];
-    for (const col of ALL_COLUMNS){
-      const box=document.getElementById(`col_${col.key}`);
-      if (box && box.checked) chosen.push({key:col.key,label:col.label});
-    }
+    const chosen=[]; for (const col of ALL_COLUMNS){ const box=document.getElementById(`col_${col.key}`); if (box && box.checked) chosen.push({key:col.key,label:col.label}); }
     selectedColumns = chosen.length ? chosen : ALL_COLUMNS.filter(c=>c.default).map(c=>({key:c.key,label:c.label}));
     saveSelectedColumns(); toggleColumnsPanel(); renderTable();
   }
@@ -582,95 +525,117 @@
   function saveSelectedColumns(){ try{ localStorage.setItem('pub_columns', JSON.stringify(selectedColumns)); }catch{} }
   function loadSelectedColumns(){
     try{
-      const s=localStorage.getItem('pub_columns');
-      if (s){
-        const arr=JSON.parse(s);
-        const valid=new Map(ALL_COLUMNS.map(c=>[c.key,c.label]));
+      const s=localStorage.getItem('pub_columns'); if (s){
+        const arr=JSON.parse(s); const valid=new Map(ALL_COLUMNS.map(c=>[c.key,c.label]));
         return arr.filter(x=>valid.has(x.key)).map(x=>({key:x.key,label:valid.get(x.key)}));
       }
     }catch{}
     return ALL_COLUMNS.filter(c=>c.default).map(c=>({key:c.key,label:c.label}));
   }
 
-  // ----------------- CHARTS -----------------
+  /* --------------- Charts (modern style) --------------- */
   function renderOverviewCharts(){
+    // Publications by Year
+    const ctxY = document.getElementById('chartByYear').getContext('2d');
     const byYear={}; for (const p of filtered){ if (p.year) byYear[p.year]=(byYear[p.year]||0)+1; }
     const labelsY = Object.keys(byYear).sort((a,b)=>a-b);
     const dataY   = labelsY.map(y=>byYear[y]);
     if (chartByYear) chartByYear.destroy();
-    chartByYear = new Chart(document.getElementById('chartByYear'), {
-      type:'bar', data:{ labels:labelsY, datasets:[{ label:'Publications', data:dataY }] },
-      options:{ responsive:true, maintainAspectRatio:false, scales:{ y:{ beginAtZero:true } } }
+    const gradY = gradientVertical(ctxY, '#6366f1', '#a855f7'); // indigo -> purple
+
+    chartByYear = new Chart(ctxY, {
+      type:'bar',
+      data:{ labels:labelsY, datasets:[{ label:'Publications', data:dataY, borderRadius:12, borderSkipped:false, backgroundColor:gradY }] },
+      options:{
+        responsive:true, maintainAspectRatio:false,
+        plugins:{ legend:{display:false}, shadowPlugin:{}, tooltip:{mode:'index', intersect:false} },
+        scales:{
+          x:{ grid:{ display:false }, ticks:{ color:'#334155' } },
+          y:{ grid:{ color:'#e2e8f0' }, ticks:{ color:'#334155' }, beginAtZero:true }
+        }
+      },
+      plugins:[{id:'shadowPlugin'}]
     });
 
+    // Top Journals (horizontal)
+    const ctxJ = document.getElementById('chartTopJournals').getContext('2d');
     const counts={}; for (const p of filtered){ const j=(p.journal||'').trim(); if (j) counts[j]=(counts[j]||0)+1; }
     const top = Object.entries(counts).sort((a,b)=>b[1]-a[1]).slice(0,10);
-    const labelsJ = top.map(x=>x[0]), dataJ = top.map(x=>x[1]);
+    const labelsJ = top.map(x=>x[0]);
+    const dataJ   = top.map(x=>x[1]);
     if (chartTopJournals) chartTopJournals.destroy();
-    chartTopJournals = new Chart(document.getElementById('chartTopJournals'), {
-      type:'bar', data:{ labels:labelsJ, datasets:[{ label:'Count', data:dataJ }] },
-      options:{ responsive:true, maintainAspectRatio:false, indexAxis:'y', scales:{ x:{ beginAtZero:true } } }
+    const gradJ = gradientHorizontal(ctxJ, '#14b8a6', '#06b6d4'); // teal -> cyan
+
+    chartTopJournals = new Chart(ctxJ, {
+      type:'bar',
+      data:{ labels:labelsJ, datasets:[{ label:'Count', data:dataJ, borderRadius:12, borderSkipped:false, backgroundColor:gradJ }] },
+      options:{
+        indexAxis:'y', responsive:true, maintainAspectRatio:false,
+        plugins:{ legend:{display:false}, shadowPlugin:{}, tooltip:{mode:'nearest', intersect:false} },
+        scales:{
+          x:{ grid:{ color:'#e2e8f0' }, ticks:{ color:'#334155' }, beginAtZero:true },
+          y:{ grid:{ display:false }, ticks:{ color:'#334155' } }
+        }
+      },
+      plugins:[{id:'shadowPlugin'}]
     });
   }
 
-  // ----------------- SDG MAPPING -----------------
+  function renderSDGChart(){
+    const ctx = document.getElementById('chartSDG').getContext('2d');
+    const counts = new Array(18).fill(0);
+    for (const p of filtered){ for (const id of (p.sdg_tags||[])) counts[id]++; }
+    const labels = SDG_LIST.map(s=>`${s.id}`);
+    const data   = SDG_LIST.map(s=>counts[s.id]||0);
+    if (chartSDG) chartSDG.destroy();
+
+    const colors = SDG_LIST.map(s=>SDG_COLORS[s.id]);
+    chartSDG = new Chart(ctx, {
+      type:'bar',
+      data:{ labels, datasets:[{ label:'Count', data, borderRadius:12, borderSkipped:false, backgroundColor:colors }] },
+      options:{
+        responsive:true, maintainAspectRatio:false,
+        plugins:{ legend:{display:false}, shadowPlugin:{}, tooltip:{mode:'index', intersect:false} },
+        scales:{
+          x:{ grid:{ display:false }, ticks:{ color:'#334155' } },
+          y:{ grid:{ color:'#e2e8f0' }, ticks:{ color:'#334155' }, beginAtZero:true }
+        }
+      },
+      plugins:[{id:'shadowPlugin'}]
+    });
+  }
+
+  /* --------------- SDG mapping --------------- */
   function guessSDGs(p){
-    const text = [
-      (p.title||''),
-      (p.journal||''),
-      extractSubjects(p)
-    ].join(' ').toLowerCase();
-    const hits=[];
-    for (const s of SDG_LIST){
-      for (const kw of s.kw){
-        if (text.includes(kw.toLowerCase())){ hits.push(s.id); break; }
-      }
-    }
+    const text = [(p.title||''),(p.journal||''),extractSubjects(p)].join(' ').toLowerCase();
+    const hits=[]; for (const s of SDG_LIST){ for (const kw of s.kw){ if (text.includes(kw.toLowerCase())){ hits.push(s.id); break; } } }
     return Array.from(new Set(hits)).slice(0,2);
   }
   function renderSDGBadges(ids){
     if (!ids.length) return '';
-    return ids.map(id=>`<span class="badge" style="border-color:${SDG_COLORS[id]};background-color:#fff">${id}</span>`).join(' ');
+    return ids.map(id=>`<span class="badge" style="border-color:${SDG_COLORS[id]};background:#fff">${id}</span>`).join(' ');
   }
   function buildSDGLegend(){
     const box=document.getElementById('sdgLegend'); box.innerHTML='';
     for (const s of SDG_LIST){
-      box.insertAdjacentHTML('beforeend', `
-        <span class="badge" title="${s.name}" style="border-color:${SDG_COLORS[s.id]};background-color:#fff">
-          ${s.id} — ${s.name}
-        </span>
-      `);
+      box.insertAdjacentHTML('beforeend', `<span class="badge" title="${s.name}" style="border-color:${SDG_COLORS[s.id]};background:#fff">${s.id} — ${s.name}</span>`);
     }
   }
-  function renderSDGChart(){
-    const counts = new Array(18).fill(0);
-    for (const p of filtered){ for (const id of (p.sdg_tags||[])) counts[id]++; }
-    const labels = SDG_LIST.map(s=>`${s.id}`), data = SDG_LIST.map(s=>counts[s.id]||0);
-    if (chartSDG) chartSDG.destroy();
-    chartSDG = new Chart(document.getElementById('chartSDG'), {
-      type:'bar', data:{ labels, datasets:[{ label:'Count', data }] },
-      options:{ responsive:true, maintainAspectRatio:false, scales:{ y:{ beginAtZero:true } } }
-    });
-  }
 
-  // ----------------- QUARTILES (upload & mapping) -----------------
+  /* --------------- Quartiles (upload & map) --------------- */
   document.getElementById('sjrFile').addEventListener('change', async (e)=>{
     const file=e.target.files[0]; if(!file) return;
     const name=file.name.toLowerCase(); const text=await file.text();
     sjrByIssn.clear(); sjrByTitle.clear(); haveSJR=false;
-
     try{
       if (name.endsWith('.json')) { const arr=JSON.parse(text); for (const row of arr) addQuartileRow(row); }
       else if (name.endsWith('.csv')){ parseCSV(text, addQuartileRow); }
       else { throw new Error('Unsupported file type'); }
       haveSJR = (sjrByIssn.size + sjrByTitle.size) > 0;
-      document.getElementById('sjrStatus').textContent =
-        `Loaded ${sjrByIssn.size} ISSN entries and ${sjrByTitle.size} title entries`;
+      document.getElementById('sjrStatus').textContent = `Loaded ${sjrByIssn.size} ISSN entries and ${sjrByTitle.size} title entries`;
       applyFilters();
       updateCoverage();
-    }catch(err){
-      document.getElementById('sjrStatus').textContent = 'Failed: ' + err.message;
-    }
+    }catch(err){ document.getElementById('sjrStatus').textContent = 'Failed: ' + err.message; }
   });
 
   function addQuartileRow(row){
@@ -681,14 +646,14 @@
     if (title && q) sjrByTitle.set(title, q);
   }
   function parseCSV(text, onRow){
-    const lines = text.split(/\r?\n/).filter(Boolean);
-    const header = lines.shift().split(',').map(h=>h.trim().toLowerCase());
-    const idxTitle = header.findIndex(h=>/title|journal/.test(h));
-    const idxIssn  = header.findIndex(h=>/issn/.test(h));
-    const idxQuart = header.findIndex(h=>/quartile|q$/.test(h));
+    const lines=text.split(/\r?\n/).filter(Boolean);
+    const header=lines.shift().split(',').map(h=>h.trim().toLowerCase());
+    const idxTitle=header.findIndex(h=>/title|journal/.test(h));
+    const idxIssn =header.findIndex(h=>/issn/.test(h));
+    const idxQuart=header.findIndex(h=>/quartile|q$/.test(h));
     if (idxQuart<0 || (idxTitle<0 && idxIssn<0)) throw new Error('CSV must include Title/ISSN and Quartile columns');
     for (const line of lines){
-      const cols = splitCsv(line);
+      const cols=splitCsv(line);
       onRow({ title: idxTitle>=0?cols[idxTitle]:'', issn: idxIssn>=0?cols[idxIssn]:'', quartile: idxQuart>=0?cols[idxQuart]:'' });
     }
   }
@@ -709,12 +674,34 @@
     return '';
   }
   function updateCoverage(){
-    let mapped=0, total=filtered.length; for (const p of filtered) if (p.quartile) mapped++;
-    const pct = total? Math.round(mapped*100/total):0;
+    let mapped=0,total=filtered.length; for (const p of filtered) if (p.quartile) mapped++;
+    const pct= total? Math.round(mapped*100/total):0;
     const el=document.getElementById('mapCoverage'); if (el) el.textContent = `${mapped} / ${total} in current view mapped (${pct}%)`;
   }
 
-  // ----------------- EXPORT -----------------
+  /* --------------- Retraction info rendering --------------- */
+  function renderRetractionInfo(p){
+    const parts=[];
+    if (p.retraction_notice){
+      parts.push('<span class="badge" style="border-color:#ef4444;background:#fff;color:#b91c1c">Retraction notice</span>');
+      if (p.retraction_of){
+        const t = esc(p.retraction_of.title || '');
+        const d = p.retraction_of.doi ? `<a href="https://doi.org/${p.retraction_of.doi}" target="_blank">${esc(p.retraction_of.doi)}</a>` : '';
+        parts.push(`<div class="text-xs text-slate-600 mt-1">of: ${t} ${d}</div>`);
+      }
+    }
+    if (p.is_retracted){
+      parts.push('<span class="badge" style="border-color:#ef4444;background:#fff;color:#b91c1c">Retracted (OpenAlex)</span>');
+      if (p.retracted_by){
+        const t = esc(p.retracted_by.title || '');
+        const d = p.retracted_by.doi ? `<a href="https://doi.org/${p.retracted_by.doi}" target="_blank">${esc(p.retracted_by.doi)}</a>` : '';
+        parts.push(`<div class="text-xs text-slate-600 mt-1">by: ${t} ${d}</div>`);
+      }
+    }
+    return parts.join(' ') || '';
+  }
+
+  /* --------------- Export --------------- */
   function exportCSV(){
     if (!filtered.length) return;
     const start=(currentPage-1)*pageSize, end=Math.min(start+pageSize, filtered.length);
@@ -728,12 +715,11 @@
   function exportJSON(){
     const start=(currentPage-1)*pageSize, end=Math.min(start+pageSize, filtered.length);
     const rows = filtered.slice(start,end).map(r=>{
-      const obj={}; for (const c of selectedColumns){ obj[c.key] = rawForExport(c.key, r); }
-      return obj;
+      const obj={}; for (const c of selectedColumns){ obj[c.key] = rawForExport(c.key, r); } return obj;
     });
     downloadBlob('publications_view.json', JSON.stringify(rows,null,2), 'application/json');
   }
-  function textForExport(key, p){
+  function textForExport(key,p){
     switch(key){
       case 'authors': return (p.authors||[]).join('; ');
       case 'issns':   return (p.issns||[]).join('; ');
@@ -744,19 +730,16 @@
       default: return rawForExport(key, p) ?? '';
     }
   }
-  function rawForExport(key, p){
+  function rawForExport(key,p){
     if (key==='subjects') return extractSubjects(p);
     if (key==='retraction_info') return stripHtml(renderRetractionInfo(p));
     return p[key];
   }
 
-  // ----------------- UTILS -----------------
+  /* --------------- Utils --------------- */
   function esc(s){ return String(s).replace(/[&<>"']/g, m=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m])); }
   function q(s){ return `"${String(s).replace(/"/g,'""')}"`; }
-  function downloadBlob(name, content, type){
-    const blob = new Blob([content],{type}); const a=document.createElement('a');
-    a.href=URL.createObjectURL(blob); a.download=name; a.click(); URL.revokeObjectURL(a.href);
-  }
+  function downloadBlob(name, content, type){ const blob=new Blob([content],{type}); const a=document.createElement('a'); a.href=URL.createObjectURL(blob); a.download=name; a.click(); URL.revokeObjectURL(a.href); }
   function num(n){ return (n||0).toLocaleString(); }
   function normTitle(t){ return String(t||'').toLowerCase().replace(/\s+/g,' ').trim(); }
   function normIssn(s){ const x=String(s||'').replace(/[^0-9xX]/g,'').toUpperCase(); return x.length===8? x.slice(0,4)+'-'+x.slice(4): (x.length===7? x.slice(0,3)+'-'+x.slice(3): ''); }
@@ -764,8 +747,7 @@
   function extractSubjects(p){
     if (Array.isArray(p.subjects) && p.subjects.length) return p.subjects.slice(0,3).join(', ');
     if (Array.isArray(p.concepts) && p.concepts.length){
-      const arr = p.concepts.map(c=>c.display_name||c.name||'').filter(Boolean).slice(0,3);
-      return arr.join(', ');
+      const arr = p.concepts.map(c=>c.display_name||c.name||'').filter(Boolean).slice(0,3); return arr.join(', ');
     }
     return '';
   }
@@ -779,10 +761,7 @@
   });
 
   // Init
-  document.addEventListener('DOMContentLoaded', ()=>{
-    buildSDGLegend();
-    autoLoad();
-  });
+  document.addEventListener('DOMContentLoaded', ()=>{ buildSDGLegend(); autoLoad(); });
 </script>
 </body>
 </html>
