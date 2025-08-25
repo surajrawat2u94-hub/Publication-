@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>UPES Publications Portal</title>
+  <title>Publication Data</title>
   <!-- Tailwind CSS (CDN) -->
   <script src="https://cdn.tailwindcss.com"></script>
   <!-- Icons -->
@@ -19,18 +19,12 @@
   </style>
 </head>
 <body class="bg-slate-50">
-  <!-- HEADER -->
+  <!-- HEADER (minimal) -->
   <header class="sticky top-0 z-20 bg-white/90 backdrop-blur border-b border-slate-200">
     <div class="max-w-7xl mx-auto px-4 py-4 flex items-center justify-between">
-      <div class="flex items-center gap-3">
-        <div class="w-10 h-10 rounded-2xl bg-indigo-600 flex items-center justify-center text-white font-bold">U</div>
-        <div>
-          <h1 class="text-xl font-semibold leading-tight">UPES Publications Portal</h1>
-          <p class="text-slate-500 text-sm -mt-0.5">University of Petroleum & Energy Studies — Live via Crossref</p>
-        </div>
-      </div>
+      <h1 class="text-xl font-semibold leading-tight">Publication Data</h1>
       <div class="hidden md:flex items-center gap-2 text-sm text-slate-500">
-        <span class="hidden sm:inline">No API keys required · Client-side · GitHub Pages ready</span>
+        <span class="hidden sm:inline">Client-side · GitHub Pages ready</span>
       </div>
     </div>
   </header>
@@ -101,8 +95,7 @@
           </div>
         </div>
         <p class="text-xs text-slate-500 mt-3">
-          Tip: keep 2-4 precise affiliation phrases (e.g., “University of Petroleum and Energy Studies”, “University of Petroleum & Energy Studies”, “UPES”).
-          Quartiles load automatically from <code>sjr_quartiles.json</code> or <code>sjr_quartiles.csv</code> in the repo root (or upload once via the button).
+          Quartiles load automatically from <code>sjr_quartiles.json</code> or <code>sjr_quartiles.csv</code> (repo root), or upload once via the button.
         </p>
       </div>
 
@@ -172,12 +165,12 @@
 
   <!-- FOOTER -->
   <footer class="text-center text-xs text-slate-500 pb-8">
-    Built for UPES · Data: Crossref · Quartiles: SJR mapping file (CSV/JSON).
+    Data: Crossref · Quartiles: SJR mapping file (CSV/JSON).
   </footer>
 
   <script>
     const CROSSREF_ENDPOINT = 'https://api.crossref.org/works';
-    const CONTACT_EMAIL = 'research@upes.ac.in'; // TODO: change to your email for polite API use
+    const CONTACT_EMAIL = 'research@upes.ac.in'; // change to your email for polite API use
 
     // ------- SJR mapping (will be populated from JSON/CSV). Minimal starter map. -------
     let quartileMap = {
@@ -193,16 +186,23 @@
     };
 
     const DEFAULT_AFFILIATIONS = [
-      'University of Petroleum and Energy Studies',
-      'University of Petroleum & Energy Studies',
-      'UPES'
+      "University of Petroleum and Energy Studies",
+      "University of Petroleum & Energy Studies",
+      "UPES",
+      "UPES Dehradun",
+      "University of Petroleum and Energy Studies Dehradun",
+      "Univ. of Petroleum and Energy Studies",
+      "School of Engineering UPES",
+      "School of Computer Science UPES",
+      "School of Business UPES",
+      "School of Design UPES"
     ];
 
     const state = {
       affiliations: [...DEFAULT_AFFILIATIONS],
       fromYear: 2015,
       toYear: new Date().getFullYear(),
-      onlyStrictAff: false,
+      onlyStrictAff: false,   // keep OFF by default to show more
       useCache: true,
       data: [],
       filtered: [],
@@ -294,7 +294,7 @@
         document.getElementById('sjrStatus').textContent = 'Loaded sjr_quartiles.json';
         return;
       }
-      // CSV next (semicolon/comma/tab/pipe all OK)
+      // CSV next
       res = await tryFetch('sjr_quartiles.csv');
       if (res) {
         const text = await res.text();
@@ -386,25 +386,8 @@
       return { doi: it.DOI || '', title, authors, authorAffs: affs, journal, year, type: it.type || '', url, subjects, citations, quartile };
     }
 
-    function keyForCache() {
-      const k = {
-        affiliations: state.affiliations.map(s => s.toLowerCase()).sort(),
-        fromYear: state.fromYear,
-        toYear: state.toYear,
-        onlyStrictAff: state.onlyStrictAff
-      };
-      return 'upes-pubs::' + JSON.stringify(k);
-    }
-
-    function saveCache(data) {
-      try { localStorage.setItem(keyForCache(), JSON.stringify({ t: Date.now(), data })); } catch {}
-    }
-
-    function loadCache() {
-      try { const raw = localStorage.getItem(keyForCache()); return raw ? JSON.parse(raw)?.data : null; } catch { return null; }
-    }
-
-    async function fetchForAff(aff, fromYear, toYear, maxItems = 1200) {
+    // Primary: affiliation-based fetch (bigger cap)
+    async function fetchForAff(aff, fromYear, toYear, maxItems = 5000) {
       const from = `${fromYear}-01-01`;
       const until = `${toYear}-12-31`;
       let cursor = '*';
@@ -434,10 +417,53 @@
       return all;
     }
 
-    function strictAffFilter(item, affList) {
-      if (!state.onlyStrictAff) return true;
-      const src = (item.authorAffs || []).map(s => (s || '').toLowerCase());
-      return affList.some(a => src.some(s => s.includes(a)));
+    // Fallback: keyword-based fetch (helps when affiliation metadata missing)
+    async function fetchByKeyword(keyword, fromYear, toYear, maxItems = 2000) {
+      const from = `${fromYear}-01-01`;
+      const until = `${toYear}-12-31`;
+      let cursor = '*';
+      let done = false;
+      let all = [];
+
+      while (!done && all.length < maxItems) {
+        const params = new URLSearchParams({
+          query: keyword,
+          filter: `from-pub-date:${from},until-pub-date:${until}`,
+          rows: '200',
+          sort: 'published',
+          order: 'desc',
+          select: 'DOI,title,author,container-title,issued,type,URL,subject,is-referenced-by-count',
+          cursor,
+          mailto: CONTACT_EMAIL
+        });
+        const url = `${CROSSREF_ENDPOINT}?${params.toString()}`;
+        const res = await fetch(url);
+        if (!res.ok) throw new Error('Crossref error ' + res.status);
+        const json = await res.json();
+        const items = (json?.message?.items || []).map(normalizeItem);
+        all.push(...items);
+        const next = json?.message?.['next-cursor'];
+        if (!next || items.length === 0) done = true; else cursor = next;
+      }
+      return all;
+    }
+
+    function keyForCache() {
+      const k = {
+        affiliations: state.affiliations.map(s => s.toLowerCase()).sort(),
+        fromYear: state.fromYear,
+        toYear: state.toYear,
+        onlyStrictAff: state.onlyStrictAff
+      };
+      return 'pubs::' + JSON.stringify(k);
+    }
+
+    function saveCache(data) {
+      try { localStorage.setItem(keyForCache(), JSON.stringify({ t: Date.now(), data })); } catch {}
+    }
+
+    function loadCache() {
+      try { const raw = localStorage.getItem(keyForCache()); return raw ? JSON.parse(raw)?.data : null; } catch { return null; }
     }
 
     async function fetchAll() {
@@ -445,15 +471,44 @@
       const cached = state.useCache ? loadCache() : null;
       if (cached) { state.data = cached; return; }
 
-      const allByAff = await Promise.all(
+      // 1) Primary by affiliation
+      const byAff = await Promise.all(
         state.affiliations.map(a => fetchForAff(a, state.fromYear, state.toYear).catch(() => []))
       );
+
+      // 2) Fallback by keyword (minimal seeds to limit dupes)
+      const keywordSeeds = Array.from(new Set([
+        'UPES',
+        'UPES Dehradun',
+        'University of Petroleum and Energy Studies',
+        'University of Petroleum & Energy Studies'
+      ]));
+
+      const byKeyword = await Promise.all(
+        keywordSeeds.map(k => fetchByKeyword(k, state.fromYear, state.toYear).catch(() => []))
+      );
+
+      // 3) Merge + de-dup (DOI or title+year)
+      const all = [...byAff.flat(), ...byKeyword.flat()];
+
+      const keyFrom = (it) => {
+        if (it.doi) return `doi:${it.doi.toLowerCase()}`;
+        const t = (it.title || '').toLowerCase().replace(/\s+/g, ' ').trim();
+        const y = it.year || '';
+        return `ty:${t}|${y}`;
+      };
+
       const map = new Map();
-      allByAff.flat().forEach(it => {
-        if (!it.doi) return;
-        if (!strictAffFilter(it, affsLower)) return;
-        if (!map.has(it.doi)) map.set(it.doi, it);
-      });
+      for (const it of all) {
+        if (state.onlyStrictAff) {
+          const src = (it.authorAffs || []).map(s => (s || '').toLowerCase());
+          const ok = affsLower.some(a => src.some(s => s.includes(a)));
+          if (!ok) continue;
+        }
+        const k = keyFrom(it);
+        if (!map.has(k)) map.set(k, it);
+      }
+
       state.data = Array.from(map.values());
       saveCache(state.data);
     }
@@ -557,10 +612,10 @@
       const q = document.getElementById('searchBox').value.trim().toLowerCase();
       const qQuartile = document.getElementById('quartileFilter').value;
 
-      // Base set (year range already applied when we created state.filtered)
-      let rows = state.filtered;
+      // Base set (year range applied below)
+      let rows = state.data.filter(x => x.year && x.year >= state.fromYear && x.year <= state.toYear);
 
-      // Re-assign quartiles in case the map has changed since first fetch
+      // Re-assign quartiles in case the map changed
       rows.forEach(r => { r.quartile = quartileMap[normTitle(r.journal)] || r.quartile || ''; });
 
       // Search + Quartile filter
@@ -636,7 +691,6 @@
 
       try {
         await fetchAll();
-        state.filtered = state.data.filter(x => x.year && x.year >= state.fromYear && x.year <= state.toYear);
         applyAllFiltersAndRender();
       } catch (e) {
         alert('Failed to load publications: ' + e.message);
@@ -649,7 +703,7 @@
     document.addEventListener('DOMContentLoaded', async () => {
       setDefaults();
       renderAffPills();
-      await autoLoadSJR();   // auto-load sjr_quartiles.json/csv if present in repo root
+      await autoLoadSJR();   // auto-load SJR map if present in repo root
       runLoad();
 
       document.getElementById('addAffBtn').onclick = () => {
