@@ -1,0 +1,75 @@
+name: Fetch Publications
+on:
+  workflow_dispatch: {}
+  schedule:
+    - cron: "30 20 * * *"   # run every day at 20:30 UTC
+
+jobs:
+  fetch:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Fetch data from OpenAlex by ROR
+        env:
+          ROR: "04q2jes40"   # your institution ROR ID (keep here, not in the portal)
+        run: |
+          node -e '
+          const https = require("https");
+          const fs = require("fs");
+          const ROR=process.env.ROR;
+          const FROM="2010-01-01";
+          const TO=(new Date().getFullYear())+"-12-31";
+          let cursor="*"; let all=[]; let pages=0;
+          function page(){
+            const params=new URLSearchParams({
+              "per-page":"200",
+              "cursor":cursor,
+              "mailto":"hidden@example.org",  // stays private, never in portal
+              "filter":`institutions.ror:${ROR},from_publication_date:${FROM},to_publication_date:${TO}`,
+              "select":"id,doi,title,authorships,host_venue,publication_year,type,cited_by_count,primary_location,is_retracted"
+            });
+            const url=`https://api.openalex.org/works?${params}`;
+            https.get(url,res=>{
+              let d=""; res.on("data",c=>d+=c);
+              res.on("end",()=>{
+                if(res.statusCode!==200){console.error("HTTP",res.statusCode); process.exit(1);}
+                const j=JSON.parse(d);
+                const items=(j.results||[]).map(w=>{
+                  const doi=(w.doi||"").replace(/^https?:\/\/doi\.org\//i,"");
+                  return {
+                    doi,
+                    title:w.title||"",
+                    year:w.publication_year||null,
+                    type:w.type||"",
+                    citations:w.cited_by_count||0,
+                    authors:(w.authorships||[]).map(a=>a.author?.display_name).filter(Boolean),
+                    journal:w.host_venue?.display_name||"",
+                    issns:(w.host_venue?.issn||[]).map(x=>(x||"").toUpperCase()),
+                    url:w.primary_location?.landing_page_url||(doi?`https://doi.org/${doi}`:""),
+                    is_retracted: !!w.is_retracted
+                  };
+                });
+                all.push(...items);
+                cursor=j?.meta?.next_cursor;
+                if(cursor && items.length && pages<150){ pages++; setTimeout(page,200); }
+                else {
+                  fs.writeFileSync("institution_data.json", JSON.stringify({updated:new Date().toISOString(), count:all.length, items:all},null,2));
+                  console.log("Saved", all.length, "records");
+                }
+              });
+            }).on("error",e=>{console.error(e);process.exit(1);});
+          }
+          page();'
+
+      - name: Commit JSON
+        run: |
+          if git status --porcelain | grep -q institution_data.json; then
+            git config user.name "github-actions"
+            git config user.email "actions@users.noreply.github.com"
+            git add institution_data.json
+            git commit -m "Update publication dump"
+            git push
+          fi
