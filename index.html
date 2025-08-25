@@ -26,6 +26,8 @@
     .badge{display:inline-flex;align-items:center;gap:.35rem;padding:.2rem .5rem;border-radius:999px;font-size:.72rem;border:1px solid #e2e8f0;background:#f8fafc}
     .video-wrap{position:relative;padding-bottom:56.25%;height:0;overflow:hidden;border-radius:12px}
     .video-wrap iframe{position:absolute;top:0;left:0;width:100%;height:100%;border:0}
+    /* Narrative glow */
+    .narrative-bg{background: radial-gradient(1200px 400px at 0% 0%, rgba(124,58,237,.08), transparent 60%), radial-gradient(800px 400px at 100% 0%, rgba(14,165,233,.08), transparent 60%)}
   </style>
 </head>
 <body class="bg-gradient-to-b from-slate-50 to-slate-100 text-slate-900">
@@ -50,11 +52,12 @@
     <!-- Tabs -->
     <div class="bg-white">
       <div class="max-w-7xl mx-auto px-4">
-        <nav class="flex gap-2">
+        <nav class="flex flex-wrap gap-2">
           <button id="tabOverview"     class="px-4 py-3 text-sm border-b-2 tab-active"   onclick="switchTab('overview')">Overview</button>
           <button id="tabPublications" class="px-4 py-3 text-sm border-b-2 tab-inactive" onclick="switchTab('publications')">Publications</button>
           <button id="tabQuartiles"    class="px-4 py-3 text-sm border-b-2 tab-inactive" onclick="switchTab('quartiles')">Quartiles</button>
           <button id="tabSDG"          class="px-4 py-3 text-sm border-b-2 tab-inactive" onclick="switchTab('sdg')">SDGs</button>
+          <button id="tabNarrative"    class="px-4 py-3 text-sm border-b-2 tab-inactive" onclick="switchTab('narrative')">Narrative</button>
         </nav>
       </div>
     </div>
@@ -73,7 +76,7 @@
         <div class="card p-4"><div class="text-xs text-slate-500">Distinct journals (view)</div><div id="kpiJournals" class="mt-1 text-2xl font-semibold">—</div></div>
       </div>
 
-      <!-- 2x2 Advanced Charts -->
+      <!-- Advanced Charts -->
       <div class="grid grid-cols-1 lg:grid-cols-2 gap-4">
         <!-- Bars + Cumulative line -->
         <div class="card p-4">
@@ -88,7 +91,7 @@
         <div class="card p-4">
           <h3 class="font-semibold">Top Journals — stacked by Quartile</h3>
           <div class="mt-2 h-[300px]"><canvas id="chartTopJournals"></canvas></div>
-          <div class="text-xs text-slate-500 mt-2">If no SJR file is uploaded, “Unknown” bucket is used.</div>
+          <div class="text-xs text-slate-500 mt-2">If no SJR quartiles uploaded, “Unknown” bucket is used.</div>
         </div>
 
         <!-- SDG donut -->
@@ -104,15 +107,14 @@
         </div>
       </div>
 
-      <!-- Tutorial video -->
+      <!-- Tutorial video (optional) -->
       <div class="card p-4">
         <div class="flex items-center justify-between">
-          <h3 class="font-semibold">Advanced chart inspiration (Tableau)</h3>
+          <h3 class="font-semibold">Advanced chart inspiration</h3>
           <a class="text-xs text-indigo-600 hover:underline" href="https://www.youtube.com/watch?v=mf4RbGBZtFw" target="_blank">Open on YouTube</a>
         </div>
         <div class="mt-3 video-wrap">
-          <!-- Swap this src with any other tutorial you prefer -->
-          <iframe src="https://www.youtube.com/embed/mf4RbGBZtFw" title="Advanced Tableau Charts" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture" allowfullscreen></iframe>
+          <iframe src="https://www.youtube.com/embed/mf4RbGBZtFw" title="Advanced Charts" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" allowfullscreen></iframe>
         </div>
       </div>
     </section>
@@ -261,16 +263,27 @@
         </div>
       </div>
     </section>
+
+    <!-- NARRATIVE -->
+    <section id="view-narrative" class="hidden space-y-4">
+      <div class="card narrative-bg p-6">
+        <h3 class="font-semibold text-lg mb-2">Immersive Mission Narrative</h3>
+        <p class="text-sm text-slate-600 mb-4">
+          Auto-generated from the current filtered view. Adjust filters in the Publications tab to change this story.
+        </p>
+        <div id="narrativeBox" class="prose prose-slate max-w-none text-slate-800 leading-relaxed space-y-4"></div>
+      </div>
+    </section>
   </main>
 
   <footer class="text-center text-xs text-slate-500 pb-8">
-    Data from <code>institution_data.json</code> · Quartiles mapped client-side · SDG & Retraction notices are heuristic
+    Data from <code>institution_data.json</code> · Quartiles mapped client-side · SDG & retraction notices are heuristic
   </footer>
 
 <script>
   lucide.createIcons();
 
-  /* ---------------- Chart.js “business” look ---------------- */
+  /* ---------------- Chart.js business look ---------------- */
   Chart.defaults.font.family = "'Inter', system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial";
   Chart.defaults.plugins.tooltip.backgroundColor = '#0f172a';
   Chart.defaults.plugins.tooltip.borderColor = '#334155';
@@ -278,7 +291,6 @@
   Chart.defaults.plugins.tooltip.padding = 12;
   Chart.defaults.plugins.legend.labels.boxWidth = 10;
 
-  // Shadows
   const shadowPlugin = {
     id: 'shadowPlugin',
     beforeDatasetsDraw(chart, args, opts) {
@@ -292,34 +304,34 @@
   };
   Chart.register(shadowPlugin);
 
-  // Center text for doughnuts
   const centerTextPlugin = {
     id: 'centerText',
-    afterDraw(chart, args, pluginOptions){
+    afterDraw(chart){
       if (chart.config.type !== 'doughnut') return;
-      const {ctx, chartArea:{width, height}} = chart;
+      const {ctx} = chart;
       const text = chart.config.options.centerText;
       if(!text) return;
+      const meta = chart.getDatasetMeta(0).data[0];
+      if (!meta) return;
       ctx.save();
       ctx.font = '600 18px Inter, system-ui';
       ctx.fillStyle = '#0f172a';
       ctx.textAlign='center'; ctx.textBaseline='middle';
-      ctx.fillText(text, chart.getDatasetMeta(0).data[0].x, chart.getDatasetMeta(0).data[0].y);
+      ctx.fillText(text, meta.x, meta.y);
       ctx.restore();
     }
   };
   Chart.register(centerTextPlugin);
 
-  function gradientVertical(ctx, colorTop='#6366f1', colorBottom='#a855f7'){
+  function gradientVertical(ctx, c1='#6366f1', c2='#a855f7'){
     const g = ctx.createLinearGradient(0, 0, 0, ctx.canvas.height);
-    g.addColorStop(0, colorTop); g.addColorStop(1, colorBottom); return g;
-  }
-  function gradientHorizontal(ctx, colorLeft='#14b8a6', colorRight='#06b6d4'){
-    const g = ctx.createLinearGradient(0, 0, ctx.canvas.width, 0);
-    g.addColorStop(0, colorLeft); g.addColorStop(1, colorRight); return g;
+    g.addColorStop(0, c1); g.addColorStop(1, c2); return g;
   }
 
   /* --------------------- STATE --------------------- */
+  // Affiliation ROR (kept anonymous in UI)
+  const AFFIL_ROR = '04q2jes40';
+
   let all = [];
   let filtered = [];
   let currentPage = 1;
@@ -335,7 +347,7 @@
     { key:'year',         label:'Year',          default:true },
     { key:'title',        label:'Title',         default:true },
     { key:'journal',      label:'Journal',       default:true },
-    { key:'authors',      label:'Authors',       default:true },
+    { key:'authors',      label:'Authors (affiliated only)', default:true },
     { key:'citations',    label:'Citations',     default:true },
     { key:'quartile',     label:'Quartile',      default:true },
     { key:'retraction_info', label:'Retraction Info', default:true },
@@ -381,15 +393,15 @@
 
   /* ---------------- Tabs ---------------- */
   function switchTab(name){
-    const tabs=['overview','publications','quartiles','sdg'];
+    const tabs=['overview','publications','quartiles','sdg','narrative'];
     for (const t of tabs){
       document.getElementById(`view-${t}`).classList.toggle('hidden', t!==name);
       const el = document.getElementById(`tab${t[0].toUpperCase()+t.slice(1)}`);
-      el.classList.toggle('tab-active', t===name);
-      el.classList.toggle('tab-inactive', t!==name);
+      if (el){ el.classList.toggle('tab-active', t===name); el.classList.toggle('tab-inactive', t!==name); }
     }
     if (name==='quartiles') updateCoverage();
-    if (name==='sdg'){ renderSDGChart(true); } else { renderSDGChart(false); }
+    if (name==='sdg'){ renderSDGChart(true); }
+    if (name==='narrative'){ renderNarrative(); }
   }
 
   /* --------------- Load data --------------- */
@@ -403,6 +415,12 @@
         j.updated ? `Last synced: ${dayjs(j.updated).format('DD MMM YYYY, HH:mm')}` : '';
 
       all = Array.isArray(j.items) ? j.items : [];
+
+      // compute flattened helpers for table
+      for (const p of all){
+        // authors (all) for fallback/export readability if needed
+        p.authors = (p.authorships||[]).map(a => a.author?.display_name || a.author_name || '').filter(Boolean);
+      }
 
       // retraction + SDGs
       buildRetractionIndex(all);
@@ -492,6 +510,7 @@
     renderOverviewCharts();
     renderSDGChart();
     updateCoverage();
+    if (!document.getElementById('view-narrative').classList.contains('hidden')) renderNarrative();
   }
 
   function changePageSize(){ pageSize = parseInt(document.getElementById('pageSize').value,10) || 50; currentPage=1; renderTable(); }
@@ -521,329 +540,25 @@
     document.getElementById('rangeText').textContent = document.getElementById('countInfo').textContent;
   }
 
+  // Only show affiliated authors in the table & exports
+  function getAffilAuthors(p){
+    if (!Array.isArray(p.authorships)) return [];
+    return p.authorships
+      .filter(a => (a.institutions||[]).some(inst => (inst.ror||'').toLowerCase().includes(AFFIL_ROR.toLowerCase())))
+      .map(a => a.author?.display_name || a.author_name || '')
+      .filter(Boolean);
+  }
+
   function renderCell(key,p){
     switch(key){
       case 'year': return p.year ?? '';
       case 'title': return p.url ? `<a class="text-indigo-600 hover:underline" href="${p.url}" target="_blank">${esc(p.title||'')}</a>` : esc(p.title||'');
       case 'journal': return esc(p.journal||'');
-      case 'authors': return esc((p.authors||[]).join(', '));
+      case 'authors': {
+        const names = getAffilAuthors(p);
+        return names.length ? esc(names.join(', ')) : '—';
+      }
       case 'citations': return p.citations ?? 0;
       case 'quartile': return esc(p.quartile || '');
       case 'retraction_info': return renderRetractionInfo(p);
-      case 'is_retracted': return p.is_retracted ? '<span class="badge" style="border-color:#ef4444;background:#fff;color:#b91c1c">Yes</span>' : 'No';
-      case 'type': return esc(p.type || '');
-      case 'doi': return esc(p.doi || '');
-      case 'url': return p.url ? `<a class="text-indigo-600" href="${p.url}" target="_blank">Open</a>` : '';
-      case 'issns': return esc((p.issns||[]).join(', '));
-      case 'subjects': return esc(extractSubjects(p));
-      case 'sdg_tags': return renderSDGBadges(p.sdg_tags||[]);
-      default: return '';
-    }
-  }
-
-  /* --------------- Column chooser --------------- */
-  function buildColumnsPanel(){
-    const container=document.getElementById('columnsList'); container.innerHTML='';
-    const selectedKeys=new Set(selectedColumns.map(c=>c.key));
-    for (const col of ALL_COLUMNS){
-      const id=`col_${col.key}`, checked=selectedKeys.has(col.key)?'checked':'';
-      container.insertAdjacentHTML('beforeend', `
-        <label class="flex items-center gap-2"><input type="checkbox" id="${id}" ${checked}/><span>${col.label}</span></label>
-      `);
-    }
-  }
-  function toggleColumnsPanel(){ document.getElementById('columnsPanel').classList.toggle('hidden'); }
-  function applyColumnSelection(){
-    const chosen=[]; for (const col of ALL_COLUMNS){ const box=document.getElementById(`col_${col.key}`); if (box && box.checked) chosen.push({key:col.key,label:col.label}); }
-    selectedColumns = chosen.length ? chosen : ALL_COLUMNS.filter(c=>c.default).map(c=>({key:c.key,label:c.label}));
-    saveSelectedColumns(); toggleColumnsPanel(); renderTable();
-  }
-  function resetColumns(){
-    selectedColumns = ALL_COLUMNS.filter(c=>c.default).map(c=>({key:c.key,label:c.label}));
-    saveSelectedColumns(); buildColumnsPanel(); renderTable();
-  }
-  function saveSelectedColumns(){ try{ localStorage.setItem('pub_columns', JSON.stringify(selectedColumns)); }catch{} }
-  function loadSelectedColumns(){
-    try{
-      const s=localStorage.getItem('pub_columns'); if (s){
-        const arr=JSON.parse(s); const valid=new Map(ALL_COLUMNS.map(c=>[c.key,c.label]));
-        return arr.filter(x=>valid.has(x.key)).map(x=>({key:x.key,label:valid.get(x.key)}));
-      }
-    }catch{}
-    return ALL_COLUMNS.filter(c=>c.default).map(c=>({key:c.key,label:c.label}));
-  }
-
-  /* --------------- Overview Charts --------------- */
-  function renderOverviewCharts(){
-    // === Publications by Year: bars + cumulative line ===
-    const ctxY = document.getElementById('chartByYear').getContext('2d');
-    const byYear={}; for (const p of filtered){ if (p.year) byYear[p.year]=(byYear[p.year]||0)+1; }
-    const labelsY = Object.keys(byYear).sort((a,b)=>a-b);
-    const dataY   = labelsY.map(y=>byYear[y]);
-    let cum=0; const growth=dataY.map(v=>cum+=v);
-    if (chartByYear) chartByYear.destroy();
-    const gradY = gradientVertical(ctxY,'#6366f1','#a855f7');
-    chartByYear = new Chart(ctxY, {
-      data:{
-        labels:labelsY,
-        datasets:[
-          { type:'bar', label:'Publications', data:dataY, borderRadius:12, borderSkipped:false, backgroundColor:gradY },
-          { type:'line', label:'Cumulative', data:growth, borderColor:'#14b8a6', borderWidth:3, fill:false, tension:0.3, pointRadius:0 }
-        ]
-      },
-      options:{
-        responsive:true, maintainAspectRatio:false,
-        plugins:{ legend:{ position:'top' }, shadowPlugin:{} },
-        scales:{
-          x:{ grid:{ display:false }, ticks:{ color:'#334155' } },
-          y:{ beginAtZero:true, grid:{ color:'#e2e8f0' }, ticks:{ color:'#334155' } }
-        }
-      },
-      plugins:[{id:'shadowPlugin'}]
-    });
-
-    // === Top Journals stacked by Quartile (horizontal) ===
-    const ctxJ = document.getElementById('chartTopJournals').getContext('2d');
-    const journalAgg = new Map(); // journal -> {Q1,Q2,Q3,Q4,Unknown,total}
-    for (const p of filtered){
-      const j = (p.journal||'').trim(); if (!j) continue;
-      const q = (p.quartile || '').toUpperCase();
-      const rec = journalAgg.get(j) || {Q1:0,Q2:0,Q3:0,Q4:0,Unknown:0,total:0};
-      if (q==='Q1'||q==='Q2'||q==='Q3'||q==='Q4'){ rec[q]++; } else { rec.Unknown++; }
-      rec.total++; journalAgg.set(j, rec);
-    }
-    const top = Array.from(journalAgg.entries()).sort((a,b)=>b[1].total - a[1].total).slice(0,10);
-    const labelsJ = top.map(([j])=>j);
-    const series = ['Q1','Q2','Q3','Q4','Unknown'];
-    const colors = {Q1:'#16a34a', Q2:'#22c55e', Q3:'#84cc16', Q4:'#a3e635', Unknown:'#cbd5e1'};
-    const datasetsJ = series.map(s=>({
-      type:'bar', label:s, data: top.map(([,v])=>v[s]),
-      backgroundColor: s==='Unknown' ? '#cbd5e1' : colors[s], borderRadius:12, borderSkipped:false
-    }));
-    if (chartTopJournals) chartTopJournals.destroy();
-    chartTopJournals = new Chart(ctxJ, {
-      data:{ labels:labelsJ, datasets:datasetsJ },
-      options:{
-        indexAxis:'y', responsive:true, maintainAspectRatio:false,
-        plugins:{ legend:{ position:'top' }, shadowPlugin:{}, tooltip:{ mode:'index', intersect:false } },
-        scales:{
-          x:{ stacked:true, grid:{ color:'#e2e8f0' }, ticks:{ color:'#334155' }, beginAtZero:true },
-          y:{ stacked:true, grid:{ display:false }, ticks:{ color:'#334155' } }
-        }
-      },
-      plugins:[{id:'shadowPlugin'}]
-    });
-
-    // === SDG donut (overview) ===
-    renderSDGChart(false);
-
-    // === Retraction donut ===
-    const ctxR = document.getElementById('chartRetract').getContext('2d');
-    const retracted = filtered.filter(p=>p.is_retracted || p.retraction_notice).length;
-    const clean = Math.max(0, filtered.length - retracted);
-    const pct = filtered.length ? Math.round((retracted*100)/filtered.length) : 0;
-    if (chartRetract) chartRetract.destroy();
-    chartRetract = new Chart(ctxR, {
-      type:'doughnut',
-      data:{ labels:['Retracted/Notices','Other'], datasets:[{ data:[retracted, clean], backgroundColor:['#ef4444','#94a3b8'] }] },
-      options:{ responsive:true, maintainAspectRatio:false, cutout:'65%', centerText:`${pct}%` },
-      plugins:[{id:'centerText'}]
-    });
-  }
-
-  /* --------------- SDG charts (overview + tab) --------------- */
-  function renderSDGChart(forTab=false){
-    const counts = new Array(18).fill(0);
-    for (const p of filtered){ for (const id of (p.sdg_tags||[])) counts[id]++; }
-    const labels = SDG_LIST.map(s=>`${s.id}`);
-    const data   = SDG_LIST.map(s=>counts[s.id]||0);
-    const colors = SDG_LIST.map(s=>SDG_COLORS[s.id]);
-
-    // Overview SDG donut
-    const ctxO = document.getElementById('chartSDG').getContext('2d');
-    const total = data.reduce((a,b)=>a+b,0);
-    if (chartSDG) chartSDG.destroy();
-    chartSDG = new Chart(ctxO, {
-      type:'doughnut',
-      data:{ labels, datasets:[{ data, backgroundColor:colors }] },
-      options:{ responsive:true, maintainAspectRatio:false, cutout:'65%', centerText: String(total) },
-      plugins:[{id:'centerText'}]
-    });
-
-    // SDG tab bar chart
-    if (forTab){
-      const ctxT = document.getElementById('chartSDG_tab').getContext('2d');
-      if (chartSDG_tab) chartSDG_tab.destroy();
-      chartSDG_tab = new Chart(ctxT, {
-        type:'bar',
-        data:{ labels, datasets:[{ label:'Count', data, borderRadius:12, borderSkipped:false, backgroundColor:colors }] },
-        options:{
-          responsive:true, maintainAspectRatio:false,
-          plugins:{ legend:{display:false}, shadowPlugin:{}, tooltip:{mode:'index', intersect:false} },
-          scales:{ x:{ grid:{ display:false } }, y:{ grid:{ color:'#e2e8f0' }, beginAtZero:true } }
-        },
-        plugins:[{id:'shadowPlugin'}]
-      });
-    }
-  }
-
-  /* --------------- SDG mapping --------------- */
-  function guessSDGs(p){
-    const text = [(p.title||''),(p.journal||''),extractSubjects(p)].join(' ').toLowerCase();
-    const hits=[]; for (const s of SDG_LIST){ for (const kw of s.kw){ if (text.includes(kw.toLowerCase())){ hits.push(s.id); break; } } }
-    return Array.from(new Set(hits)).slice(0,2);
-  }
-  function renderSDGBadges(ids){
-    if (!ids.length) return '';
-    return ids.map(id=>`<span class="badge" style="border-color:${SDG_COLORS[id]};background:#fff">${id}</span>`).join(' ');
-  }
-  function buildSDGLegend(){
-    const box=document.getElementById('sdgLegend'); box.innerHTML='';
-    for (const s of SDG_LIST){
-      box.insertAdjacentHTML('beforeend', `<span class="badge" title="${s.name}" style="border-color:${SDG_COLORS[s.id]};background:#fff">${s.id} — ${s.name}</span>`);
-    }
-  }
-
-  /* --------------- Quartiles (upload & map) --------------- */
-  document.getElementById('sjrFile').addEventListener('change', async (e)=>{
-    const file=e.target.files[0]; if(!file) return;
-    const name=file.name.toLowerCase(); const text=await file.text();
-    sjrByIssn.clear(); sjrByTitle.clear(); haveSJR=false;
-    try{
-      if (name.endsWith('.json')) { const arr=JSON.parse(text); for (const row of arr) addQuartileRow(row); }
-      else if (name.endsWith('.csv')){ parseCSV(text, addQuartileRow); }
-      else { throw new Error('Unsupported file type'); }
-      haveSJR = (sjrByIssn.size + sjrByTitle.size) > 0;
-      document.getElementById('sjrStatus').textContent = `Loaded ${sjrByIssn.size} ISSN entries and ${sjrByTitle.size} title entries`;
-      applyFilters();
-      updateCoverage();
-    }catch(err){ document.getElementById('sjrStatus').textContent = 'Failed: ' + err.message; }
-  });
-
-  function addQuartileRow(row){
-    const q = normQuartile(row.quartile || row.Quarter || row.Q || row.q || '');
-    const title = normTitle(row.title || row.Title || row.Journal || '');
-    const issn  = normIssn (row.issn  || row.ISSN  || row.issn_print || row.ISSN_print || '');
-    if (issn && q)  sjrByIssn.set(issn, q);
-    if (title && q) sjrByTitle.set(title, q);
-  }
-  function parseCSV(text, onRow){
-    const lines=text.split(/\r?\n/).filter(Boolean);
-    const header=lines.shift().split(',').map(h=>h.trim().toLowerCase());
-    const idxTitle=header.findIndex(h=>/title|journal/.test(h));
-    const idxIssn =header.findIndex(h=>/issn/.test(h));
-    const idxQuart=header.findIndex(h=>/quartile|q$/.test(h));
-    if (idxQuart<0 || (idxTitle<0 && idxIssn<0)) throw new Error('CSV must include Title/ISSN and Quartile columns');
-    for (const line of lines){
-      const cols=splitCsv(line);
-      onRow({ title: idxTitle>=0?cols[idxTitle]:'', issn: idxIssn>=0?cols[idxIssn]:'', quartile: idxQuart>=0?cols[idxQuart]:'' });
-    }
-  }
-  function splitCsv(line){
-    const out=[]; let cur=''; let inQ=false;
-    for (let i=0;i<line.length;i++){
-      const ch=line[i];
-      if (ch==='\"'){ inQ=!inQ; continue; }
-      if (ch===',' && !inQ){ out.push(cur.trim()); cur=''; continue; }
-      cur+=ch;
-    }
-    out.push(cur.trim()); return out;
-  }
-  function resolveQuartile(p){
-    const issns=(p.issns||[]).map(normIssn).filter(Boolean);
-    for (const id of issns){ if (sjrByIssn.has(id)) return sjrByIssn.get(id); }
-    const t=normTitle(p.journal||''); if (t && sjrByTitle.has(t)) return sjrByTitle.get(t);
-    return '';
-  }
-  function updateCoverage(){
-    let mapped=0,total=filtered.length; for (const p of filtered) if (p.quartile) mapped++;
-    const pct= total? Math.round(mapped*100/total):0;
-    const el=document.getElementById('mapCoverage'); if (el) el.textContent = `${mapped} / ${total} in current view mapped (${pct}%)`;
-  }
-
-  /* --------------- Retraction info rendering --------------- */
-  function renderRetractionInfo(p){
-    const parts=[];
-    if (p.retraction_notice){
-      parts.push('<span class="badge" style="border-color:#ef4444;background:#fff;color:#b91c1c">Retraction notice</span>');
-      if (p.retraction_of){
-        const t = esc(p.retraction_of.title || '');
-        const d = p.retraction_of.doi ? `<a href="https://doi.org/${p.retraction_of.doi}" target="_blank">${esc(p.retraction_of.doi)}</a>` : '';
-        parts.push(`<div class="text-xs text-slate-600 mt-1">of: ${t} ${d}</div>`);
-      }
-    }
-    if (p.is_retracted){
-      parts.push('<span class="badge" style="border-color:#ef4444;background:#fff;color:#b91c1c">Retracted (OpenAlex)</span>');
-      if (p.retracted_by){
-        const t = esc(p.retracted_by.title || '');
-        const d = p.retracted_by.doi ? `<a href="https://doi.org/${p.retracted_by.doi}" target="_blank">${esc(p.retracted_by.doi)}</a>` : '';
-        parts.push(`<div class="text-xs text-slate-600 mt-1">by: ${t} ${d}</div>`);
-      }
-    }
-    return parts.join(' ') || '';
-  }
-
-  /* --------------- Export --------------- */
-  function exportCSV(){
-    if (!filtered.length) return;
-    const start=(currentPage-1)*pageSize, end=Math.min(start+pageSize, filtered.length);
-    const rows = filtered.slice(start,end);
-    const header = selectedColumns.map(c=>c.label);
-    const csv = [header.join(',')].concat(
-      rows.map(r => selectedColumns.map(c => q(textForExport(c.key, r))).join(','))
-    ).join('\n');
-    downloadBlob('publications_view.csv', csv, 'text/csv');
-  }
-  function exportJSON(){
-    const start=(currentPage-1)*pageSize, end=Math.min(start+pageSize, filtered.length);
-    const rows = filtered.slice(start,end).map(r=>{
-      const obj={}; for (const c of selectedColumns){ obj[c.key] = rawForExport(c.key, r); } return obj;
-    });
-    downloadBlob('publications_view.json', JSON.stringify(rows,null,2), 'application/json');
-  }
-  function textForExport(key,p){
-    switch(key){
-      case 'authors': return (p.authors||[]).join('; ');
-      case 'issns':   return (p.issns||[]).join('; ');
-      case 'subjects':return extractSubjects(p);
-      case 'sdg_tags':return (p.sdg_tags||[]).join('; ');
-      case 'retraction_info': return stripHtml(renderRetractionInfo(p));
-      case 'is_retracted': return p.is_retracted ? 'Yes' : 'No';
-      default: return rawForExport(key, p) ?? '';
-    }
-  }
-  function rawForExport(key,p){
-    if (key==='subjects') return extractSubjects(p);
-    if (key==='retraction_info') return stripHtml(renderRetractionInfo(p));
-    return p[key];
-  }
-
-  /* --------------- Utils --------------- */
-  function esc(s){ return String(s).replace(/[&<>"']/g, m=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m])); }
-  function q(s){ return `"${String(s).replace(/"/g,'""')}"`; }
-  function downloadBlob(name, content, type){ const blob=new Blob([content],{type}); const a=document.createElement('a'); a.href=URL.createObjectURL(blob); a.download=name; a.click(); URL.revokeObjectURL(a.href); }
-  function num(n){ return (n||0).toLocaleString(); }
-  function normTitle(t){ return String(t||'').toLowerCase().replace(/\s+/g,' ').trim(); }
-  function normIssn(s){ const x=String(s||'').replace(/[^0-9xX]/g,'').toUpperCase(); return x.length===8? x.slice(0,4)+'-'+x.slice(4): (x.length===7? x.slice(0,3)+'-'+x.slice(3): ''); }
-  function normQuartile(q){ const s=String(q||'').toUpperCase().trim(); return /^Q[1-4]$/.test(s)? s : ''; }
-  function extractSubjects(p){
-    if (Array.isArray(p.subjects) && p.subjects.length) return p.subjects.slice(0,3).join(', ');
-    if (Array.isArray(p.concepts) && p.concepts.length){
-      const arr = p.concepts.map(c=>c.display_name||c.name||'').filter(Boolean).slice(0,3); return arr.join(', ');
-    }
-    return '';
-  }
-  function stripHtml(html){ const d=document.createElement('div'); d.innerHTML=html; return d.textContent||d.innerText||''; }
-
-  // Close dropdown on outside click
-  document.addEventListener('click', (e)=>{
-    const panel=document.getElementById('columnsPanel'); const btn=document.getElementById('colBtn');
-    if (!panel || panel.classList.contains('hidden')) return;
-    if (!panel.contains(e.target) && !btn.contains(e.target)) panel.classList.add('hidden');
-  });
-
-  // Init
-  document.addEventListener('DOMContentLoaded', ()=>{ buildSDGLegend(); autoLoad(); });
-</script>
-</body>
-</html>
+      case 'is_retracted': return p.is_retracted ? '<span class="badge" style="border-color:#ef4444
