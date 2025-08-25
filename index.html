@@ -14,7 +14,6 @@
   <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
 
   <style>
-    /* AI vibe: gradient header, glass cards, soft shadows */
     .glass { background: linear-gradient(180deg, rgba(255,255,255,.75), rgba(248,250,252,.85)); backdrop-filter: blur(10px); }
     .card  { background: rgba(255,255,255,.85); border:1px solid rgba(226,232,240,.9); border-radius:16px; box-shadow: 0 10px 20px rgba(2,6,23,.06); }
     .thin-scrollbar::-webkit-scrollbar{height:8px;width:8px}
@@ -65,22 +64,10 @@
     <!-- OVERVIEW -->
     <section id="view-overview" class="space-y-6">
       <div class="grid grid-cols-2 md:grid-cols-4 gap-4">
-        <div class="card p-4">
-          <div class="text-xs text-slate-500">Total items</div>
-          <div id="kpiTotal" class="mt-1 text-2xl font-semibold">—</div>
-        </div>
-        <div class="card p-4">
-          <div class="text-xs text-slate-500">Current view</div>
-          <div id="kpiView" class="mt-1 text-2xl font-semibold">—</div>
-        </div>
-        <div class="card p-4">
-          <div class="text-xs text-slate-500">Retracted (view)</div>
-          <div id="kpiRetr" class="mt-1 text-2xl font-semibold">—</div>
-        </div>
-        <div class="card p-4">
-          <div class="text-xs text-slate-500">Distinct journals (view)</div>
-          <div id="kpiJournals" class="mt-1 text-2xl font-semibold">—</div>
-        </div>
+        <div class="card p-4"><div class="text-xs text-slate-500">Total items</div><div id="kpiTotal" class="mt-1 text-2xl font-semibold">—</div></div>
+        <div class="card p-4"><div class="text-xs text-slate-500">Current view</div><div id="kpiView" class="mt-1 text-2xl font-semibold">—</div></div>
+        <div class="card p-4"><div class="text-xs text-slate-500">Retracted (view)</div><div id="kpiRetr" class="mt-1 text-2xl font-semibold">—</div></div>
+        <div class="card p-4"><div class="text-xs text-slate-500">Distinct journals (view)</div><div id="kpiJournals" class="mt-1 text-2xl font-semibold">—</div></div>
       </div>
 
       <div class="grid grid-cols-1 lg:grid-cols-2 gap-4">
@@ -105,7 +92,7 @@
           <div>
             <label class="block text-xs font-medium text-slate-600">Search</label>
             <input id="searchBox" class="px-3 py-2 rounded-xl border border-slate-300 text-sm"
-                   placeholder="Title / author / journal" oninput="applyFilters(1)"/>
+                   placeholder="Title / author / journal / DOI" oninput="applyFilters(1)"/>
           </div>
           <div>
             <label class="block text-xs font-medium text-slate-600">Year</label>
@@ -114,11 +101,12 @@
             </select>
           </div>
           <div>
-            <label class="block text-xs font-medium text-slate-600">Retraction</label>
+            <label class="block text-xs font-medium text-slate-600">Retraction mode</label>
             <select id="retractionFilter" class="px-3 py-2 rounded-xl border border-slate-300 text-sm" onchange="applyFilters(1)">
               <option value="">All</option>
               <option value="exclude">Exclude retracted</option>
-              <option value="only">Only retracted</option>
+              <option value="only_retracted">Only retracted (OpenAlex)</option>
+              <option value="only_notices">Only retraction notices (title-based)</option>
             </select>
           </div>
           <div>
@@ -194,7 +182,7 @@
             <h3 class="font-semibold">Quartile Mapping</h3>
             <p class="text-xs text-slate-500">
               Upload SJR quartiles as <code>.csv</code> (columns: Title, ISSN, Quartile) or <code>.json</code>
-              (array of objects with <code>title</code>/<code>issn</code>/<code>quartile</code>).
+              (array with <code>title</code>/<code>issn</code>/<code>quartile</code>).
             </p>
           </div>
           <div class="flex items-center gap-2">
@@ -220,10 +208,7 @@
         <div class="flex items-center justify-between">
           <div>
             <h3 class="font-semibold">Sustainable Development Goals (auto-mapped)</h3>
-            <p class="text-xs text-slate-500">
-              Titles (and if available, subjects/concepts) are heuristically mapped to UN SDGs.
-              You can filter publications by SDG below.
-            </p>
+            <p class="text-xs text-slate-500">Titles (and subjects, if present) are heuristically mapped to SDGs.</p>
           </div>
           <div class="flex items-center gap-2">
             <select id="sdgOnlyFilter" class="px-3 py-2 rounded-xl border border-slate-300 text-sm" onchange="applyFilters(1)">
@@ -244,11 +229,10 @@
         </div>
       </div>
     </section>
-
   </main>
 
   <footer class="text-center text-xs text-slate-500 pb-8">
-    Data from <code>institution_data.json</code> · Quartiles mapped client-side · SDGs are heuristic
+    Data from <code>institution_data.json</code> · Quartiles mapped client-side · SDG & Retraction notices are heuristic
   </footer>
 
 <script>
@@ -273,8 +257,9 @@
     { key:'authors',      label:'Authors',       default:true },
     { key:'citations',    label:'Citations',     default:true },
     { key:'quartile',     label:'Quartile',      default:true },
-    { key:'is_retracted', label:'Retracted?',    default:true },
-    // Extras:
+    { key:'retraction_info', label:'Retraction Info', default:true },
+    // extras
+    { key:'is_retracted', label:'Retracted (OpenAlex)', default:false },
     { key:'type',         label:'Type',          default:false },
     { key:'doi',          label:'DOI',           default:false },
     { key:'url',          label:'URL',           default:false },
@@ -288,32 +273,36 @@
   let chartByYear=null, chartTopJournals=null, chartSDG=null;
 
   // ----------------- SDG KEYWORDS (heuristic) -----------------
-  // Minimal, fast keyword sets (you can refine later). Matches on title + subjects/concepts.
   const SDG_LIST = [
-    { id:1,  name:'No Poverty',             kw:['poverty','low-income','income inequality'] },
-    { id:2,  name:'Zero Hunger',            kw:['hunger','food security','malnutrition','agriculture','crop','farm'] },
-    { id:3,  name:'Good Health & Well-being', kw:['health','disease','medicine','mental','epidemic','pandemic','hospital','clinical'] },
-    { id:4,  name:'Quality Education',      kw:['education','school','teaching','learning','curriculum','literacy','students'] },
-    { id:5,  name:'Gender Equality',        kw:['gender','women','female','girls','violence against women','equality'] },
-    { id:6,  name:'Clean Water & Sanitation', kw:['water','sanitation','wastewater','drinking water','hygiene'] },
-    { id:7,  name:'Affordable & Clean Energy', kw:['energy','renewable','solar','wind','battery','hydrogen'] },
-    { id:8,  name:'Decent Work & Economic Growth', kw:['employment','workforce','productivity','economy','economic growth','entrepreneur'] },
+    { id:1,  name:'No Poverty',                   kw:['poverty','low-income','income inequality'] },
+    { id:2,  name:'Zero Hunger',                  kw:['hunger','food security','malnutrition','agriculture','crop','farm'] },
+    { id:3,  name:'Good Health & Well-being',     kw:['health','disease','medicine','mental','epidemic','pandemic','hospital','clinical'] },
+    { id:4,  name:'Quality Education',            kw:['education','school','teaching','learning','curriculum','literacy','students'] },
+    { id:5,  name:'Gender Equality',              kw:['gender','women','female','girls','violence against women','equality'] },
+    { id:6,  name:'Clean Water & Sanitation',     kw:['water','sanitation','wastewater','drinking water','hygiene'] },
+    { id:7,  name:'Affordable & Clean Energy',    kw:['energy','renewable','solar','wind','battery','hydrogen'] },
+    { id:8,  name:'Decent Work & Economic Growth',kw:['employment','workforce','productivity','economy','economic growth','entrepreneur'] },
     { id:9,  name:'Industry, Innovation & Infrastructure', kw:['industry','manufacturing','infrastructure','innovation','iot','robotics','blockchain'] },
-    { id:10, name:'Reduced Inequalities',   kw:['inequality','social justice','marginalized','inclusion'] },
+    { id:10, name:'Reduced Inequalities',         kw:['inequality','social justice','marginalized','inclusion'] },
     { id:11, name:'Sustainable Cities & Communities', kw:['urban','smart city','transport','housing','resilience','disaster'] },
     { id:12, name:'Responsible Consumption & Production', kw:['circular economy','sustainability','recycling','waste','lifecycle','supply chain'] },
-    { id:13, name:'Climate Action',         kw:['climate','carbon','ghg','emission','adaptation','mitigation','global warming'] },
-    { id:14, name:'Life Below Water',       kw:['marine','ocean','sea','fisheries','aquatic','coral'] },
-    { id:15, name:'Life on Land',           kw:['biodiversity','forest','wildlife','ecosystem','soil','land use'] },
+    { id:13, name:'Climate Action',               kw:['climate','carbon','ghg','emission','adaptation','mitigation','global warming'] },
+    { id:14, name:'Life Below Water',             kw:['marine','ocean','sea','fisheries','aquatic','coral'] },
+    { id:15, name:'Life on Land',                 kw:['biodiversity','forest','wildlife','ecosystem','soil','land use'] },
     { id:16, name:'Peace, Justice & Strong Institutions', kw:['governance','policy','corruption','crime','justice','conflict'] },
-    { id:17, name:'Partnerships for the Goals', kw:['partnership','collaboration','sdg','stakeholder','international'] },
+    { id:17, name:'Partnerships for the Goals',   kw:['partnership','collaboration','sdg','stakeholder','international'] },
   ];
+  const SDG_COLORS = {1:'#E5243B',2:'#DDA63A',3:'#4C9F38',4:'#C5192D',5:'#FF3A21',6:'#26BDE2',7:'#FCC30B',8:'#A21942',9:'#FD6925',10:'#DD1367',11:'#FD9D24',12:'#BF8B2E',13:'#3F7E44',14:'#0A97D9',15:'#56C02B',16:'#00689D',17:'#19486A'};
 
-  // SDG colors (light tags)
-  const SDG_COLORS = {
-    1:'#E5243B',2:'#DDA63A',3:'#4C9F38',4:'#C5192D',5:'#FF3A21',6:'#26BDE2',7:'#FCC30B',8:'#A21942',
-    9:'#FD6925',10:'#DD1367',11:'#FD9D24',12:'#BF8B2E',13:'#3F7E44',14:'#0A97D9',15:'#56C02B',16:'#00689D',17:'#19486A'
-  };
+  // ----------------- Retraction detection (heuristic for notices) -----------------
+  const RETRACT_PREFIXES = [
+    /^retraction\s*note\s*:/i,
+    /^retraction\s*of\s*:/i,
+    /^retraction\s*:/i,
+    /^notice\s+of\s+retraction\s*:/i,
+    /^withdrawn\s*:/i,
+  ];
+  const DOI_REGEX = /\b10\.\d{4,9}\/\S+\b/i;
 
   // ----------------- TABS -----------------
   function switchTab(name){
@@ -339,50 +328,117 @@
         j.updated ? `Last synced: ${dayjs(j.updated).format('DD MMM YYYY, HH:mm')}` : '';
 
       all = Array.isArray(j.items) ? j.items : [];
+
+      // Heuristics: mark retraction_notice + pair
+      buildRetractionIndex(all);
+
+      // SDGs
+      for (const p of all) p.sdg_tags = guessSDGs(p);
+
       document.getElementById('kpiTotal').textContent = num(all.length);
 
       // Year filter
       const years = [...new Set(all.map(x=>x.year).filter(Boolean))].sort((a,b)=>b-a);
-      const ySel = document.getElementById('yearFilter');
-      ySel.innerHTML = '<option value="">All years</option>' + years.map(y=>`<option>${y}</option>`).join('');
+      document.getElementById('yearFilter').innerHTML =
+        '<option value="">All years</option>' + years.map(y=>`<option>${y}</option>`).join('');
 
       // SDG filter options
-      const sdgSel = document.getElementById('sdgFilter');
-      const sdgOnlySel = document.getElementById('sdgOnlyFilter');
       const opts = SDG_LIST.map(s=>`<option value="${s.id}">${s.id}. ${s.name}</option>`).join('');
-      sdgSel.innerHTML = '<option value="">All SDGs</option>' + opts;
-      sdgOnlySel.innerHTML = '<option value="">All SDGs</option>' + opts;
+      document.getElementById('sdgFilter').innerHTML = '<option value="">All SDGs</option>' + opts;
+      document.getElementById('sdgOnlyFilter').innerHTML = '<option value="">All SDGs</option>' + opts;
 
       // Page size
       pageSize = parseInt(document.getElementById('pageSize').value,10) || 50;
 
-      // compute SDG tags for all
-      for (const p of all) p.sdg_tags = guessSDGs(p);
-
       // Build columns UI and render
       buildColumnsPanel();
-      applyFilters(1);
       buildSDGLegend();
+      applyFilters(1);
     }catch(e){
       document.getElementById('lastSynced').textContent = 'Error: '+e.message;
       console.error(e);
     }
   }
 
+  // Build an index for retraction matching
+  function buildRetractionIndex(items){
+    // normalize title -> object
+    const mapByTitle = new Map();
+    const mapByDOI   = new Map();
+    for (const p of items){
+      if (p.doi) mapByDOI.set(p.doi.toLowerCase(), p);
+      const nt = normTitle(p.title||'');
+      if (nt) mapByTitle.set(nt, p);
+    }
+
+    for (const p of items){
+      const title = p.title || '';
+      const nt = normTitle(title);
+      p.retraction_notice = isRetractionNotice(title);
+      p.retracted_by = null;     // (for originals) -> DOI/title of its retraction notice
+      p.retraction_of = null;    // (for notices)   -> DOI/title of original
+
+      if (p.retraction_notice){
+        // try to extract DOI of the original article from the notice title
+        const m = title.match(DOI_REGEX);
+        if (m){
+          const target = mapByDOI.get(m[0].toLowerCase());
+          if (target){
+            p.retraction_of = { doi: target.doi, title: target.title };
+            target.retracted_by = { doi: p.doi, title: p.title };
+          }
+        } else {
+          // fallback: remove prefix and match by normalized title
+          const stripped = stripRetractionPrefix(title);
+          const candidate = mapByTitle.get(normTitle(stripped));
+          if (candidate){
+            p.retraction_of = { doi: candidate.doi, title: candidate.title };
+            candidate.retracted_by = { doi: p.doi, title: p.title };
+          }
+        }
+      }
+    }
+  }
+
+  function isRetractionNotice(title){
+    const t = String(title||'');
+    return RETRACT_PREFIXES.some(rx => rx.test(t));
+  }
+  function stripRetractionPrefix(title){
+    let t = String(title||'');
+    for (const rx of RETRACT_PREFIXES){
+      if (rx.test(t)) return t.replace(rx, '').trim();
+    }
+    return t;
+  }
+
   // ----------------- FILTERS / SEARCH / PAGING -----------------
   function applyFilters(goToPage=1){
     const q = (document.getElementById('searchBox')?.value || '').toLowerCase().trim();
     const year = document.getElementById('yearFilter')?.value || '';
-    const retract = document.getElementById('retractionFilter')?.value || '';
     const sdg = document.getElementById('sdgFilter')?.value || document.getElementById('sdgOnlyFilter')?.value || '';
+    const retractMode = document.getElementById('retractionFilter')?.value || '';
 
     filtered = all.filter(p=>{
       if (year && String(p.year)!==year) return false;
-      if (retract==='exclude' && p.is_retracted) return false;
-      if (retract==='only' && !p.is_retracted) return false;
       if (sdg && !(p.sdg_tags||[]).includes(Number(sdg))) return false;
+
+      // retraction modes
+      if (retractMode === 'exclude'){
+        if (p.is_retracted || p.retraction_notice) return false;
+      } else if (retractMode === 'only_retracted'){
+        if (!p.is_retracted) return false;
+      } else if (retractMode === 'only_notices'){
+        if (!p.retraction_notice) return false;
+      }
+
       if (q){
-        const hay = [p.title||'', p.journal||'', ...(p.authors||[])].join(' ').toLowerCase();
+        const hay = [
+          p.title||'',
+          p.journal||'',
+          p.doi||'',
+          ...(p.authors||[])
+        ].join(' ').toLowerCase();
         if (!hay.includes(q)) return false;
       }
       return true;
@@ -392,7 +448,7 @@
 
     // KPIs
     document.getElementById('kpiView').textContent = num(filtered.length);
-    document.getElementById('kpiRetr').textContent = num(filtered.filter(x=>x.is_retracted).length);
+    document.getElementById('kpiRetr').textContent = num(filtered.filter(x=>x.is_retracted || x.retraction_notice).length);
     const journals = new Set(filtered.map(x=>(x.journal||'').trim()).filter(Boolean));
     document.getElementById('kpiJournals').textContent = num(journals.size);
 
@@ -403,12 +459,7 @@
     updateCoverage();
   }
 
-  function changePageSize(){
-    pageSize = parseInt(document.getElementById('pageSize').value,10) || 50;
-    currentPage = 1;
-    renderTable();
-  }
-
+  function changePageSize(){ pageSize = parseInt(document.getElementById('pageSize').value,10) || 50; currentPage = 1; renderTable(); }
   function totalPages(){ return Math.max(1, Math.ceil(filtered.length / pageSize)); }
   function goFirst(){ currentPage = 1; renderTable(); }
   function goPrev(){ if (currentPage>1) currentPage--; renderTable(); }
@@ -462,6 +513,7 @@
       case 'authors': return esc((p.authors||[]).join(', '));
       case 'citations': return p.citations ?? 0;
       case 'quartile': return esc(p.quartile || '');
+      case 'retraction_info': return renderRetractionInfo(p);
       case 'is_retracted':
         return p.is_retracted
           ? '<span class="px-2 py-0.5 rounded-md bg-rose-50 text-rose-700 border border-rose-200 text-xs">Yes</span>'
@@ -474,6 +526,27 @@
       case 'sdg_tags': return renderSDGBadges(p.sdg_tags||[]);
       default: return '';
     }
+  }
+
+  function renderRetractionInfo(p){
+    const parts = [];
+    if (p.retraction_notice){
+      parts.push('<span class="badge" style="border-color:#ef4444;background:#fff;color:#b91c1c">Retraction notice</span>');
+      if (p.retraction_of){
+        const t = esc(p.retraction_of.title || '');
+        const d = p.retraction_of.doi ? `<a href="https://doi.org/${p.retraction_of.doi}" target="_blank">${esc(p.retraction_of.doi)}</a>` : '';
+        parts.push(`<div class="text-xs text-slate-600 mt-1">of: ${t} ${d}</div>`);
+      }
+    }
+    if (p.is_retracted){
+      parts.push('<span class="badge" style="border-color:#ef4444;background:#fff;color:#b91c1c">Retracted (OpenAlex)</span>');
+      if (p.retracted_by){
+        const t = esc(p.retracted_by.title || '');
+        const d = p.retracted_by.doi ? `<a href="https://doi.org/${p.retracted_by.doi}" target="_blank">${esc(p.retracted_by.doi)}</a>` : '';
+        parts.push(`<div class="text-xs text-slate-600 mt-1">by: ${t} ${d}</div>`);
+      }
+    }
+    return parts.join(' ') || '';
   }
 
   // ----------------- COLUMNS UI -----------------
@@ -553,20 +626,14 @@
         if (text.includes(kw.toLowerCase())){ hits.push(s.id); break; }
       }
     }
-    // limit to top-2 unique SDGs for readability
     return Array.from(new Set(hits)).slice(0,2);
   }
-
   function renderSDGBadges(ids){
     if (!ids.length) return '';
-    return ids.map(id=>{
-      const name = SDG_LIST.find(s=>s.id===id)?.name || `SDG ${id}`;
-      return `<span class="badge" style="border-color:${SDG_COLORS[id]};background-color:#ffffff">${id}</span>`;
-    }).join(' ');
+    return ids.map(id=>`<span class="badge" style="border-color:${SDG_COLORS[id]};background-color:#fff">${id}</span>`).join(' ');
   }
-
   function buildSDGLegend(){
-    const box = document.getElementById('sdgLegend'); box.innerHTML='';
+    const box=document.getElementById('sdgLegend'); box.innerHTML='';
     for (const s of SDG_LIST){
       box.insertAdjacentHTML('beforeend', `
         <span class="badge" title="${s.name}" style="border-color:${SDG_COLORS[s.id]};background-color:#fff">
@@ -575,15 +642,10 @@
       `);
     }
   }
-
   function renderSDGChart(){
-    // count SDG appearances in current filtered set
     const counts = new Array(18).fill(0);
-    for (const p of filtered){
-      for (const id of (p.sdg_tags||[])) counts[id]++;
-    }
-    const labels = SDG_LIST.map(s=>`${s.id}`);
-    const data   = SDG_LIST.map(s=>counts[s.id]||0);
+    for (const p of filtered){ for (const id of (p.sdg_tags||[])) counts[id]++; }
+    const labels = SDG_LIST.map(s=>`${s.id}`), data = SDG_LIST.map(s=>counts[s.id]||0);
     if (chartSDG) chartSDG.destroy();
     chartSDG = new Chart(document.getElementById('chartSDG'), {
       type:'bar', data:{ labels, datasets:[{ label:'Count', data }] },
@@ -598,11 +660,9 @@
     sjrByIssn.clear(); sjrByTitle.clear(); haveSJR=false;
 
     try{
-      if (name.endsWith('.json')) {
-        const arr=JSON.parse(text); for (const row of arr) addQuartileRow(row);
-      } else if (name.endsWith('.csv')){
-        parseCSV(text, addQuartileRow);
-      } else { throw new Error('Unsupported file type'); }
+      if (name.endsWith('.json')) { const arr=JSON.parse(text); for (const row of arr) addQuartileRow(row); }
+      else if (name.endsWith('.csv')){ parseCSV(text, addQuartileRow); }
+      else { throw new Error('Unsupported file type'); }
       haveSJR = (sjrByIssn.size + sjrByTitle.size) > 0;
       document.getElementById('sjrStatus').textContent =
         `Loaded ${sjrByIssn.size} ISSN entries and ${sjrByTitle.size} title entries`;
@@ -679,12 +739,14 @@
       case 'issns':   return (p.issns||[]).join('; ');
       case 'subjects':return extractSubjects(p);
       case 'sdg_tags':return (p.sdg_tags||[]).join('; ');
+      case 'retraction_info': return stripHtml(renderRetractionInfo(p));
       case 'is_retracted': return p.is_retracted ? 'Yes' : 'No';
       default: return rawForExport(key, p) ?? '';
     }
   }
   function rawForExport(key, p){
     if (key==='subjects') return extractSubjects(p);
+    if (key==='retraction_info') return stripHtml(renderRetractionInfo(p));
     return p[key];
   }
 
@@ -707,6 +769,7 @@
     }
     return '';
   }
+  function stripHtml(html){ const d=document.createElement('div'); d.innerHTML=html; return d.textContent||d.innerText||''; }
 
   // Close dropdown on outside click
   document.addEventListener('click', (e)=>{
