@@ -1,75 +1,151 @@
-name: Fetch Publications
+name: Fetch Publications (OpenAlex → institution_data.json)
+
 on:
   workflow_dispatch: {}
   schedule:
-    - cron: "30 20 * * *"   # run every day at 20:30 UTC
+    - cron: "30 20 * * *"   # daily 20:30 UTC
 
 jobs:
   fetch:
     runs-on: ubuntu-latest
     permissions:
       contents: write
+
+    env:
+      ROR: ${{ secrets.INSTITUTION_ROR }}
+      CONTACT: ${{ secrets.CONTACT_EMAIL }}
+      FROM_YEAR: "2010"             # change if you want a different start year
+      PAGES_MAX: "200"              # safety cap
+      PER_PAGE: "200"               # OpenAlex max page size
+      OUTFILE: "institution_data.json"
+
     steps:
       - uses: actions/checkout@v4
 
-      - name: Fetch data from OpenAlex by ROR
-        env:
-          ROR: "04q2jes40"   # your institution ROR ID (keep here, not in the portal)
+      - name: Build dump with headers + polite backoff
+        shell: bash
         run: |
-          node -e '
+          node - <<'NODE'
           const https = require("https");
           const fs = require("fs");
-          const ROR=process.env.ROR;
-          const FROM="2010-01-01";
-          const TO=(new Date().getFullYear())+"-12-31";
-          let cursor="*"; let all=[]; let pages=0;
-          function page(){
-            const params=new URLSearchParams({
-              "per-page":"200",
-              "cursor":cursor,
-              "mailto":"hidden@example.org",  // stays private, never in portal
-              "filter":`institutions.ror:${ROR},from_publication_date:${FROM},to_publication_date:${TO}`,
-              "select":"id,doi,title,authorships,host_venue,publication_year,type,cited_by_count,primary_location,is_retracted"
-            });
-            const url=`https://api.openalex.org/works?${params}`;
-            https.get(url,res=>{
-              let d=""; res.on("data",c=>d+=c);
-              res.on("end",()=>{
-                if(res.statusCode!==200){console.error("HTTP",res.statusCode); process.exit(1);}
-                const j=JSON.parse(d);
-                const items=(j.results||[]).map(w=>{
-                  const doi=(w.doi||"").replace(/^https?:\/\/doi\.org\//i,"");
-                  return {
-                    doi,
-                    title:w.title||"",
-                    year:w.publication_year||null,
-                    type:w.type||"",
-                    citations:w.cited_by_count||0,
-                    authors:(w.authorships||[]).map(a=>a.author?.display_name).filter(Boolean),
-                    journal:w.host_venue?.display_name||"",
-                    issns:(w.host_venue?.issn||[]).map(x=>(x||"").toUpperCase()),
-                    url:w.primary_location?.landing_page_url||(doi?`https://doi.org/${doi}`:""),
-                    is_retracted: !!w.is_retracted
-                  };
-                });
-                all.push(...items);
-                cursor=j?.meta?.next_cursor;
-                if(cursor && items.length && pages<150){ pages++; setTimeout(page,200); }
-                else {
-                  fs.writeFileSync("institution_data.json", JSON.stringify({updated:new Date().toISOString(), count:all.length, items:all},null,2));
-                  console.log("Saved", all.length, "records");
-                }
+
+          const ROR       = process.env.ROR;
+          const CONTACT   = process.env.CONTACT;
+          const FROM      = `${process.env.FROM_YEAR || "2010"}-01-01`;
+          const TO        = `${new Date().getFullYear()}-12-31`;
+          const PER_PAGE  = parseInt(process.env.PER_PAGE || "200", 10);
+          const PAGES_MAX = parseInt(process.env.PAGES_MAX || "200", 10);
+          const OUTFILE   = process.env.OUTFILE || "institution_data.json";
+
+          if (!ROR) { console.error("Missing INSTITUTION_ROR secret"); process.exit(1); }
+          if (!CONTACT) { console.error("Missing CONTACT_EMAIL secret"); process.exit(1); }
+
+          let cursor = "*";
+          let page = 0;
+          const all = [];
+
+          const UA = `Institution Publications Sync (+mailto:${CONTACT})`;
+
+          function sleep(ms){ return new Promise(r => setTimeout(r, ms)); }
+
+          function getPage() {
+            return new Promise((resolve, reject) => {
+              const qs = new URLSearchParams({
+                "per-page": String(PER_PAGE),
+                "cursor": cursor,
+                "mailto": CONTACT, // polite use
+                "filter": `institutions.ror:${ROR},from_publication_date:${FROM},to_publication_date:${TO}`,
+                // keep payload lean but include retraction flag
+                "select": "id,doi,title,authorships,host_venue,publication_year,type,cited_by_count,primary_location,is_retracted"
               });
-            }).on("error",e=>{console.error(e);process.exit(1);});
+
+              const url = `https://api.openalex.org/works?${qs.toString()}`;
+
+              const req = https.get(url, {
+                headers: {
+                  "User-Agent": UA,           // include contact in UA
+                  "From": CONTACT,            // some infra respects this
+                  "Accept": "application/json"
+                }
+              }, res => {
+                let d = "";
+                res.on("data", c => d += c);
+                res.on("end", async () => {
+                  // Handle rate/403 politely with exponential backoff
+                  if (res.statusCode === 429 || res.statusCode === 403) {
+                    const wait = Math.min(60000, 800 * Math.pow(2, page)); // up to 60s
+                    console.log(`HTTP ${res.statusCode}. Backing off ${wait}ms, retrying same page…`);
+                    await sleep(wait);
+                    try { const again = await getPage(); resolve(again); } catch (e) { reject(e); }
+                    return;
+                  }
+                  if (res.statusCode !== 200) {
+                    console.error("HTTP", res.statusCode, d.slice(0, 500));
+                    reject(new Error(`OpenAlex HTTP ${res.statusCode}`));
+                    return;
+                  }
+
+                  let j;
+                  try { j = JSON.parse(d); } catch (e) {
+                    console.error("Invalid JSON", d.slice(0, 200));
+                    reject(new Error("Invalid JSON"));
+                    return;
+                  }
+
+                  const items = (j.results || []).map(w => {
+                    const doi = (w.doi || "").replace(/^https?:\/\/doi\.org\//i, "");
+                    return {
+                      doi,
+                      title: w.title || "",
+                      year: w.publication_year || null,
+                      type: w.type || "",
+                      citations: w.cited_by_count || 0,
+                      authors: (w.authorships || []).map(a => a.author?.display_name).filter(Boolean),
+                      journal: w.host_venue?.display_name || "",
+                      issns: (w.host_venue?.issn || []).map(x => (x || "").toUpperCase()),
+                      url: w.primary_location?.landing_page_url || (doi ? `https://doi.org/${doi}` : ""),
+                      is_retracted: !!w.is_retracted
+                    };
+                  });
+
+                  all.push(...items);
+                  cursor = j?.meta?.next_cursor || null;
+                  resolve(items.length);
+                });
+              });
+
+              req.on("error", reject);
+            });
           }
-          page();'
+
+          (async () => {
+            try {
+              while (cursor && page < PAGES_MAX) {
+                page++;
+                console.log(`Fetching page ${page}…`);
+                const n = await getPage();
+                console.log(`Got ${n} records`);
+                if (!n) break;
+                await sleep(200); // small pause between pages
+              }
+              const out = { updated: new Date().toISOString(), count: all.length, items: all };
+              fs.writeFileSync(OUTFILE, JSON.stringify(out, null, 2));
+              console.log(`Saved ${all.length} records → ${OUTFILE}`);
+            } catch (e) {
+              console.error("Failed:", e);
+              process.exit(1);
+            }
+          })();
+          NODE
 
       - name: Commit JSON
         run: |
-          if git status --porcelain | grep -q institution_data.json; then
+          if git status --porcelain | grep -q "${OUTFILE:-institution_data.json}"; then
             git config user.name "github-actions"
             git config user.email "actions@users.noreply.github.com"
-            git add institution_data.json
+            git add "${OUTFILE:-institution_data.json}"
             git commit -m "Update publication dump"
             git push
+          else
+            echo "No changes"
           fi
