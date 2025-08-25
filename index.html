@@ -1,7 +1,7 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-  <meta charset="UTF-8" />
+  <meta charset="UTF-8"/>
   <meta name="viewport" content="width=device-width, initial-scale=1"/>
   <title>Publication Data</title>
   <!-- Tailwind -->
@@ -16,12 +16,13 @@
     .thin-scrollbar::-webkit-scrollbar{height:8px;width:8px}
     .thin-scrollbar::-webkit-scrollbar-thumb{background:#CBD5E1;border-radius:6px}
     .thin-scrollbar::-webkit-scrollbar-track{background:#F8FAFC}
-    .tab-active{color:#111827;border-color:#6366F1;background:linear-gradient(180deg,#fff, #f8fafc)}
+    .tab-active{color:#111827;border-color:#6366F1;background:linear-gradient(180deg,#fff,#f8fafc)}
     .tab-inactive{color:#6B7280;border-color:transparent}
+    .dropdown{position:relative}
+    .dropdown-panel{position:absolute;right:0;top:100%;z-index:40}
   </style>
 </head>
 <body class="bg-slate-50 text-slate-900">
-
   <!-- Header -->
   <header class="sticky top-0 z-20 bg-white/90 backdrop-blur border-b border-slate-200">
     <div class="max-w-7xl mx-auto px-4 py-4 flex items-center justify-between">
@@ -43,15 +44,9 @@
     <div class="border-t border-slate-200 bg-white">
       <div class="max-w-7xl mx-auto px-4">
         <nav class="flex gap-2">
-          <button id="tabOverview" class="px-4 py-3 text-sm border-b-2 tab-active" onclick="switchTab('overview')">
-            Overview
-          </button>
-          <button id="tabPublications" class="px-4 py-3 text-sm border-b-2 tab-inactive" onclick="switchTab('publications')">
-            Publications
-          </button>
-          <button id="tabQuartiles" class="px-4 py-3 text-sm border-b-2 tab-inactive" onclick="switchTab('quartiles')">
-            Quartiles
-          </button>
+          <button id="tabOverview" class="px-4 py-3 text-sm border-b-2 tab-active" onclick="switchTab('overview')">Overview</button>
+          <button id="tabPublications" class="px-4 py-3 text-sm border-b-2 tab-inactive" onclick="switchTab('publications')">Publications</button>
+          <button id="tabQuartiles" class="px-4 py-3 text-sm border-b-2 tab-inactive" onclick="switchTab('quartiles')">Quartiles</button>
         </nav>
       </div>
     </div>
@@ -60,9 +55,8 @@
   <!-- CONTENT -->
   <main class="max-w-7xl mx-auto px-4 py-6">
 
-    <!-- OVERVIEW TAB -->
+    <!-- OVERVIEW -->
     <section id="view-overview" class="space-y-6">
-      <!-- KPIs -->
       <div class="grid grid-cols-2 md:grid-cols-4 gap-4">
         <div class="bg-white border border-slate-200 rounded-2xl p-4">
           <div class="text-xs text-slate-500">Total items</div>
@@ -82,28 +76,24 @@
         </div>
       </div>
 
-      <!-- Charts -->
       <div class="grid grid-cols-1 lg:grid-cols-2 gap-4">
         <div class="bg-white border border-slate-200 rounded-2xl p-4">
           <div class="flex items-center justify-between">
             <h3 class="font-semibold">Publications by Year</h3>
             <span id="rangeText" class="text-xs text-slate-500"></span>
           </div>
-          <div class="mt-2 h-[260px]">
-            <canvas id="chartByYear"></canvas>
-          </div>
+          <div class="mt-2 h-[260px]"><canvas id="chartByYear"></canvas></div>
         </div>
         <div class="bg-white border border-slate-200 rounded-2xl p-4">
           <h3 class="font-semibold">Top Journals (view)</h3>
-          <div class="mt-2 h-[260px]">
-            <canvas id="chartTopJournals"></canvas>
-          </div>
+          <div class="mt-2 h-[260px]"><canvas id="chartTopJournals"></canvas></div>
         </div>
       </div>
     </section>
 
-    <!-- PUBLICATIONS TAB -->
+    <!-- PUBLICATIONS -->
     <section id="view-publications" class="hidden space-y-4">
+
       <!-- Controls -->
       <div class="bg-white border border-slate-200 rounded-2xl p-4">
         <div class="flex flex-wrap items-end gap-3">
@@ -128,18 +118,33 @@
           </div>
           <div>
             <label class="block text-xs font-medium text-slate-600">Rows per page</label>
-            <select id="pageSize" class="px-3 py-2 rounded-xl border border-slate-300 text-sm"
-                    onchange="changePageSize()">
+            <select id="pageSize" class="px-3 py-2 rounded-xl border border-slate-300 text-sm" onchange="changePageSize()">
               <option value="25">25</option>
               <option value="50" selected>50</option>
               <option value="100">100</option>
               <option value="200">200</option>
             </select>
           </div>
-          <div class="ml-auto flex items-center gap-2">
+
+          <!-- Column chooser -->
+          <div class="ml-auto dropdown">
+            <button id="colBtn" class="px-3 py-2 rounded-xl bg-slate-100 border border-slate-300 text-sm flex items-center gap-2"
+                    onclick="toggleColumnsPanel()">
+              <i data-lucide="columns-3"></i> Columns
+            </button>
+            <div id="columnsPanel" class="dropdown-panel hidden mt-2 bg-white border border-slate-200 rounded-xl shadow-lg w-72 p-3">
+              <div class="text-xs text-slate-500 mb-2">Choose which fields to display</div>
+              <div id="columnsList" class="grid grid-cols-2 gap-y-2 text-sm"></div>
+              <div class="flex justify-end gap-2 mt-3">
+                <button class="px-3 py-1.5 rounded-lg border border-slate-300" onclick="resetColumns()">Reset</button>
+                <button class="px-3 py-1.5 rounded-lg bg-indigo-600 text-white" onclick="applyColumnSelection()">Apply</button>
+              </div>
+            </div>
+          </div>
+
+          <div class="flex items-center gap-2">
             <button class="px-3 py-2 rounded-xl bg-indigo-600 text-white text-sm" onclick="exportCSV()">Export CSV</button>
-            <button class="px-3 py-2 rounded-xl bg-indigo-50 text-indigo-700 border border-indigo-200 text-sm"
-                    onclick="exportJSON()">Export JSON</button>
+            <button class="px-3 py-2 rounded-xl bg-indigo-50 text-indigo-700 border border-indigo-200 text-sm" onclick="exportJSON()">Export JSON</button>
           </div>
         </div>
       </div>
@@ -153,20 +158,11 @@
         <div class="overflow-x-auto thin-scrollbar">
           <table class="w-full text-sm" id="pubTable">
             <thead class="bg-slate-50 text-slate-600">
-              <tr>
-                <th class="text-left px-4 py-2">Year</th>
-                <th class="text-left px-4 py-2">Title</th>
-                <th class="text-left px-4 py-2">Journal</th>
-                <th class="text-left px-4 py-2">Authors</th>
-                <th class="text-left px-4 py-2">Citations</th>
-                <th class="text-left px-4 py-2">Quartile</th>
-                <th class="text-left px-4 py-2">Retracted?</th>
-              </tr>
+              <tr id="pubHeadRow"></tr>
             </thead>
             <tbody id="pubBody"></tbody>
           </table>
         </div>
-
         <div class="px-4 py-3 flex items-center justify-between">
           <div class="text-xs text-slate-500" id="pageInfo">Page 1 / 1</div>
           <div class="flex gap-2">
@@ -179,7 +175,7 @@
       </div>
     </section>
 
-    <!-- QUARTILES TAB -->
+    <!-- QUARTILES -->
     <section id="view-quartiles" class="hidden space-y-4">
       <div class="bg-white border border-slate-200 rounded-2xl p-4">
         <div class="flex items-center justify-between">
@@ -191,7 +187,7 @@
             </p>
           </div>
           <div class="flex items-center gap-2">
-            <input id="sjrFile" type="file" accept=".csv,.json" class="hidden" />
+            <input id="sjrFile" type="file" accept=".csv,.json" class="hidden"/>
             <button class="px-3 py-2 rounded-xl bg-slate-100 border border-slate-300 text-sm" onclick="document.getElementById('sjrFile').click()">
               <i data-lucide="upload"></i> Upload Quartiles
             </button>
@@ -205,7 +201,6 @@
         <div class="text-sm" id="mapCoverage">—</div>
       </div>
     </section>
-
   </main>
 
   <footer class="text-center text-xs text-slate-500 pb-8">
@@ -215,54 +210,73 @@
 <script>
   lucide.createIcons();
 
-  // ---------- State ----------
-  let all = [];            // all publications
-  let filtered = [];       // after filters/search
+  // ----------------- STATE -----------------
+  let all = [];
+  let filtered = [];
   let currentPage = 1;
   let pageSize = 50;
 
-  // Quartile mapping
-  const sjrByIssn = new Map();   // ISSN -> Q
-  const sjrByTitle = new Map();  // normalized title -> Q
+  // Quartiles
+  const sjrByIssn = new Map();
+  const sjrByTitle = new Map();
   let haveSJR = false;
 
-  // Charts
-  let chartByYear = null;
-  let chartTopJournals = null;
+  // Columns config (default matches your current table)
+  const ALL_COLUMNS = [
+    { key:'year',         label:'Year',          default:true },
+    { key:'title',        label:'Title',         default:true },
+    { key:'journal',      label:'Journal',       default:true },
+    { key:'authors',      label:'Authors',       default:true },
+    { key:'citations',    label:'Citations',     default:true },
+    { key:'quartile',     label:'Quartile',      default:true },
+    { key:'is_retracted', label:'Retracted?',    default:true },
+    // Optional extras:
+    { key:'type',         label:'Type',          default:false },
+    { key:'doi',          label:'DOI',           default:false },
+    { key:'url',          label:'URL',           default:false },
+    { key:'issns',        label:'ISSNs',         default:false },
+    { key:'subjects',     label:'Subject areas', default:false }, // uses p.subjects or p.concepts if present
+  ];
+  let selectedColumns = loadSelectedColumns();
 
-  // ---------- Tabs ----------
+  // Charts
+  let chartByYear = null, chartTopJournals = null;
+
+  // ----------------- TABS -----------------
   function switchTab(name){
-    const tabs = ["overview","publications","quartiles"];
-    for (const t of tabs) {
+    const tabs=['overview','publications','quartiles'];
+    for (const t of tabs){
       document.getElementById(`view-${t}`).classList.toggle('hidden', t!==name);
-      document.getElementById(`tab${t[0].toUpperCase()+t.slice(1)}`).classList.toggle('tab-active', t===name);
-      document.getElementById(`tab${t[0].toUpperCase()+t.slice(1)}`).classList.toggle('tab-inactive', t!==name);
+      const el = document.getElementById(`tab${t[0].toUpperCase()+t.slice(1)}`);
+      el.classList.toggle('tab-active', t===name);
+      el.classList.toggle('tab-inactive', t!==name);
     }
+    if (name==='quartiles') updateCoverage();
   }
 
-  // ---------- Load data ----------
+  // ----------------- LOAD DATA -----------------
   async function autoLoad(){
     try{
-      const res = await fetch('institution_data.json', { cache: 'no-store' });
-      if(!res.ok) throw new Error('institution_data.json not found');
+      const res = await fetch('institution_data.json', { cache:'no-store' });
+      if (!res.ok) throw new Error('institution_data.json not found');
       const j = await res.json();
 
-      // last synced
       document.getElementById('lastSynced').textContent =
         j.updated ? `Last synced: ${dayjs(j.updated).format('DD MMM YYYY, HH:mm')}` : '';
 
       all = Array.isArray(j.items) ? j.items : [];
       document.getElementById('kpiTotal').textContent = num(all.length);
 
-      // Year filter options
+      // Year filter
       const years = [...new Set(all.map(x=>x.year).filter(Boolean))].sort((a,b)=>b-a);
       const ySel = document.getElementById('yearFilter');
       ySel.innerHTML = '<option value="">All years</option>' + years.map(y=>`<option>${y}</option>`).join('');
 
-      // set page size from UI
-      pageSize = parseInt(document.getElementById('pageSize').value, 10) || 50;
+      // Page size
+      pageSize = parseInt(document.getElementById('pageSize').value,10) || 50;
 
-      // initial view
+      // Build columns UI and render
+      buildColumnsPanel();
       applyFilters(1);
     }catch(e){
       document.getElementById('lastSynced').textContent = 'Error: '+e.message;
@@ -270,7 +284,7 @@
     }
   }
 
-  // ---------- Filters, search, pagination ----------
+  // ----------------- FILTERS / SEARCH / PAGING -----------------
   function applyFilters(goToPage=1){
     const q = (document.getElementById('searchBox')?.value || '').toLowerCase().trim();
     const year = document.getElementById('yearFilter')?.value || '';
@@ -280,7 +294,7 @@
       if (year && String(p.year)!==year) return false;
       if (retract==='exclude' && p.is_retracted) return false;
       if (retract==='only' && !p.is_retracted) return false;
-      if (q) {
+      if (q){
         const hay = [
           p.title||'',
           p.journal||'',
@@ -291,58 +305,60 @@
       return true;
     });
 
-    // attach quartiles where available
-    if (haveSJR) {
-      for (const p of filtered) {
-        p.quartile = resolveQuartile(p);
-      }
+    if (haveSJR){
+      for (const p of filtered) p.quartile = resolveQuartile(p);
     }
 
     // KPIs
-    document.getElementById('kpiView').textContent = num(filtered.length);
-    document.getElementById('kpiRetr').textContent = num(filtered.filter(x=>x.is_retracted).length);
+    document.getElementById('kpiView').textContent   = num(filtered.length);
+    document.getElementById('kpiRetr').textContent   = num(filtered.filter(x=>x.is_retracted).length);
     const journals = new Set(filtered.map(x=>(x.journal||'').trim()).filter(Boolean));
     document.getElementById('kpiJournals').textContent = num(journals.size);
 
     if (goToPage===1) currentPage = 1;
-    renderPage();
+    renderTable();
     renderOverviewCharts();
   }
 
   function changePageSize(){
     pageSize = parseInt(document.getElementById('pageSize').value,10) || 50;
     currentPage = 1;
-    renderPage();
+    renderTable();
   }
 
   function totalPages(){ return Math.max(1, Math.ceil(filtered.length / pageSize)); }
-  function goFirst(){ currentPage = 1; renderPage(); }
-  function goPrev(){ if(currentPage>1) currentPage--; renderPage(); }
-  function goNext(){ if(currentPage<totalPages()) currentPage++; renderPage(); }
-  function goLast(){ currentPage = totalPages(); renderPage(); }
+  function goFirst(){ currentPage = 1; renderTable(); }
+  function goPrev(){ if (currentPage>1) currentPage--; renderTable(); }
+  function goNext(){ if (currentPage<totalPages()) currentPage++; renderTable(); }
+  function goLast(){ currentPage = totalPages(); renderTable(); }
 
-  function renderPage(){
-    const start = (currentPage-1)*pageSize;
-    const end = Math.min(start+pageSize, filtered.length);
-    const rows = filtered.slice(start,end);
-
-    const tbody = document.getElementById('pubBody');
-    tbody.innerHTML = '';
-    for (const p of rows) {
-      const tr = document.createElement('tr');
-      tr.className = 'border-b border-slate-100 hover:bg-slate-50';
-      tr.innerHTML = `
-        <td class="px-4 py-2">${p.year ?? ''}</td>
-        <td class="px-4 py-2">${p.url ? `<a class="text-indigo-600 hover:underline" href="${p.url}" target="_blank">${esc(p.title||'')}</a>` : esc(p.title||'')}</td>
-        <td class="px-4 py-2">${esc(p.journal||'')}</td>
-        <td class="px-4 py-2">${esc((p.authors||[]).join(', '))}</td>
-        <td class="px-4 py-2">${p.citations ?? 0}</td>
-        <td class="px-4 py-2">${esc(p.quartile||'')}</td>
-        <td class="px-4 py-2">${p.is_retracted ? '<span class="px-2 py-0.5 rounded-md bg-rose-50 text-rose-700 border border-rose-200 text-xs">Yes</span>' : 'No'}</td>
-      `;
-      tbody.appendChild(tr);
+  // ----------------- TABLE RENDER (with dynamic columns) -----------------
+  function renderTable(){
+    // HEAD
+    const head = document.getElementById('pubHeadRow');
+    head.innerHTML = '';
+    for (const col of selectedColumns) {
+      const th = document.createElement('th');
+      th.className = 'text-left px-4 py-2';
+      th.textContent = col.label;
+      head.appendChild(th);
     }
 
+    // BODY
+    const start = (currentPage-1)*pageSize;
+    const end   = Math.min(start+pageSize, filtered.length);
+    const rows  = filtered.slice(start,end);
+
+    const body = document.getElementById('pubBody');
+    body.innerHTML = '';
+    for (const p of rows){
+      const tr = document.createElement('tr');
+      tr.className = 'border-b border-slate-100 hover:bg-slate-50';
+      tr.innerHTML = selectedColumns.map(col => `<td class="px-4 py-2">${renderCell(col.key, p)}</td>`).join('');
+      body.appendChild(tr);
+    }
+
+    // Info
     const info = `Page ${currentPage} / ${totalPages()}`;
     document.getElementById('pageInfo').textContent = info;
 
@@ -353,112 +369,146 @@
     document.getElementById('rangeText').textContent = rangeText;
   }
 
-  // ---------- Charts (Overview) ----------
-  function renderOverviewCharts(){
-    // by year
-    const byYear = {};
-    for (const p of filtered) {
-      if (!p.year) continue;
-      byYear[p.year] = (byYear[p.year]||0)+1;
+  function renderCell(key, p){
+    switch(key){
+      case 'year': return p.year ?? '';
+      case 'title':
+        return p.url ? `<a class="text-indigo-600 hover:underline" href="${p.url}" target="_blank">${esc(p.title||'')}</a>` : esc(p.title||'');
+      case 'journal': return esc(p.journal||'');
+      case 'authors': return esc((p.authors||[]).join(', '));
+      case 'citations': return p.citations ?? 0;
+      case 'quartile': return esc(p.quartile || '');
+      case 'is_retracted':
+        return p.is_retracted
+          ? '<span class="px-2 py-0.5 rounded-md bg-rose-50 text-rose-700 border border-rose-200 text-xs">Yes</span>'
+          : 'No';
+      case 'type': return esc(p.type || '');
+      case 'doi': return esc(p.doi || '');
+      case 'url': return p.url ? `<a class="text-indigo-600" href="${p.url}" target="_blank">Open</a>` : '';
+      case 'issns': return esc((p.issns||[]).join(', '));
+      case 'subjects': return esc(extractSubjects(p));
+      default: return '';
     }
+  }
+
+  // ----------------- COLUMNS UI -----------------
+  function buildColumnsPanel(){
+    const container = document.getElementById('columnsList');
+    container.innerHTML = '';
+    const selectedKeys = new Set(selectedColumns.map(c=>c.key));
+    for (const col of ALL_COLUMNS){
+      const id = `col_${col.key}`;
+      const checked = selectedKeys.has(col.key) ? 'checked' : '';
+      container.insertAdjacentHTML('beforeend', `
+        <label class="flex items-center gap-2">
+          <input type="checkbox" id="${id}" ${checked}/>
+          <span>${col.label}</span>
+        </label>
+      `);
+    }
+  }
+
+  function toggleColumnsPanel(){
+    document.getElementById('columnsPanel').classList.toggle('hidden');
+  }
+
+  function applyColumnSelection(){
+    const chosen = [];
+    for (const col of ALL_COLUMNS){
+      const box = document.getElementById(`col_${col.key}`);
+      if (box && box.checked) chosen.push({key: col.key, label: col.label});
+    }
+    // Avoid empty state: if none picked, revert to defaults
+    selectedColumns = chosen.length ? chosen : ALL_COLUMNS.filter(c=>c.default).map(c=>({key:c.key,label:c.label}));
+    saveSelectedColumns();
+    toggleColumnsPanel();
+    renderTable();
+  }
+
+  function resetColumns(){
+    selectedColumns = ALL_COLUMNS.filter(c=>c.default).map(c=>({key:c.key,label:c.label}));
+    saveSelectedColumns();
+    buildColumnsPanel();
+    renderTable();
+  }
+
+  function saveSelectedColumns(){
+    try{ localStorage.setItem('pub_columns', JSON.stringify(selectedColumns)); }catch{}
+  }
+  function loadSelectedColumns(){
+    try{
+      const s = localStorage.getItem('pub_columns');
+      if (s){
+        const arr = JSON.parse(s);
+        // validate against ALL_COLUMNS; drop unknown keys
+        const valid = new Map(ALL_COLUMNS.map(c=>[c.key, c.label]));
+        return arr.filter(x=>valid.has(x.key)).map(x=>({key:x.key, label: valid.get(x.key)}));
+      }
+    }catch{}
+    return ALL_COLUMNS.filter(c=>c.default).map(c=>({key:c.key, label:c.label}));
+  }
+
+  // ----------------- CHARTS -----------------
+  function renderOverviewCharts(){
+    const byYear = {};
+    for (const p of filtered){ if (p.year) byYear[p.year] = (byYear[p.year]||0)+1; }
     const labelsY = Object.keys(byYear).sort((a,b)=>a-b);
-    const dataY = labelsY.map(y=>byYear[y]);
+    const dataY   = labelsY.map(y=>byYear[y]);
 
     if (chartByYear) chartByYear.destroy();
     chartByYear = new Chart(document.getElementById('chartByYear'), {
       type: 'bar',
-      data: { labels: labelsY, datasets: [{ label: 'Publications', data: dataY }] },
-      options: { responsive: true, maintainAspectRatio: false, scales:{ y:{ beginAtZero:true } } }
+      data: { labels: labelsY, datasets: [{ label:'Publications', data: dataY }] },
+      options: { responsive:true, maintainAspectRatio:false, scales:{ y:{ beginAtZero:true } } }
     });
 
-    // top journals
     const counts = {};
-    for (const p of filtered) {
-      const j = (p.journal||'').trim();
-      if (!j) continue;
-      counts[j] = (counts[j]||0)+1;
-    }
+    for (const p of filtered){ const j=(p.journal||'').trim(); if (j) counts[j]=(counts[j]||0)+1; }
     const top = Object.entries(counts).sort((a,b)=>b[1]-a[1]).slice(0,10);
     const labelsJ = top.map(x=>x[0]);
-    const dataJ = top.map(x=>x[1]);
+    const dataJ   = top.map(x=>x[1]);
 
     if (chartTopJournals) chartTopJournals.destroy();
     chartTopJournals = new Chart(document.getElementById('chartTopJournals'), {
       type: 'bar',
-      data: { labels: labelsJ, datasets: [{ label: 'Count', data: dataJ }] },
-      options: { responsive: true, maintainAspectRatio: false, indexAxis:'y', scales:{ x:{ beginAtZero:true } } }
+      data: { labels: labelsJ, datasets: [{ label:'Count', data: dataJ }] },
+      options: { responsive:true, maintainAspectRatio:false, indexAxis:'y', scales:{ x:{ beginAtZero:true } } }
     });
   }
 
-  // ---------- Quartiles upload / mapping ----------
+  // ----------------- QUARTILES -----------------
   document.getElementById('sjrFile').addEventListener('change', async (e)=>{
-    const file = e.target.files[0];
-    if (!file) return;
+    const file = e.target.files[0]; if(!file) return;
     const name = file.name.toLowerCase();
     const text = await file.text();
-
     sjrByIssn.clear(); sjrByTitle.clear(); haveSJR=false;
 
     try{
-      if (name.endsWith('.json')) {
+      if (name.endsWith('.json')){
         const arr = JSON.parse(text);
         for (const row of arr) addQuartileRow(row);
-      } else if (name.endsWith('.csv')) {
+      } else if (name.endsWith('.csv')){
         parseCSV(text, addQuartileRow);
-      } else {
-        throw new Error('Unsupported file type');
-      }
+      } else { throw new Error('Unsupported file type'); }
       haveSJR = (sjrByIssn.size + sjrByTitle.size) > 0;
       document.getElementById('sjrStatus').textContent =
         `Loaded ${sjrByIssn.size} ISSN entries and ${sjrByTitle.size} title entries`;
-      // re-apply to inject quartiles
       applyFilters();
       updateCoverage();
     }catch(err){
-      document.getElementById('sjrStatus').textContent = 'Failed: '+err.message;
+      document.getElementById('sjrStatus').textContent = 'Failed: ' + err.message;
     }
   });
 
   function addQuartileRow(row){
-    if (!row) return;
     const q = normQuartile(row.quartile || row.Quarter || row.Q || row.q || '');
     const title = normTitle(row.title || row.Title || row.Journal || '');
-    const issn = normIssn(row.issn || row.ISSN || row.issn_print || row.ISSN_print || '');
-    if (issn && q) sjrByIssn.set(issn, q);
+    const issn  = normIssn (row.issn  || row.ISSN  || row.issn_print || row.ISSN_print || '');
+    if (issn && q)  sjrByIssn.set(issn, q);
     if (title && q) sjrByTitle.set(title, q);
   }
 
-  function parseCSV(text, onRow){
-    const lines = text.split(/\r?\n/).filter(Boolean);
-    const header = lines.shift().split(',').map(h=>h.trim().toLowerCase());
-    const idxTitle = header.findIndex(h=>/title|journal/.test(h));
-    const idxIssn  = header.findIndex(h=>/issn/.test(h));
-    const idxQuart = header.findIndex(h=>/quartile|q$/.test(h));
-    if (idxQuart<0 || (idxTitle<0 && idxIssn<0)) throw new Error('CSV must include Title/ISSN and Quartile columns');
-    for (const line of lines){
-      const cols = splitCsv(line);
-      onRow({
-        title: idxTitle>=0 ? cols[idxTitle] : '',
-        issn:  idxIssn>=0 ? cols[idxIssn] : '',
-        quartile: idxQuart>=0 ? cols[idxQuart] : ''
-      });
-    }
-  }
-
-  // CSV splitter that respects quoted commas
-  function splitCsv(line){
-    const out=[]; let cur=''; let inQ=false;
-    for (let i=0;i<line.length;i++){
-      const ch=line[i];
-      if (ch==='\"'){ inQ = !inQ; continue; }
-      if (ch===',' && !inQ){ out.push(cur.trim()); cur=''; continue; }
-      cur+=ch;
-    }
-    out.push(cur.trim()); return out;
-  }
-
   function resolveQuartile(p){
-    // prefer ISSN match (exact), then title (normalized)
     const issns = (p.issns||[]).map(normIssn).filter(Boolean);
     for (const id of issns){ if (sjrByIssn.has(id)) return sjrByIssn.get(id); }
     const t = normTitle(p.journal||'');
@@ -469,37 +519,50 @@
   function updateCoverage(){
     let mapped=0, total=filtered.length;
     for (const p of filtered) if (p.quartile) mapped++;
-    const pct = total? Math.round(mapped*100/total):0;
+    const pct = total ? Math.round(mapped*100/total) : 0;
     document.getElementById('mapCoverage').textContent =
       `${mapped} / ${total} in current view mapped (${pct}%)`;
   }
 
-  // ---------- Export ----------
+  // ----------------- EXPORT -----------------
   function exportCSV(){
     if (!filtered.length) return;
     const start=(currentPage-1)*pageSize, end=Math.min(start+pageSize, filtered.length);
-    const rows=filtered.slice(start,end);
-    const header=['year','title','journal','authors','citations','quartile','retracted','doi','url'];
-    const csv=[header.join(',')].concat(rows.map(r=>[
-      r.year||'',
-      q(r.title||''),
-      q(r.journal||''),
-      q((r.authors||[]).join('; ')),
-      r.citations??0,
-      r.quartile||'',
-      r.is_retracted?'Yes':'No',
-      r.doi||'',
-      r.url||''
-    ].join(','))).join('\n');
+    const rows = filtered.slice(start,end);
+
+    const header = selectedColumns.map(c=>c.label);
+    const csv = [header.join(',')].concat(
+      rows.map(r => selectedColumns.map(c => q(textForExport(c.key, r))).join(','))
+    ).join('\n');
+
     downloadBlob('publications_view.csv', csv, 'text/csv');
   }
+
   function exportJSON(){
     const start=(currentPage-1)*pageSize, end=Math.min(start+pageSize, filtered.length);
-    const rows=filtered.slice(start,end);
+    const rows = filtered.slice(start,end).map(r=>{
+      const obj={};
+      for (const c of selectedColumns){ obj[c.key] = rawForExport(c.key, r); }
+      return obj;
+    });
     downloadBlob('publications_view.json', JSON.stringify(rows,null,2), 'application/json');
   }
 
-  // ---------- Utils ----------
+  function textForExport(key, p){
+    switch(key){
+      case 'authors': return (p.authors||[]).join('; ');
+      case 'issns':   return (p.issns||[]).join('; ');
+      case 'subjects':return extractSubjects(p);
+      case 'is_retracted': return p.is_retracted ? 'Yes' : 'No';
+      default: return rawForExport(key, p) ?? '';
+    }
+  }
+  function rawForExport(key, p){
+    if (key==='subjects') return extractSubjects(p);
+    return p[key];
+  }
+
+  // ----------------- UTILS -----------------
   function esc(s){ return String(s).replace(/[&<>"']/g, m=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m])); }
   function q(s){ return `"${String(s).replace(/"/g,'""')}"`; }
   function downloadBlob(name, content, type){
@@ -516,6 +579,30 @@
     const s=String(q||'').toUpperCase().trim();
     return /^Q[1-4]$/.test(s) ? s : '';
   }
+
+  // If your JSON includes subjects/concepts, show top 3 names; else blank.
+  function extractSubjects(p){
+    if (Array.isArray(p.subjects) && p.subjects.length){
+      return p.subjects.slice(0,3).join(', ');
+    }
+    if (Array.isArray(p.concepts) && p.concepts.length){
+      // support OpenAlex-like concepts [{display_name:..., score:...}]
+      const arr = p.concepts
+        .map(c => c.display_name || c.name || '')
+        .filter(Boolean)
+        .slice(0,3);
+      return arr.join(', ');
+    }
+    return '';
+  }
+
+  // Close columns dropdown on outside click
+  document.addEventListener('click', (e)=>{
+    const panel = document.getElementById('columnsPanel');
+    const btn   = document.getElementById('colBtn');
+    if (!panel || panel.classList.contains('hidden')) return;
+    if (!panel.contains(e.target) && !btn.contains(e.target)) panel.classList.add('hidden');
+  });
 
   // Init
   document.addEventListener('DOMContentLoaded', autoLoad);
