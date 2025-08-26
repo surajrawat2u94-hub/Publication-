@@ -14,16 +14,25 @@
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
 
 <style>
-  .card{background:rgba(255,255,255,.92);border:1px solid rgba(226,232,240,.9);border-radius:16px;box-shadow:0 12px 24px rgba(15,23,42,.06)}
+  :root{
+    --ring:#7c3aed;
+    --bg:linear-gradient(180deg,#f8fafc 0%,#eef2ff 100%);
+  }
+  body{background:var(--bg)}
+  .card{backdrop-filter:saturate(140%) blur(6px);background:rgba(255,255,255,.92);
+        border:1px solid rgba(226,232,240,.9);border-radius:16px;box-shadow:0 18px 40px rgba(2,6,23,.08)}
   .thin-scrollbar::-webkit-scrollbar{height:8px;width:8px}
   .thin-scrollbar::-webkit-scrollbar-thumb{background:#CBD5E1;border-radius:6px}
   .thin-scrollbar::-webkit-scrollbar-track{background:#F8FAFC}
-  .tab-active{color:#111827;border-color:#7c3aed;background:linear-gradient(180deg,#fff,#f8fafc)}
-  .tab-inactive{color:#6B7280;border-color:transparent}
+  .tab-active{color:#0f172a;border-color:#7c3aed;background:linear-gradient(180deg,#fff,#f8fafc)}
+  .tab-inactive{color:#657085;border-color:transparent}
   .dropdown{position:relative}
   .dropdown-panel{position:absolute;right:0;top:100%;z-index:40}
-  .badge{display:inline-flex;align-items:center;gap:.35rem;padding:.2rem .5rem;border-radius:999px;font-size:.72rem;border:1px solid #e2e8f0;background:#fff}
+  .badge{display:inline-flex;align-items:center;gap:.35rem;padding:.22rem .6rem;border-radius:999px;font-size:.72rem;border:1px solid #e5e7eb;background:#fff}
+  .chip{padding:.4rem .65rem;border-radius:12px;background:#f8fafc;border:1px solid #e5e7eb}
   .link{color:#4f46e5}
+  input,select,button{outline:none}
+  input:focus,select:focus,button:focus{box-shadow:0 0 0 3px color-mix(in srgb,var(--ring) 28%,transparent)}
   /* Narrative “holo bay” */
   .holo-wrap{position:relative;overflow:hidden;border-radius:16px;background:
     radial-gradient(900px 300px at 0% 0%, rgba(124,58,237,.10), transparent 60%),
@@ -32,10 +41,10 @@
   .type-line{font-variant-ligatures:none;white-space:pre-wrap}
 </style>
 </head>
-<body class="bg-gradient-to-b from-slate-50 to-slate-100 text-slate-900">
+<body class="text-slate-900">
 
 <!-- Header -->
-<header class="sticky top-0 z-30 bg-gradient-to-r from-indigo-600/90 via-fuchsia-600/90 to-sky-600/90 text-white backdrop-blur">
+<header class="sticky top-0 z-30 bg-gradient-to-r from-indigo-600/95 via-fuchsia-600/95 to-sky-600/95 text-white">
   <div class="max-w-7xl mx-auto px-4 py-4 flex items-center justify-between">
     <div class="flex items-center gap-3">
       <div class="h-10 w-10 rounded-2xl bg-white/15 grid place-content-center shadow-inner">
@@ -72,10 +81,11 @@
   <!-- OVERVIEW -->
   <section id="view-overview" class="space-y-6">
     <!-- KPIs -->
-    <div class="grid grid-cols-2 md:grid-cols-4 gap-4">
+    <div class="grid grid-cols-2 md:grid-cols-5 gap-4">
       <div class="card p-4"><div class="text-xs text-slate-500">Total items</div><div id="kpiTotal" class="mt-1 text-2xl font-semibold">—</div></div>
       <div class="card p-4"><div class="text-xs text-slate-500">Current view</div><div id="kpiView" class="mt-1 text-2xl font-semibold">—</div></div>
-      <div class="card p-4"><div class="text-xs text-slate-500">Retracted (view)</div><div id="kpiRetr" class="mt-1 text-2xl font-semibold">—</div></div>
+      <div class="card p-4"><div class="text-xs text-slate-500">Retracted (OpenAlex)</div><div id="kpiRetrOnly" class="mt-1 text-2xl font-semibold">—</div></div>
+      <div class="card p-4"><div class="text-xs text-slate-500">Retraction notices (title-based)</div><div id="kpiNotices" class="mt-1 text-2xl font-semibold">—</div></div>
       <div class="card p-4"><div class="text-xs text-slate-500">Distinct journals (view)</div><div id="kpiJournals" class="mt-1 text-2xl font-semibold">—</div></div>
     </div>
 
@@ -105,7 +115,7 @@
         <div class="mt-2 h-[300px]"><canvas id="chartRetract"></canvas></div>
       </div>
     </div>
-    <!-- NOTE: The YouTube “Advanced chart inspiration” card was removed per your request -->
+    <!-- (YouTube inspiration block removed by request) -->
   </section>
 
   <!-- PUBLICATIONS -->
@@ -138,6 +148,17 @@
             <option value="">All SDGs</option>
           </select>
         </div>
+
+        <!-- NEW: Quartile filter -->
+        <div>
+          <label class="block text-xs font-medium text-slate-600">Quartile</label>
+          <select id="quartileFilter" class="px-3 py-2 rounded-xl border border-slate-300 text-sm" onchange="applyFilters(1)">
+            <option value="">All quartiles</option>
+            <option>Q1</option><option>Q2</option><option>Q3</option><option>Q4</option>
+            <option value="Unknown">Unknown</option>
+          </select>
+        </div>
+
         <div>
           <label class="block text-xs font-medium text-slate-600">Rows per page</label>
           <select id="pageSize" class="px-3 py-2 rounded-xl border border-slate-300 text-sm" onchange="changePageSize()">
@@ -154,7 +175,7 @@
                   onclick="toggleColumnsPanel()">
             <i data-lucide="columns-3"></i> Columns
           </button>
-          <div id="columnsPanel" class="dropdown-panel hidden mt-2 bg-white border border-slate-200 rounded-xl shadow-lg w-80 p-3">
+          <div id="columnsPanel" class="dropdown-panel hidden mt-2 bg-white border border-slate-200 rounded-xl shadow-xl w-80 p-3">
             <div class="text-xs text-slate-500 mb-2">Choose fields to display</div>
             <div id="columnsList" class="grid grid-cols-2 gap-y-2 text-sm"></div>
             <div class="flex justify-end gap-2 mt-3">
@@ -204,7 +225,8 @@
         <div>
           <h3 class="font-semibold">Quartile Mapping</h3>
           <p class="text-xs text-slate-500">
-            Upload SJR/Scimago as <code>.csv</code> (columns may be named e.g. <em>Title / Journal, ISSN, eISSN, ISSN / e-ISSN, Best Quartile, SJR Best Quartile, Quartile, Q</em>) or <code>.json</code> (array with <code>title</code>/<code>issn</code>/<code>quartile</code>). Delimiters “,” “;” or tab are detected automatically.
+            Upload SJR/Scimago as <code>.csv</code> (columns like <em>Title / Journal, ISSN, eISSN, Best Quartile / SJR Best Quartile / Quartile / Q</em>)
+            or <code>.json</code> (<code>title, issn, quartile</code>). Delimiters “,” “;” or tab are detected automatically.
           </p>
         </div>
         <div class="flex items-center gap-2">
@@ -287,15 +309,15 @@ Chart.defaults.plugins.tooltip.borderWidth = 1;
 Chart.defaults.plugins.tooltip.padding = 12;
 Chart.defaults.plugins.legend.labels.boxWidth = 10;
 
-// Fancy shadow plugin
+// Drop shadow for charts
 const shadowPlugin = {
   id: 'shadowPlugin',
   beforeDatasetsDraw(chart, args, opts) {
     const {ctx} = chart; ctx.save();
-    ctx.shadowColor = opts?.shadowColor || 'rgba(2,6,23,.15)';
-    ctx.shadowBlur = opts?.shadowBlur || 16;
+    ctx.shadowColor = opts?.shadowColor || 'rgba(2,6,23,.14)';
+    ctx.shadowBlur = opts?.shadowBlur || 18;
     ctx.shadowOffsetX = opts?.offsetX || 0;
-    ctx.shadowOffsetY = opts?.offsetY || 8;
+    ctx.shadowOffsetY = opts?.offsetY || 10;
   },
   afterDatasetsDraw(chart){ chart.ctx.restore(); }
 };
@@ -336,7 +358,7 @@ const ALL_COLUMNS = [
   { key:'year',         label:'Year',          default:true },
   { key:'title',        label:'Title',         default:true },
   { key:'journal',      label:'Journal',       default:true },
-  { key:'authors',      label:'Authors (UPES affiliated only)', default:true },
+  { key:'authors',      label:'Authors (UPES first)', default:true },
   { key:'citations',    label:'Citations',     default:true },
   { key:'quartile',     label:'Quartile',      default:true },
   { key:'retraction_info', label:'Retraction Info', default:true },
@@ -375,8 +397,13 @@ const SDG_LIST = [
 ];
 const SDG_COLORS = {1:'#E5243B',2:'#DDA63A',3:'#4C9F38',4:'#C5192D',5:'#FF3A21',6:'#26BDE2',7:'#FCC30B',8:'#A21942',9:'#FD6925',10:'#DD1367',11:'#FD9D24',12:'#BF8B2E',13:'#3F7E44',14:'#0A97D9',15:'#56C02B',16:'#00689D',17:'#19486A'};
 
-// Retraction detection
-const RETRACT_PREFIXES = [/^retraction\s*note\s*:/i,/^retraction\s*of\s*:/i,/^retraction\s*:/i,/^notice\s+of\s+retraction\s*:/i,/^withdrawn\s*:/i];
+/* STRICT title-prefix detection for notices (anchored at start, tolerant to separators) */
+const RETRACT_PREFIXES = [
+  /^\s*retraction\s*(?:note|notice|statement)?\s*[:\-–—]/i,
+  /^\s*retraction\s+of\s*[:\-–—]?/i,
+  /^\s*notice\s+of\s+retraction\s*[:\-–—]?/i,
+  /^\s*withdrawal|^\s*withdrawn\s*[:\-–—]?/i
+];
 const DOI_REGEX = /\b10\.\d{4,9}\/\S+\b/i;
 
 /* ---------------- Tabs ---------------- */
@@ -481,9 +508,16 @@ function buildRetractionIndex(items){
     }
   }
 }
-function isRetractionNotice(title){ return RETRACT_PREFIXES.some(rx => rx.test(String(title||''))); }
+
+// STRICT: title must start with a supported prefix
+function isRetractionNotice(title){
+  const t=String(title||'');
+  return RETRACT_PREFIXES.some(rx => rx.test(t));
+}
 function stripRetractionPrefix(title){
-  let t=String(title||''); for (const rx of RETRACT_PREFIXES){ if (rx.test(t)) return t.replace(rx,'').trim(); } return t;
+  let t=String(title||'');
+  for (const rx of RETRACT_PREFIXES){ if (rx.test(t)) return t.replace(rx,'').trim(); }
+  return t;
 }
 
 /* ---------------- Filters / Paging ---------------- */
@@ -492,13 +526,23 @@ function applyFilters(goToPage=1){
   const year = document.getElementById('yearFilter')?.value || '';
   const sdg = document.getElementById('sdgFilter')?.value || document.getElementById('sdgOnlyFilter')?.value || '';
   const retractMode = document.getElementById('retractionFilter')?.value || '';
+  const qfilter = document.getElementById('quartileFilter')?.value || '';
 
   filtered = all.filter(p=>{
     if (year && String(p.year)!==year) return false;
     if (sdg && !(p.sdg_tags||[]).includes(Number(sdg))) return false;
+
+    // Resolve quartile on-demand if user selected any quartile
+    if (qfilter){
+      const qv = (p.quartile || resolveQuartile(p) || '') || '';
+      if (qfilter==='Unknown'){ if (['Q1','Q2','Q3','Q4'].includes(String(qv).toUpperCase())) return false; }
+      else if (String(qv).toUpperCase()!==qfilter.toUpperCase()) return false;
+    }
+
     if (retractMode === 'exclude'){ if (p.is_retracted || p.retraction_notice) return false; }
     else if (retractMode === 'only_retracted'){ if (!p.is_retracted) return false; }
     else if (retractMode === 'only_notices'){ if (!p.retraction_notice) return false; }
+
     if (q){
       const hay = [p.title||'',p.journal||'',p.doi||'',...(p.authors||[])].join(' ').toLowerCase();
       if (!hay.includes(q)) return false;
@@ -508,8 +552,12 @@ function applyFilters(goToPage=1){
 
   if (haveSJR){ for (const p of filtered) p.quartile = resolveQuartile(p); }
 
+  // KPIs
   document.getElementById('kpiView').textContent = num(filtered.length);
-  document.getElementById('kpiRetr').textContent = num(filtered.filter(x=>x.is_retracted || x.retraction_notice).length);
+  const retrOnly = filtered.filter(x=>x.is_retracted).length;
+  const notices  = filtered.filter(x=>x.retraction_notice).length;
+  document.getElementById('kpiRetrOnly').textContent = num(retrOnly);
+  document.getElementById('kpiNotices').textContent = num(notices);
   const journals = new Set(filtered.map(x=>(x.journal||'').trim()).filter(Boolean));
   document.getElementById('kpiJournals').textContent = num(journals.size);
 
@@ -541,7 +589,7 @@ function renderTable(){
   const body=document.getElementById('pubBody'); if (!body) return;
   body.innerHTML='';
   for (const p of rows){
-    const tds = selectedColumns.map(col=>`<td class="px-4 py-2">${renderCell(col.key,p)}</td>`).join('');
+    const tds = selectedColumns.map(col=>`<td class="px-4 py-2 align-top">${renderCell(col.key,p)}</td>`).join('');
     const tr=document.createElement('tr'); tr.className='border-b border-slate-100 hover:bg-slate-50'; tr.innerHTML=tds; body.appendChild(tr);
   }
 
@@ -554,7 +602,7 @@ function renderTable(){
   if (rangeText) rangeText.textContent = countInfo ? countInfo.textContent : '';
 }
 
-// Only UPES-affiliated authors appear
+// UPES-affiliated authors first (only)
 function getAffilAuthors(p){
   if (!Array.isArray(p.authorships)) return [];
   return p.authorships
@@ -575,7 +623,7 @@ function renderCell(key,p){
     case 'citations': return p.citations ?? 0;
     case 'quartile': return esc(p.quartile || '');
     case 'retraction_info': return renderRetractionInfo(p);
-    case 'is_retracted': return p.is_retracted ? '<span class="badge" style="border-color:#ef4444;color:#b91c1c">Yes</span>' : 'No';
+    case 'is_retracted': return p.is_retracted ? '<span class="badge" style="border-color:#ef4444;background:#fff;color:#b91c1c">Yes</span>' : 'No';
     case 'type': return esc(p.type || '');
     case 'doi': return esc(p.doi || '');
     case 'url': return p.url ? `<a class="link" href="${p.url}" target="_blank" rel="noopener">Open</a>` : '';
@@ -625,7 +673,6 @@ function loadSelectedColumns(){
 
 /* ---------------- Overview Charts ---------------- */
 function renderOverviewCharts(){
-  // Publications by Year (bars + cumulative line)
   const ctxY = document.getElementById('chartByYear')?.getContext('2d'); if (!ctxY) return;
   const byYear={}; for (const p of filtered){ if (p.year) byYear[p.year]=(byYear[p.year]||0)+1; }
   const labelsY = Object.keys(byYear).sort((a,b)=>a-b);
@@ -651,10 +698,10 @@ function renderOverviewCharts(){
 
   // Top Journals stacked by Quartile
   const ctxJ = document.getElementById('chartTopJournals')?.getContext('2d'); if (!ctxJ) return;
-  const journalAgg = new Map(); // journal -> {Q1,Q2,Q3,Q4,Unknown,total}
+  const journalAgg = new Map();
   for (const p of filtered){
     const j = (p.journal||'').trim(); if (!j) continue;
-    const q = (p.quartile || '').toUpperCase();
+    const q = (p.quartile || '').toUpperCase() || 'Unknown';
     const rec = journalAgg.get(j) || {Q1:0,Q2:0,Q3:0,Q4:0,Unknown:0,total:0};
     if (q==='Q1'||q==='Q2'||q==='Q3'||q==='Q4'){ rec[q]++; } else { rec.Unknown++; }
     rec.total++; journalAgg.set(j, rec);
@@ -673,10 +720,8 @@ function renderOverviewCharts(){
     options:{
       indexAxis:'y', responsive:true, maintainAspectRatio:false,
       plugins:{ legend:{ position:'top' }, shadowPlugin:{}, tooltip:{ mode:'index', intersect:false } },
-      scales:{
-        x:{ stacked:true, grid:{ color:'#e2e8f0' }, beginAtZero:true },
-        y:{ stacked:true, grid:{ display:false } }
-      }
+      scales:{ x:{ stacked:true, grid:{ color:'#e2e8f0' }, beginAtZero:true },
+               y:{ stacked:true, grid:{ display:false } } }
     },
     plugins:[{id:'shadowPlugin'}]
   });
@@ -686,14 +731,15 @@ function renderOverviewCharts(){
 
   // Retraction donut
   const ctxR = document.getElementById('chartRetract')?.getContext('2d'); if (!ctxR) return;
-  const retracted = filtered.filter(p=>p.is_retracted || p.retraction_notice).length;
-  const clean = Math.max(0, filtered.length - retracted);
-  const pct = filtered.length ? Math.round((retracted*100)/filtered.length) : 0;
+  const notices  = filtered.filter(p=>p.retraction_notice).length;
+  const openalex = filtered.filter(p=>p.is_retracted).length;
+  const other = Math.max(0, filtered.length - (notices + openalex));
   if (chartRetract) chartRetract.destroy();
   chartRetract = new Chart(ctxR, {
     type:'doughnut',
-    data:{ labels:['Retracted/Notices','Other'], datasets:[{ data:[retracted, clean], backgroundColor:['#ef4444','#94a3b8'] }] },
-    options:{ responsive:true, maintainAspectRatio:false, cutout:'65%', centerText:`${pct}%` },
+    data:{ labels:['Notices','OpenAlex retracted','Other'],
+      datasets:[{ data:[notices, openalex, other], backgroundColor:['#f59e0b','#ef4444','#94a3b8'] }] },
+    options:{ responsive:true, maintainAspectRatio:false, cutout:'65%', centerText:String(filtered.length) },
     plugins:[{id:'centerText'}]
   });
 }
@@ -788,9 +834,9 @@ function addQuartileRow(row){
   }
 }
 
-// Very tolerant CSV parser: detects delimiter, handles quotes, BOM
+// Flexible CSV parser: detects delimiter, handles quotes, BOM
 function parseFlexibleCSV(text, onRow){
-  const src = text.replace(/^\uFEFF/, ''); // BOM
+  const src = text.replace(/^\uFEFF/, '');
   const firstLine = src.split(/\r?\n/)[0] || '';
   const delim = (firstLine.split(';').length > firstLine.split(',').length)
                  ? ';' : (firstLine.split('\t').length > firstLine.split(',').length ? '\t' : ',');
@@ -832,7 +878,7 @@ function updateCoverage(){
 function renderRetractionInfo(p){
   const parts=[];
   if (p.retraction_notice){
-    parts.push('<span class="badge" style="border-color:#ef4444;color:#b91c1c">Retraction notice</span>');
+    parts.push('<span class="badge" style="border-color:#f59e0b;background:#fff;color:#92400e">Retraction notice</span>');
     if (p.retraction_of){
       const t = esc(p.retraction_of.title || '');
       const d = p.retraction_of.doi ? `<a href="https://doi.org/${p.retraction_of.doi}" target="_blank" rel="noopener">${esc(p.retraction_of.doi)}</a>` : '';
@@ -840,7 +886,7 @@ function renderRetractionInfo(p){
     }
   }
   if (p.is_retracted){
-    parts.push('<span class="badge" style="border-color:#ef4444;color:#b91c1c">Retracted (OpenAlex)</span>');
+    parts.push('<span class="badge" style="border-color:#ef4444;background:#fff;color:#b91c1c">Retracted (OpenAlex)</span>');
     if (p.retracted_by){
       const t = esc(p.retracted_by.title || '');
       const d = p.retracted_by.doi ? `<a href="https://doi.org/${p.retracted_by.doi}" target="_blank" rel="noopener">${esc(p.retracted_by.doi)}</a>` : '';
@@ -894,7 +940,6 @@ function startCanvas(){
   const resize = ()=>{ canvas.width = canvas.clientWidth; canvas.height = 260; };
   resize(); window.addEventListener('resize', resize);
 
-  // nodes
   const N = 80; narrNodes = [];
   for (let i=0;i<N;i++){
     narrNodes.push({
@@ -906,7 +951,6 @@ function startCanvas(){
   }
   const draw = ()=>{
     ctx.clearRect(0,0,canvas.width,canvas.height);
-    // connections
     for (let i=0;i<N;i++){
       const a=narrNodes[i];
       for (let j=i+1;j<N;j++){
@@ -917,7 +961,6 @@ function startCanvas(){
         }
       }
     }
-    // nodes
     for (const p of narrNodes){
       p.x+=p.vx; p.y+=p.vy;
       if (p.x<0||p.x>canvas.width) p.vx*=-1;
