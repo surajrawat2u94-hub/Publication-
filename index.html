@@ -3,11 +3,11 @@
 <head>
   <meta charset="UTF-8"/>
   <meta name="viewport" content="width=device-width, initial-scale=1"/>
-  <title>AI Publications Portal — UPES</title>
+  <title>AI Publications Portal</title>
 
   <!-- Tailwind -->
   <script src="https://cdn.tailwindcss.com"></script>
-  <!-- Icons -->
+  <!-- Icons (safe-init below) -->
   <script src="https://unpkg.com/lucide@latest/dist/umd/lucide.js"></script>
   <!-- Day.js + Chart.js -->
   <script src="https://cdn.jsdelivr.net/npm/dayjs@1/dayjs.min.js"></script>
@@ -43,7 +43,7 @@
           <i data-lucide="brain" class="text-white"></i>
         </div>
         <div>
-          <h1 class="text-lg font-semibold tracking-tight">AI Publications Portal — UPES</h1>
+          <h1 class="text-lg font-semibold tracking-tight">AI Publications Portal</h1>
           <div id="lastSynced" class="text-xs text-white/80">Loading…</div>
           <div id="errorBox" class="hidden mt-2 text-xs bg-rose-50 text-rose-700 border border-rose-200 rounded-lg px-2 py-1"></div>
         </div>
@@ -140,9 +140,9 @@
             </select>
           </div>
 
-          <!-- NEW: UPES-only toggle -->
+          <!-- UPES-only toggle is OFF by default -->
           <label class="flex items-center gap-2 ml-2 text-sm">
-            <input id="upesOnly" type="checkbox" checked onchange="applyFilters(1)"/>
+            <input id="upesOnly" type="checkbox" onchange="applyFilters(1)"/>
             <span>UPES only</span>
           </label>
 
@@ -255,105 +255,74 @@
   </footer>
 
 <script>
-/* ===================== CONFIG (edit these) ===================== */
-const AFFIL_ROR = '04q2jes40'; // UPES ROR
+/* ===================== CONFIG (edit if you want) ===================== */
+const AFFIL_ROR = '04q2jes40'; // UPES ROR (used only when "UPES only" is ON)
 const AFFIL_ALIASES = [
-  'university of petroleum and energy studies',
-  'upes',
-  'upes dehradun',
-  'school of computer science, upes',
-  'school of engineering, upes',
-  'school of health sciences, upes'
+  'university of petroleum and energy studies', 'upes', 'upes dehradun'
 ];
-/* =============================================================== */
+/* ==================================================================== */
 
-/* ====== BOOTSTRAP ====== */
-lucide.createIcons();
+/* -------- Safe icon init (prevents the “tabs frozen” issue) -------- */
+try{ if (window.lucide && typeof lucide.createIcons==='function') { lucide.createIcons(); } }catch{}
+
+/* -------- Chart.js helpers -------- */
 Chart.defaults.font.family = "'Inter', system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial";
 Chart.defaults.plugins.tooltip.backgroundColor = '#0f172a';
 Chart.defaults.plugins.tooltip.borderColor = '#334155';
 Chart.defaults.plugins.tooltip.borderWidth = 1;
 Chart.defaults.plugins.tooltip.padding = 12;
 Chart.defaults.plugins.legend.labels.boxWidth = 10;
-const shadowPlugin={id:'shadowPlugin',beforeDatasetsDraw(c,a,o){const{ctx}=c;ctx.save();
-  ctx.shadowColor=o?.shadowColor||'rgba(2,6,23,.15)';ctx.shadowBlur=o?.shadowBlur||16;ctx.shadowOffsetY=o?.offsetY||8;},
-  afterDatasetsDraw(c){c.ctx.restore();}};
-const centerTextPlugin={id:'centerText',afterDraw(chart){if(chart.config.type!=='doughnut')return;
-  const meta=chart.getDatasetMeta(0)?.data?.[0];if(!meta)return;const{ctx}=chart;const text=chart.config.options.centerText;if(!text)return;
-  ctx.save();ctx.font='600 18px Inter, system-ui';ctx.fillStyle='#0f172a';ctx.textAlign='center';ctx.textBaseline='middle';ctx.fillText(text,meta.x,meta.y);ctx.restore();}};
+const shadowPlugin={id:'shadowPlugin',beforeDatasetsDraw(c,a,o){const{ctx}=c;ctx.save();ctx.shadowColor=o?.shadowColor||'rgba(2,6,23,.15)';ctx.shadowBlur=o?.shadowBlur||16;ctx.shadowOffsetY=o?.offsetY||8;},afterDatasetsDraw(c){c.ctx.restore();}};
+const centerTextPlugin={id:'centerText',afterDraw(chart){if(chart.config.type!=='doughnut')return;const meta=chart.getDatasetMeta(0)?.data?.[0];if(!meta)return;const{ctx}=chart;const text=chart.config.options.centerText;if(!text)return;ctx.save();ctx.font='600 18px Inter, system-ui';ctx.fillStyle='#0f172a';ctx.textAlign='center';ctx.textBaseline='middle';ctx.fillText(text,meta.x,meta.y);ctx.restore();}};
 Chart.register(shadowPlugin,centerTextPlugin);
 function gradientVertical(ctx,c1='#6366f1',c2='#a855f7'){const g=ctx.createLinearGradient(0,0,0,ctx.canvas.height);g.addColorStop(0,c1);g.addColorStop(1,c2);return g;}
 
-/* ====== STATE ====== */
+/* -------- State -------- */
 let all=[], filtered=[], currentPage=1, pageSize=50;
 const sjrByIssn=new Map(), sjrByTitle=new Map(); let haveSJR=false;
 const ALL_COLUMNS=[
   {key:'year',label:'Year',default:true},{key:'title',label:'Title',default:true},
-  {key:'journal',label:'Journal',default:true},
-  {key:'authors',label:'Authors (UPES only)',default:true},
-  {key:'citations',label:'Citations',default:true},
-  {key:'quartile',label:'Quartile',default:true},
+  {key:'journal',label:'Journal',default:true},{key:'authors',label:'Authors (UPES only)',default:true},
+  {key:'citations',label:'Citations',default:true},{key:'quartile',label:'Quartile',default:true},
   {key:'retraction_info',label:'Retraction Info',default:true},
-  {key:'is_retracted',label:'Retracted (OpenAlex)',default:false},
-  {key:'type',label:'Type',default:false},
-  {key:'doi',label:'DOI',default:false},
-  {key:'url',label:'URL',default:false},
-  {key:'issns',label:'ISSNs',default:false},
-  {key:'subjects',label:'Subject areas',default:false},
+  {key:'is_retracted',label:'Retracted (OpenAlex)',default:false},{key:'type',label:'Type',default:false},
+  {key:'doi',label:'DOI',default:false},{key:'url',label:'URL',default:false},
+  {key:'issns',label:'ISSNs',default:false},{key:'subjects',label:'Subject areas',default:false},
   {key:'sdg_tags',label:'SDGs',default:false},
 ];
 let selectedColumns=loadSelectedColumns();
 let chartByYear=null,chartTopJournals=null,chartSDG=null,chartRetract=null,chartSDG_tab=null;
 
-/* ====== SDGs & Retractions ====== */
-const SDG_LIST=[{id:1,name:'No Poverty',kw:['poverty','low-income','income inequality']},
-{id:2,name:'Zero Hunger',kw:['hunger','food security','malnutrition','agriculture','crop','farm']},
-{id:3,name:'Good Health & Well-being',kw:['health','disease','medicine','mental','epidemic','pandemic','hospital','clinical']},
-{id:4,name:'Quality Education',kw:['education','school','teaching','learning','curriculum','literacy','students']},
-{id:5,name:'Gender Equality',kw:['gender','women','female','girls','violence against women','equality']},
-{id:6,name:'Clean Water & Sanitation',kw:['water','sanitation','wastewater','drinking water','hygiene']},
-{id:7,name:'Affordable & Clean Energy',kw:['energy','renewable','solar','wind','battery','hydrogen']},
-{id:8,name:'Decent Work & Economic Growth',kw:['employment','workforce','productivity','economy','economic growth','entrepreneur']},
-{id:9,name:'Industry, Innovation & Infrastructure',kw:['industry','manufacturing','infrastructure','innovation','iot','robotics','blockchain']},
-{id:10,name:'Reduced Inequalities',kw:['inequality','social justice','marginalized','inclusion']},
-{id:11,name:'Sustainable Cities & Communities',kw:['urban','smart city','transport','housing','resilience','disaster']},
-{id:12,name:'Responsible Consumption & Production',kw:['circular economy','sustainability','recycling','waste','lifecycle','supply chain']},
-{id:13,name:'Climate Action',kw:['climate','carbon','ghg','emission','adaptation','mitigation','global warming']},
-{id:14,name:'Life Below Water',kw:['marine','ocean','sea','fisheries','aquatic','coral']},
-{id:15,name:'Life on Land',kw:['biodiversity','forest','wildlife','ecosystem','soil','land use']},
-{id:16,name:'Peace, Justice & Strong Institutions',kw:['policy','governance','corruption','crime','justice','conflict']},
-{id:17,name:'Partnerships for the Goals',kw:['partnership','collaboration','sdg','stakeholder','international']}];
-const SDG_COLORS={1:'#E5243B',2:'#DDA63A',3:'#4C9F38',4:'#C5192D',5:'#FF3A21',6:'#26BDE2',7:'#FCC30B',
-8:'#A21942',9:'#FD6925',10:'#DD1367',11:'#FD9D24',12:'#BF8B2E',13:'#3F7E44',14:'#0A97D9',15:'#56C02B',16:'#00689D',17:'#19486A'};
+/* -------- SDGs / Retractions -------- */
+const SDG_LIST=[{id:1,name:'No Poverty',kw:['poverty','low-income','income inequality']},{id:2,name:'Zero Hunger',kw:['hunger','food security','malnutrition','agriculture','crop','farm']},{id:3,name:'Good Health & Well-being',kw:['health','disease','medicine','mental','epidemic','pandemic','hospital','clinical']},{id:4,name:'Quality Education',kw:['education','school','teaching','learning','curriculum','literacy','students']},{id:5,name:'Gender Equality',kw:['gender','women','female','girls','equality']},{id:6,name:'Clean Water & Sanitation',kw:['water','sanitation','wastewater','drinking water','hygiene']},{id:7,name:'Affordable & Clean Energy',kw:['energy','renewable','solar','wind','battery','hydrogen']},{id:8,name:'Decent Work & Economic Growth',kw:['employment','workforce','productivity','economy']},{id:9,name:'Industry, Innovation & Infrastructure',kw:['industry','manufacturing','infrastructure','innovation','iot','robotics','blockchain']},{id:10,name:'Reduced Inequalities',kw:['inequality','inclusion']},{id:11,name:'Sustainable Cities & Communities',kw:['urban','transport','housing','resilience']},{id:12,name:'Responsible Consumption & Production',kw:['circular economy','recycling','waste','supply chain']},{id:13,name:'Climate Action',kw:['climate','carbon','emission','mitigation','adaptation']},{id:14,name:'Life Below Water',kw:['marine','ocean','sea','fisheries','coral']},{id:15,name:'Life on Land',kw:['biodiversity','forest','wildlife','ecosystem']},{id:16,name:'Peace, Justice & Strong Institutions',kw:['policy','governance','crime','justice']},{id:17,name:'Partnerships for the Goals',kw:['partnership','collaboration','sdg']}];
+const SDG_COLORS={1:'#E5243B',2:'#DDA63A',3:'#4C9F38',4:'#C5192D',5:'#FF3A21',6:'#26BDE2',7:'#FCC30B',8:'#A21942',9:'#FD6925',10:'#DD1367',11:'#FD9D24',12:'#BF8B2E',13:'#3F7E44',14:'#0A97D9',15:'#56C02B',16:'#00689D',17:'#19486A'};
 const RETRACT_PREFIXES=[/^retraction\s*note\s*:/i,/^retraction\s*of\s*:/i,/^retraction\s*:/i,/^notice\s+of\s+retraction\s*:/i,/^withdrawn\s*:/i];
 const DOI_REGEX=/\b10\.\d{4,9}\/\S+\b/i;
 
-/* ====== Tabs ====== */
+/* -------- Tabs -------- */
 function switchTab(name){
   const tabs=['overview','publications','quartiles','sdg','narrative'];
   for(const t of tabs){
     document.getElementById(`view-${t}`)?.classList.toggle('hidden',t!==name);
-    const el=document.getElementById(`tab${t[0].toUpperCase()+t.slice(1)}`);
-    if(el){el.classList.toggle('tab-active',t===name);el.classList.toggle('tab-inactive',t!==name);}
+    const el=document.getElementById(`tab${t[0].toUpperCase()+t.slice(1)}`); if(el){el.classList.toggle('tab-active',t===name);el.classList.toggle('tab-inactive',t!==name);}
   }
   if(name==='quartiles') updateCoverage();
   if(name==='sdg') renderSDGChart(true);
   if(name==='narrative') renderNarrative();
 }
 
-/* ====== Load data ====== */
+/* -------- Load data -------- */
 async function autoLoad(){
   const err=(m)=>{const box=document.getElementById('errorBox'); if(box){box.textContent=m; box.classList.remove('hidden');} console.error(m);};
   try{
     const res=await fetch('institution_data.json?v='+Date.now(),{cache:'no-store'});
-    if(!res.ok){err('institution_data.json not found at the same path as index.html'); return;}
+    if(!res.ok){err('institution_data.json not found next to index.html'); return;}
     const j=await res.json();
     const items=Array.isArray(j?.items)?j.items:(Array.isArray(j)?j:[]);
     if(!Array.isArray(items)||!items.length){err('institution_data.json loaded but contains no items.'); return;}
 
     document.getElementById('errorBox')?.classList.add('hidden');
 
-    // Keep ALL items; compute has_upes per item
     all = items;
     for(const p of all){
       p.has_upes = itemHasUPES(p);
@@ -361,17 +330,11 @@ async function autoLoad(){
       p.authors=(p.authorships||[]).map(a=>a.author?.display_name||a.author_name||'').filter(Boolean);
     }
 
-    // Header stamp
-    const ts=(j.updated||null);
-    document.getElementById('lastSynced').textContent =
-      ts ? `Last synced: ${dayjs(ts).format('DD MMM YYYY, HH:mm')}` : 'Loaded';
+    document.getElementById('lastSynced').textContent = j.updated ? `Last synced: ${dayjs(j.updated).format('DD MMM YYYY, HH:mm')}` : 'Loaded';
 
-    // Year options
     const years=[...new Set(all.map(x=>x.year).filter(Boolean))].sort((a,b)=>b-a);
-    const yearSel=document.getElementById('yearFilter');
-    yearSel.innerHTML='<option value="">All years</option>'+years.map(y=>`<option>${y}</option>`).join('');
+    document.getElementById('yearFilter').innerHTML='<option value="">All years</option>'+years.map(y=>`<option>${y}</option>`).join('');
 
-    // SDG options
     const opts=SDG_LIST.map(s=>`<option value="${s.id}">${s.id}. ${s.name}</option>`).join('');
     document.getElementById('sdgFilter').innerHTML='<option value="">All SDGs</option>'+opts;
 
@@ -380,8 +343,7 @@ async function autoLoad(){
     buildRetractionIndex(all);
     for(const p of all) p.sdg_tags=guessSDGs(p);
 
-    // KPI Total UPES-linked
-    document.getElementById('kpiTotal').textContent = num(all.filter(x=>x.has_upes).length);
+    document.getElementById('kpiTotal').textContent = (all.filter(x=>x.has_upes).length).toLocaleString();
 
     buildColumnsPanel();
     buildSDGLegend();
@@ -391,37 +353,36 @@ async function autoLoad(){
   }
 }
 
-/* ====== UPES affiliation logic ====== */
+/* -------- UPES check (used only if toggle is ON) -------- */
 function itemHasUPES(p){
   if(!Array.isArray(p.authorships)) return false;
-  return p.authorships.some(isUPESAuthorship);
-}
-function isUPESAuthorship(a){
-  const rorHit=(a.institutions||[]).some(inst => (inst.ror||'').toLowerCase().includes(AFFIL_ROR.toLowerCase()));
-  if(rorHit) return true;
-  const aliasText=[a.raw_affiliation_string||'',...(a.institutions||[]).map(inst=>inst.display_name||'')].join(' ').toLowerCase();
-  return AFFIL_ALIASES.some(alias => aliasText.includes(alias.toLowerCase()));
+  const byRor = p.authorships.some(a => (a.institutions||[]).some(inst => (inst.ror||'').toLowerCase().includes(AFFIL_ROR.toLowerCase())));
+  if (byRor) return true;
+  const byAlias = p.authorships.some(a => {
+    const hay=[a.raw_affiliation_string||'',...(a.institutions||[]).map(inst=>inst.display_name||'')].join(' ').toLowerCase();
+    return AFFIL_ALIASES.some(alias=>hay.includes(alias));
+  });
+  return byAlias;
 }
 
-/* ====== Retractions ====== */
+/* -------- Retractions -------- */
 function buildRetractionIndex(items){
-  const mapByTitle=new Map(), mapByDOI=new Map();
-  for(const p of items){ if(p.doi) mapByDOI.set(String(p.doi).toLowerCase(),p); const nt=normTitle(p.title||''); if(nt) mapByTitle.set(nt,p); }
+  const byTitle=new Map(), byDOI=new Map();
+  for(const p of items){ if(p.doi) byDOI.set(String(p.doi).toLowerCase(),p); const nt=normTitle(p.title||''); if(nt) byTitle.set(nt,p); }
   for(const p of items){
     const title=p.title||''; p.retraction_notice=isRetractionNotice(title);
     p.retracted_by=null; p.retraction_of=null;
     if(p.retraction_notice){
       const m=title.match(DOI_REGEX);
-      if(m){ const target=mapByDOI.get(m[0].toLowerCase()); if(target){p.retraction_of={doi:target.doi,title:target.title}; target.retracted_by={doi:p.doi,title:p.title};}}
-      else{ const stripped=stripRetractionPrefix(title); const cand=mapByTitle.get(normTitle(stripped));
-        if(cand){p.retraction_of={doi:cand.doi,title:cand.title}; cand.retracted_by={doi:p.doi,title:p.title};}}
+      if(m){ const target=byDOI.get(m[0].toLowerCase()); if(target){p.retraction_of={doi:target.doi,title:target.title}; target.retracted_by={doi:p.doi,title:p.title};}}
+      else{ const stripped=stripRetractionPrefix(title); const cand=byTitle.get(normTitle(stripped)); if(cand){p.retraction_of={doi:cand.doi,title:cand.title}; cand.retracted_by={doi:p.doi,title:p.title};}}
     }
   }
 }
-function isRetractionNotice(title){return RETRACT_PREFIXES.some(rx=>rx.test(String(title||''))); }
-function stripRetractionPrefix(title){let t=String(title||''); for(const rx of RETRACT_PREFIXES){ if(rx.test(t)) return t.replace(rx,'').trim(); } return t;}
+function isRetractionNotice(t){return RETRACT_PREFIXES.some(rx=>rx.test(String(t||''))); }
+function stripRetractionPrefix(t){let s=String(t||''); for(const rx of RETRACT_PREFIXES){ if(rx.test(s)) return s.replace(rx,'').trim(); } return s;}
 
-/* ====== Filters / paging ====== */
+/* -------- Filters / paging -------- */
 function applyFilters(goToPage=1){
   const q=(document.getElementById('searchBox')?.value||'').toLowerCase().trim();
   const year=document.getElementById('yearFilter')?.value||'';
@@ -436,8 +397,7 @@ function applyFilters(goToPage=1){
     if(sdg && !(p.sdg_tags||[]).includes(Number(sdg))) return false;
     if(quart){
       const qv=(p.quartile||'').toUpperCase()||'UNKNOWN';
-      if(quart==='Unknown'){ if(qv!=='UNKNOWN') return false; }
-      else if(qv!==quart) return false;
+      if(quart==='Unknown'){ if(qv!=='UNKNOWN') return false; } else if(qv!==quart) return false;
     }
     if(retractMode==='exclude'){ if(p.is_retracted||p.retraction_notice) return false; }
     else if(retractMode==='only_retracted'){ if(!p.is_retracted) return false; }
@@ -449,12 +409,12 @@ function applyFilters(goToPage=1){
     return true;
   });
 
-  if(haveSJR){ for(const p of filtered) p.quartile=resolveQuartile(p) || p.quartile; }
+  if(haveSJR){ for(const p of filtered) p.quartile=resolveQuartile(p)||p.quartile; }
 
-  document.getElementById('kpiView').textContent = num(filtered.length);
-  document.getElementById('kpiRetr').textContent = num(filtered.filter(x=>x.is_retracted||x.retraction_notice).length);
+  document.getElementById('kpiView').textContent = filtered.length.toLocaleString();
+  document.getElementById('kpiRetr').textContent = filtered.filter(x=>x.is_retracted||x.retraction_notice).length.toLocaleString();
   const journals=new Set(filtered.map(x=>(x.journal||'').trim()).filter(Boolean));
-  document.getElementById('kpiJournals').textContent = num(journals.size);
+  document.getElementById('kpiJournals').textContent = journals.size.toLocaleString();
 
   if(goToPage===1) currentPage=1;
   renderTable(); renderOverviewCharts(); renderSDGChart(); updateCoverage();
@@ -464,7 +424,7 @@ function totalPages(){return Math.max(1,Math.ceil(filtered.length/pageSize));}
 function goFirst(){currentPage=1;renderTable()} function goPrev(){if(currentPage>1)currentPage--;renderTable()}
 function goNext(){if(currentPage<totalPages())currentPage++;renderTable()} function goLast(){currentPage=totalPages();renderTable()}
 
-/* ====== Table ====== */
+/* -------- Table -------- */
 function renderTable(){
   const head=document.getElementById('pubHeadRow'); head.innerHTML='';
   for(const col of selectedColumns){const th=document.createElement('th'); th.className='text-left px-4 py-2'; th.textContent=col.label; head.appendChild(th);}
@@ -476,12 +436,13 @@ function renderTable(){
   }
   document.getElementById('pageInfo').textContent=`Page ${totalPages()?currentPage:0} / ${totalPages()}`;
   document.getElementById('countInfo').textContent = filtered.length
-    ? `Showing ${num(start+1)}–${num(end)} of ${num(filtered.length)} (filtered)` : `Showing 0 of 0`;
+    ? `Showing ${(start+1).toLocaleString()}–${end.toLocaleString()} of ${filtered.length.toLocaleString()} (filtered)` : `Showing 0 of 0`;
   document.getElementById('rangeText').textContent=document.getElementById('countInfo').textContent;
 }
 function getUPESAuthors(p){
   if(!Array.isArray(p.authorships)) return [];
-  const upes=p.authorships.filter(isUPESAuthorship);
+  const upes=p.authorships.filter(a => (a.institutions||[]).some(inst => (inst.ror||'').toLowerCase().includes(AFFIL_ROR.toLowerCase()))
+    || AFFIL_ALIASES.some(alias => ((a.raw_affiliation_string||'') + ' ' + (a.institutions||[]).map(i=>i.display_name||'').join(' ')).toLowerCase().includes(alias)));
   return upes.map(a=>a.author?.display_name||a.author_name||'').filter(Boolean);
 }
 function renderCell(key,p){
@@ -504,7 +465,7 @@ function renderCell(key,p){
   }
 }
 
-/* ====== Column chooser ====== */
+/* -------- Column chooser -------- */
 function buildColumnsPanel(){
   const c=document.getElementById('columnsList'); c.innerHTML='';
   const sel=new Set(selectedColumns.map(c=>c.key));
@@ -523,7 +484,7 @@ function resetColumns(){selectedColumns=ALL_COLUMNS.filter(c=>c.default).map(c=>
 function saveSelectedColumns(){try{localStorage.setItem('pub_columns',JSON.stringify(selectedColumns));}catch{}}
 function loadSelectedColumns(){try{const s=localStorage.getItem('pub_columns'); if(s){const arr=JSON.parse(s); const valid=new Map(ALL_COLUMNS.map(c=>[c.key,c.label])); return arr.filter(x=>valid.has(x.key)).map(x=>({key:x.key,label:valid.get(x.key)}));}}catch{} return ALL_COLUMNS.filter(c=>c.default).map(c=>({key:c.key,label:c.label}));}
 
-/* ====== Overview charts ====== */
+/* -------- Overview charts -------- */
 function renderOverviewCharts(){
   const ctxY=document.getElementById('chartByYear')?.getContext('2d'); if(!ctxY) return;
   const byYear={}; for(const p of filtered){ if(p.year) byYear[p.year]=(byYear[p.year]||0)+1; }
@@ -547,7 +508,7 @@ function renderOverviewCharts(){
   chartRetract=new Chart(ctxR,{type:'doughnut',data:{labels:['Retracted/Notices','Other'],datasets:[{data:[retracted,clean],backgroundColor:['#ef4444','#94a3b8']}]},options:{responsive:true,maintainAspectRatio:false,cutout:'65%',centerText:`${pct}%`}});
 }
 
-/* ====== SDG charts ====== */
+/* -------- SDG charts -------- */
 function renderSDGChart(forTab=false){
   const counts=new Array(18).fill(0); for(const p of filtered){for(const id of (p.sdg_tags||[])) counts[id]++;}
   const labels=SDG_LIST.map(s=>`${s.id}`), data=SDG_LIST.map(s=>counts[s.id]||0), colors=SDG_LIST.map(s=>SDG_COLORS[s.id]);
@@ -559,7 +520,7 @@ function guessSDGs(p){const text=[(p.title||''),(p.journal||''),extractSubjects(
 function renderSDGBadges(ids){if(!ids.length) return ''; return ids.map(id=>`<span class="badge" style="border-color:${SDG_COLORS[id]}">${id}</span>`).join(' ');}
 function buildSDGLegend(){const box=document.getElementById('sdgLegend'); if(!box) return; box.innerHTML=''; for(const s of SDG_LIST){box.insertAdjacentHTML('beforeend',`<span class="badge" title="${s.name}" style="border-color:${SDG_COLORS[s.id]}">${s.id} — ${s.name}</span>`);}}
 
-/* ====== Quartiles upload & map ====== */
+/* -------- Quartiles -------- */
 document.getElementById('sjrFile')?.addEventListener('change', async (e)=>{
   const file=e.target.files[0]; if(!file) return; const name=file.name.toLowerCase(); const text=await file.text();
   sjrByIssn.clear(); sjrByTitle.clear(); haveSJR=false;
@@ -597,7 +558,7 @@ function resolveQuartile(p){
 }
 function updateCoverage(){const el=document.getElementById('mapCoverage'); if(!el) return; let mapped=0,total=filtered.length; for(const p of filtered) if(p.quartile) mapped++; const pct= total? Math.round(mapped*100/total):0; el.textContent = `${mapped} / ${total} mapped (${pct}%)`;}
 
-/* ====== Retraction info ====== */
+/* -------- Retraction info rendering -------- */
 function renderRetractionInfo(p){
   const parts=[];
   if(p.retraction_notice){
@@ -619,7 +580,7 @@ function renderRetractionInfo(p){
   return parts.join(' ')||'';
 }
 
-/* ====== Export ====== */
+/* -------- Export -------- */
 function exportCSV(){if(!filtered.length) return; const start=(currentPage-1)*pageSize, end=Math.min(start+pageSize,filtered.length);
   const rows=filtered.slice(start,end); const header=selectedColumns.map(c=>c.label);
   const csv=[header.join(',')].concat(rows.map(r=>selectedColumns.map(c=>q(textForExport(c.key,r))).join(','))).join('\n');
@@ -640,7 +601,7 @@ function textForExport(key,p){
 }
 function rawForExport(key,p){if(key==='subjects') return extractSubjects(p); if(key==='retraction_info') return stripHtml(renderRetractionInfo(p)); return p[key];}
 
-/* ====== Narrative ====== */
+/* -------- Narrative -------- */
 function renderNarrative(){
   const box=document.getElementById('narrativeBox'); if(!box) return;
   const total=filtered.length; const years=[...new Set(filtered.map(x=>x.year).filter(Boolean))].sort((a,b)=>a-b); const startY=years[0]||'—', endY=years[years.length-1]||'—';
@@ -648,17 +609,16 @@ function renderNarrative(){
   const bySdg=new Map(); for(const p of filtered){for(const id of (p.sdg_tags||[])){bySdg.set(id,(bySdg.get(id)||0)+1);}}
   const sdgTop=[...bySdg.entries()].sort((a,b)=>b[1]-a[1]).slice(0,2).map(([id,c])=>`${id} (${c})`).join(', ')||'—';
   box.innerHTML=`
-  <p>Inside the command center, a digital globe rotates, speckled with nodes where research has landed. Between <strong>${startY}</strong> and <strong>${endY}</strong>, our mission launched <strong>${num(total)}</strong> signals—each a publication—fanning out like orbital trajectories.</p>
-  <p>Bars climb year by year while a neon line threads across—cumulative output rising like altitude. Journals align as stacked vectors by quartile; SDGs arc into a luminous ring—today’s strongest beacons: <strong>${sdgTop}</strong>. Downlink counters flicker: <strong>${num(cites)}</strong> citations received.</p>
-  <p>Retraction sentinels sweep for anomalies—${num(retractions)} markers flare, each linked to a corrective maneuver. UPES authors are highlighted on every track.</p>
+  <p>Inside the command center, a digital globe rotates, speckled with nodes where research has landed. Between <strong>${startY}</strong> and <strong>${endY}</strong>, our mission launched <strong>${(total).toLocaleString()}</strong> signals—each a publication—fanning out like orbital trajectories.</p>
+  <p>Bars climb year by year while a neon line threads across—cumulative output rising like altitude. Journals align as stacked vectors by quartile; SDGs arc into a luminous ring—today’s strongest beacons: <strong>${sdgTop}</strong>. Downlink counters flicker: <strong>${(cites).toLocaleString()}</strong> citations received.</p>
+  <p>Retraction sentinels sweep for anomalies—${(retractions).toLocaleString()} markers flare, each linked to a corrective maneuver.</p>
   <p>As filters adjust, routes recalc, clusters regroup, and impact ripples shift. The mission continues—precise, adaptive, brilliantly lit by data.</p>`;
 }
 
-/* ====== Utils ====== */
+/* -------- Utils -------- */
 function esc(s){return String(s).replace(/[&<>"']/g,m=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m]));}
 function q(s){return `"${String(s).replace(/"/g,'""')}"`;}
 function downloadBlob(name,content,type){const blob=new Blob([content],{type}); const a=document.createElement('a'); a.href=URL.createObjectURL(blob); a.download=name; a.click(); URL.revokeObjectURL(a.href);}
-function num(n){return (n||0).toLocaleString();}
 function normTitle(t){return String(t||'').toLowerCase().replace(/\s+/g,' ').trim();}
 function normIssn(s){const x=String(s||'').replace(/[^0-9xX]/g,'').toUpperCase(); return x.length===8?x.slice(0,4)+'-'+x.slice(4):(x.length===7?x.slice(0,3)+'-'+x.slice(3):'');}
 function normQuartile(q){const s=String(q||'').toUpperCase().trim(); return /^Q[1-4]$/.test(s)?s:'';}
