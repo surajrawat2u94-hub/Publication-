@@ -90,7 +90,7 @@
         <div class="card p-4">
           <h3 class="font-semibold">Top Journals — stacked by Quartile</h3>
           <div class="mt-2 h-[300px]"><canvas id="chartTopJournals"></canvas></div>
-          <div class="text-xs text-slate-500 mt-2">Upload SJR file to enable Q1–Q4; otherwise “Unknown”.</div>
+          <div class="text-xs text-slate-500 mt-2">Upload SJR to enable Q1–Q4; otherwise “Unknown”.</div>
         </div>
         <div class="card p-4">
           <h3 class="font-semibold">SDG Distribution</h3>
@@ -109,11 +109,14 @@
         <div class="flex flex-wrap items-end gap-3">
           <div>
             <label class="block text-xs font-medium text-slate-600">Search</label>
-            <input id="searchBox" class="px-3 py-2 rounded-xl border border-slate-300 text-sm" placeholder="Title / author / journal / DOI" oninput="applyFilters(1)"/>
+            <input id="searchBox" class="px-3 py-2 rounded-xl border border-slate-300 text-sm"
+                   placeholder="Title / author / journal / DOI" oninput="applyFilters(1)"/>
           </div>
           <div>
             <label class="block text-xs font-medium text-slate-600">Year</label>
-            <select id="yearFilter" class="px-3 py-2 rounded-xl border border-slate-300 text-sm" onchange="applyFilters(1)"><option value="">All years</option></select>
+            <select id="yearFilter" class="px-3 py-2 rounded-xl border border-slate-300 text-sm" onchange="applyFilters(1)">
+              <option value="">All years</option>
+            </select>
           </div>
           <div>
             <label class="block text-xs font-medium text-slate-600">Quartile</label>
@@ -132,8 +135,17 @@
           </div>
           <div>
             <label class="block text-xs font-medium text-slate-600">SDG</label>
-            <select id="sdgFilter" class="px-3 py-2 rounded-xl border border-slate-300 text-sm" onchange="applyFilters(1)"><option value="">All SDGs</option></select>
+            <select id="sdgFilter" class="px-3 py-2 rounded-xl border border-slate-300 text-sm" onchange="applyFilters(1)">
+              <option value="">All SDGs</option>
+            </select>
           </div>
+
+          <!-- NEW: UPES-only toggle -->
+          <label class="flex items-center gap-2 ml-2 text-sm">
+            <input id="upesOnly" type="checkbox" checked onchange="applyFilters(1)"/>
+            <span>UPES only</span>
+          </label>
+
           <div>
             <label class="block text-xs font-medium text-slate-600">Rows per page</label>
             <select id="pageSize" class="px-3 py-2 rounded-xl border border-slate-300 text-sm" onchange="changePageSize()">
@@ -143,7 +155,8 @@
 
           <!-- Column chooser -->
           <div class="ml-auto dropdown">
-            <button id="colBtn" class="px-3 py-2 rounded-xl bg-slate-100 border border-slate-300 text-sm flex items-center gap-2" onclick="toggleColumnsPanel()">
+            <button id="colBtn" class="px-3 py-2 rounded-xl bg-slate-100 border border-slate-300 text-sm flex items-center gap-2"
+                    onclick="toggleColumnsPanel()">
               <i data-lucide="columns-3"></i> Columns
             </button>
             <div id="columnsPanel" class="dropdown-panel hidden mt-2 bg-white border border-slate-200 rounded-xl shadow-lg w-80 p-3">
@@ -166,7 +179,7 @@
       <!-- Table -->
       <div class="card">
         <div class="px-4 py-3 border-b border-slate-200 flex items-center justify-between">
-          <div class="font-semibold">All Publications (UPES-linked)</div>
+          <div class="font-semibold">All Publications</div>
           <div class="text-xs text-slate-500" id="countInfo"></div>
         </div>
         <div class="overflow-x-auto thin-scrollbar">
@@ -199,7 +212,8 @@
           </div>
           <div class="flex items-center gap-2">
             <input id="sjrFile" type="file" accept=".csv,.json" class="hidden"/>
-            <button class="px-3 py-2 rounded-xl bg-slate-100 border border-slate-300 text-sm" onclick="document.getElementById('sjrFile').click()">
+            <button class="px-3 py-2 rounded-xl bg-slate-100 border border-slate-300 text-sm"
+                    onclick="document.getElementById('sjrFile').click()">
               <i data-lucide="upload"></i> Upload Quartiles
             </button>
           </div>
@@ -243,7 +257,6 @@
 <script>
 /* ===================== CONFIG (edit these) ===================== */
 const AFFIL_ROR = '04q2jes40'; // UPES ROR
-// Any author counts as UPES if (ROR matches) OR (any affiliation string matches one of these)
 const AFFIL_ALIASES = [
   'university of petroleum and energy studies',
   'upes',
@@ -330,27 +343,35 @@ function switchTab(name){
 
 /* ====== Load data ====== */
 async function autoLoad(){
-  const err=(m)=>{const box=document.getElementById('errorBox');if(box){box.textContent=m;box.classList.remove('hidden');}console.error(m);};
+  const err=(m)=>{const box=document.getElementById('errorBox'); if(box){box.textContent=m; box.classList.remove('hidden');} console.error(m);};
   try{
     const res=await fetch('institution_data.json?v='+Date.now(),{cache:'no-store'});
-    if(!res.ok){err('institution_data.json not found at the same path as index.html');return;}
-    const j=await res.json();const items=Array.isArray(j?.items)?j.items:(Array.isArray(j)?j:[]);
-    if(!Array.isArray(items)||!items.length){err('institution_data.json loaded but has no items.');return;}
-    document.getElementById('errorBox')?.classList.add('hidden');
-    // Keep only items that have UPES by (ROR OR alias match)
-    all = items.filter(itemHasUPES);
+    if(!res.ok){err('institution_data.json not found at the same path as index.html'); return;}
+    const j=await res.json();
+    const items=Array.isArray(j?.items)?j.items:(Array.isArray(j)?j:[]);
+    if(!Array.isArray(items)||!items.length){err('institution_data.json loaded but contains no items.'); return;}
 
+    document.getElementById('errorBox')?.classList.add('hidden');
+
+    // Keep ALL items; compute has_upes per item
+    all = items;
     for(const p of all){
+      p.has_upes = itemHasUPES(p);
       if(typeof p.citations==='undefined'&&typeof p.cited_by_count!=='undefined') p.citations=p.cited_by_count;
       p.authors=(p.authorships||[]).map(a=>a.author?.display_name||a.author_name||'').filter(Boolean);
     }
-    const ts=(j.updated||null);
-    document.getElementById('lastSynced').textContent=ts?`Last synced: ${dayjs(ts).format('DD MMM YYYY, HH:mm')}`:'Loaded';
 
+    // Header stamp
+    const ts=(j.updated||null);
+    document.getElementById('lastSynced').textContent =
+      ts ? `Last synced: ${dayjs(ts).format('DD MMM YYYY, HH:mm')}` : 'Loaded';
+
+    // Year options
     const years=[...new Set(all.map(x=>x.year).filter(Boolean))].sort((a,b)=>b-a);
     const yearSel=document.getElementById('yearFilter');
     yearSel.innerHTML='<option value="">All years</option>'+years.map(y=>`<option>${y}</option>`).join('');
 
+    // SDG options
     const opts=SDG_LIST.map(s=>`<option value="${s.id}">${s.id}. ${s.name}</option>`).join('');
     document.getElementById('sdgFilter').innerHTML='<option value="">All SDGs</option>'+opts;
 
@@ -359,31 +380,33 @@ async function autoLoad(){
     buildRetractionIndex(all);
     for(const p of all) p.sdg_tags=guessSDGs(p);
 
-    document.getElementById('kpiTotal').textContent=num(all.length);
-    buildColumnsPanel(); buildSDGLegend(); applyFilters(1);
-  }catch(e){err('Failed to parse institution_data.json: '+(e?.message||e));}
+    // KPI Total UPES-linked
+    document.getElementById('kpiTotal').textContent = num(all.filter(x=>x.has_upes).length);
+
+    buildColumnsPanel();
+    buildSDGLegend();
+    applyFilters(1);
+  }catch(e){
+    err('Failed to parse institution_data.json: '+(e?.message||e));
+  }
 }
 
 /* ====== UPES affiliation logic ====== */
 function itemHasUPES(p){
   if(!Array.isArray(p.authorships)) return false;
-  return p.authorships.some(a => isUPESAuthorship(a));
+  return p.authorships.some(isUPESAuthorship);
 }
 function isUPESAuthorship(a){
-  const rorHit = (a.institutions||[]).some(inst => (inst.ror||'').toLowerCase().includes(AFFIL_ROR.toLowerCase()));
-  if (rorHit) return true;
-  const aliasText = [
-    a.raw_affiliation_string || '',
-    ...(a.institutions||[]).map(inst => inst.display_name || '')
-  ].join(' ').toLowerCase();
+  const rorHit=(a.institutions||[]).some(inst => (inst.ror||'').toLowerCase().includes(AFFIL_ROR.toLowerCase()));
+  if(rorHit) return true;
+  const aliasText=[a.raw_affiliation_string||'',...(a.institutions||[]).map(inst=>inst.display_name||'')].join(' ').toLowerCase();
   return AFFIL_ALIASES.some(alias => aliasText.includes(alias.toLowerCase()));
 }
 
-/* ====== Retraction index ====== */
+/* ====== Retractions ====== */
 function buildRetractionIndex(items){
   const mapByTitle=new Map(), mapByDOI=new Map();
-  for(const p of items){ if(p.doi) mapByDOI.set(String(p.doi).toLowerCase(),p);
-    const nt=normTitle(p.title||''); if(nt) mapByTitle.set(nt,p);}
+  for(const p of items){ if(p.doi) mapByDOI.set(String(p.doi).toLowerCase(),p); const nt=normTitle(p.title||''); if(nt) mapByTitle.set(nt,p); }
   for(const p of items){
     const title=p.title||''; p.retraction_notice=isRetractionNotice(title);
     p.retracted_by=null; p.retraction_of=null;
@@ -396,7 +419,7 @@ function buildRetractionIndex(items){
   }
 }
 function isRetractionNotice(title){return RETRACT_PREFIXES.some(rx=>rx.test(String(title||''))); }
-function stripRetractionPrefix(title){let t=String(title||'');for(const rx of RETRACT_PREFIXES){if(rx.test(t)) return t.replace(rx,'').trim();}return t;}
+function stripRetractionPrefix(title){let t=String(title||''); for(const rx of RETRACT_PREFIXES){ if(rx.test(t)) return t.replace(rx,'').trim(); } return t;}
 
 /* ====== Filters / paging ====== */
 function applyFilters(goToPage=1){
@@ -405,8 +428,10 @@ function applyFilters(goToPage=1){
   const sdg=document.getElementById('sdgFilter')?.value||'';
   const quart=document.getElementById('quartileFilter')?.value||'';
   const retractMode=document.getElementById('retractionFilter')?.value||'';
+  const upesOnly=document.getElementById('upesOnly')?.checked;
 
   filtered=all.filter(p=>{
+    if(upesOnly && !p.has_upes) return false;
     if(year && String(p.year)!==year) return false;
     if(sdg && !(p.sdg_tags||[]).includes(Number(sdg))) return false;
     if(quart){
@@ -425,10 +450,11 @@ function applyFilters(goToPage=1){
   });
 
   if(haveSJR){ for(const p of filtered) p.quartile=resolveQuartile(p) || p.quartile; }
-  document.getElementById('kpiView').textContent=num(filtered.length);
-  document.getElementById('kpiRetr').textContent=num(filtered.filter(x=>x.is_retracted||x.retraction_notice).length);
+
+  document.getElementById('kpiView').textContent = num(filtered.length);
+  document.getElementById('kpiRetr').textContent = num(filtered.filter(x=>x.is_retracted||x.retraction_notice).length);
   const journals=new Set(filtered.map(x=>(x.journal||'').trim()).filter(Boolean));
-  document.getElementById('kpiJournals').textContent=num(journals.size);
+  document.getElementById('kpiJournals').textContent = num(journals.size);
 
   if(goToPage===1) currentPage=1;
   renderTable(); renderOverviewCharts(); renderSDGChart(); updateCoverage();
@@ -449,12 +475,13 @@ function renderTable(){
     const tr=document.createElement('tr'); tr.className='border-b border-slate-100 hover:bg-slate-50'; tr.innerHTML=tds; body.appendChild(tr);
   }
   document.getElementById('pageInfo').textContent=`Page ${totalPages()?currentPage:0} / ${totalPages()}`;
-  document.getElementById('countInfo').textContent=filtered.length?`Showing ${num(start+1)}–${num(end)} of ${num(filtered.length)} (filtered)`:`Showing 0 of 0`;
+  document.getElementById('countInfo').textContent = filtered.length
+    ? `Showing ${num(start+1)}–${num(end)} of ${num(filtered.length)} (filtered)` : `Showing 0 of 0`;
   document.getElementById('rangeText').textContent=document.getElementById('countInfo').textContent;
 }
 function getUPESAuthors(p){
   if(!Array.isArray(p.authorships)) return [];
-  const upes = p.authorships.filter(isUPESAuthorship);
+  const upes=p.authorships.filter(isUPESAuthorship);
   return upes.map(a=>a.author?.display_name||a.author_name||'').filter(Boolean);
 }
 function renderCell(key,p){
@@ -504,6 +531,7 @@ function renderOverviewCharts(){
   if(chartByYear) chartByYear.destroy(); const gradY=gradientVertical(ctxY,'#6366f1','#a855f7');
   chartByYear=new Chart(ctxY,{data:{labels:labelsY,datasets:[{type:'bar',label:'Publications',data:dataY,borderRadius:12,borderSkipped:false,backgroundColor:gradY},{type:'line',label:'Cumulative',data:growth,borderColor:'#14b8a6',borderWidth:3,fill:false,tension:0.3,pointRadius:0}]},
     options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{position:'top'},shadowPlugin:{}},scales:{x:{grid:{display:false}},y:{beginAtZero:true,grid:{color:'#e2e8f0'}}}});
+
   const ctxJ=document.getElementById('chartTopJournals')?.getContext('2d'); if(!ctxJ) return;
   const agg=new Map(); for(const p of filtered){const j=(p.journal||'').trim(); if(!j) continue; const q=(p.quartile||'').toUpperCase(); const rec=agg.get(j)||{Q1:0,Q2:0,Q3:0,Q4:0,Unknown:0,total:0}; if(/^Q[1-4]$/.test(q)) rec[q]++; else rec.Unknown++; rec.total++; agg.set(j,rec); }
   const top=Array.from(agg.entries()).sort((a,b)=>b[1].total-a[1].total).slice(0,10); const labelsJ=top.map(([j])=>j); const series=['Q1','Q2','Q3','Q4','Unknown']; const colors={Q1:'#16a34a',Q2:'#22c55e',Q3:'#84cc16',Q4:'#a3e635',Unknown:'#cbd5e1'};
@@ -512,6 +540,7 @@ function renderOverviewCharts(){
   chartTopJournals=new Chart(ctxJ,{data:{labels:labelsJ,datasets:datasets},options:{indexAxis:'y',responsive:true,maintainAspectRatio:false,plugins:{legend:{position:'top'},shadowPlugin:{},tooltip:{mode:'index',intersect:false}},scales:{x:{stacked:true,grid:{color:'#e2e8f0'},beginAtZero:true},y:{stacked:true,grid:{display:false}}}});
 
   renderSDGChart(false);
+
   const ctxR=document.getElementById('chartRetract')?.getContext('2d'); if(!ctxR) return;
   const retracted=filtered.filter(p=>p.is_retracted||p.retraction_notice).length; const clean=Math.max(0,filtered.length-retracted);
   const pct=filtered.length?Math.round((retracted*100)/filtered.length):0; if(chartRetract) chartRetract.destroy();
@@ -551,29 +580,42 @@ function addQuartileRow(row){
 }
 function parseCSV(text,onRow){
   const lines=text.split(/\r?\n/).filter(Boolean);
-  const sep = (lines[0].includes(';')? ';' : (lines[0].includes('\t')? '\t' : ','));
-  const header=lines.shift().split(sep).map(h=>h.trim().toLowerCase());
+  const sep=(lines[0].includes(';')?';':(lines[0].includes('\t')?'\t':','));
+  const header=lines.shift().toLowerCase().split(sep).map(h=>h.trim());
   const idxTitle=header.findIndex(h=>/title|journal/.test(h));
   const idxIssn =header.findIndex(h=>/issn/.test(h));
   const idxQuart=header.findIndex(h=>/quartile|^q$|sjr/.test(h));
   if(idxQuart<0 || (idxTitle<0 && idxIssn<0)) throw new Error('CSV needs Title/ISSN + Quartile columns');
   for(const line of lines){const cols=splitCsv(line,sep); onRow({title:idxTitle>=0?cols[idxTitle]:'',issn:idxIssn>=0?cols[idxIssn]:'',quartile:idxQuart>=0?cols[idxQuart]:''});}
 }
-function splitCsv(line, sep){const out=[];let cur='',inQ=false;for(let i=0;i<line.length;i++){const ch=line[i]; if(ch==='\"'){inQ=!inQ;continue;} if(ch===sep && !inQ){out.push(cur.trim());cur='';continue;} cur+=ch;} out.push(cur.trim()); return out;}
+function splitCsv(line,sep){const out=[];let cur='',inQ=false;for(let i=0;i<line.length;i++){const ch=line[i]; if(ch==='\"'){inQ=!inQ;continue;} if(ch===sep && !inQ){out.push(cur.trim());cur='';continue;} cur+=ch;} out.push(cur.trim()); return out;}
 function resolveQuartile(p){
   const issns=(p.issns||[]).map(normIssn).filter(Boolean);
   for(const id of issns){if(sjrByIssn.has(id)) return sjrByIssn.get(id);}
   const t=normTitle(p.journal||''); if(t && sjrByTitle.has(t)) return sjrByTitle.get(t);
   return '';
 }
-function updateCoverage(){const el=document.getElementById('mapCoverage'); if(!el) return; let mapped=0,total=filtered.length; for(const p of filtered) if(p.quartile) mapped++; const pct=total?Math.round(mapped*100/total):0; el.textContent=`${mapped} / ${total} mapped (${pct}%)`;}
+function updateCoverage(){const el=document.getElementById('mapCoverage'); if(!el) return; let mapped=0,total=filtered.length; for(const p of filtered) if(p.quartile) mapped++; const pct= total? Math.round(mapped*100/total):0; el.textContent = `${mapped} / ${total} mapped (${pct}%)`;}
 
-/* ====== Retraction info rendering ====== */
+/* ====== Retraction info ====== */
 function renderRetractionInfo(p){
-  const parts=[]; if(p.retraction_notice){parts.push('<span class="badge" style="border-color:#ef4444;color:#b91c1c">Retraction notice</span>');
-    if(p.retraction_of){const t=esc(p.retraction_of.title||''); const d=p.retraction_of.doi?` <a href="https://doi.org/${p.retraction_of.doi}" target="_blank" rel="noopener">${esc(p.retraction_of.doi)}</a>`:''; parts.push(`<div class="text-xs text-slate-600 mt-1">of: ${t}${d}</div>`);}}
-  if(p.is_retracted){parts.push('<span class="badge" style="border-color:#ef4444;color:#b91c1c">Retracted (OpenAlex)</span>');
-    if(p.retracted_by){const t=esc(p.retracted_by.title||''); const d=p.retracted_by.doi?` <a href="https://doi.org/${p.retracted_by.doi}" target="_blank" rel="noopener">${esc(p.retracted_by.doi)}</a>`:''; parts.push(`<div class="text-xs text-slate-600 mt-1">by: ${t}${d}</div>`);}}
+  const parts=[];
+  if(p.retraction_notice){
+    parts.push('<span class="badge" style="border-color:#ef4444;color:#b91c1c">Retraction notice</span>');
+    if(p.retraction_of){
+      const t=esc(p.retraction_of.title||'');
+      const d=p.retraction_of.doi?` <a href="https://doi.org/${p.retraction_of.doi}" target="_blank" rel="noopener">${esc(p.retraction_of.doi)}</a>`:'';
+      parts.push(`<div class="text-xs text-slate-600 mt-1">of: ${t}${d}</div>`);
+    }
+  }
+  if(p.is_retracted){
+    parts.push('<span class="badge" style="border-color:#ef4444;color:#b91c1c">Retracted (OpenAlex)</span>');
+    if(p.retracted_by){
+      const t=esc(p.retracted_by.title||'');
+      const d=p.retracted_by.doi?` <a href="https://doi.org/${p.retracted_by.doi}" target="_blank" rel="noopener">${esc(p.retracted_by.doi)}</a>`:'';
+      parts.push(`<div class="text-xs text-slate-600 mt-1">by: ${t}${d}</div>`);
+    }
+  }
   return parts.join(' ')||'';
 }
 
@@ -585,7 +627,17 @@ function exportCSV(){if(!filtered.length) return; const start=(currentPage-1)*pa
 function exportJSON(){const start=(currentPage-1)*pageSize, end=Math.min(start+pageSize,filtered.length);
   const rows=filtered.slice(start,end).map(r=>{const o={}; for(const c of selectedColumns){o[c.key]=rawForExport(c.key,r);} return o;});
   downloadBlob('publications_view.json',JSON.stringify(rows,null,2),'application/json');}
-function textForExport(key,p){switch(key){case 'authors': return getUPESAuthors(p).join('; '); case 'issns': return (p.issns||[]).join('; '); case 'subjects': return extractSubjects(p); case 'sdg_tags': return (p.sdg_tags||[]).join('; '); case 'retraction_info': return stripHtml(renderRetractionInfo(p)); case 'is_retracted': return p.is_retracted?'Yes':'No'; default: return rawForExport(key,p)??'';}}
+function textForExport(key,p){
+  switch(key){
+    case 'authors': return getUPESAuthors(p).join('; ');
+    case 'issns':   return (p.issns||[]).join('; ');
+    case 'subjects':return extractSubjects(p);
+    case 'sdg_tags':return (p.sdg_tags||[]).join('; ');
+    case 'retraction_info': return stripHtml(renderRetractionInfo(p));
+    case 'is_retracted': return p.is_retracted ? 'Yes' : 'No';
+    default: return rawForExport(key,p) ?? '';
+  }
+}
 function rawForExport(key,p){if(key==='subjects') return extractSubjects(p); if(key==='retraction_info') return stripHtml(renderRetractionInfo(p)); return p[key];}
 
 /* ====== Narrative ====== */
@@ -593,12 +645,13 @@ function renderNarrative(){
   const box=document.getElementById('narrativeBox'); if(!box) return;
   const total=filtered.length; const years=[...new Set(filtered.map(x=>x.year).filter(Boolean))].sort((a,b)=>a-b); const startY=years[0]||'—', endY=years[years.length-1]||'—';
   const cites=filtered.reduce((a,b)=>a+(b.citations||0),0); const retractions=filtered.filter(x=>x.is_retracted||x.retraction_notice).length;
-  const bySdg=new Map(); for(const p of filtered){for(const id of (p.sdg_tags||[])){bySdg.set(id,(bySdg.get(id)||0)+1);}} const sdgTop=[...bySdg.entries()].sort((a,b)=>b[1]-a[1]).slice(0,2).map(([id,c])=>`${id} (${c})`).join(', ')||'—';
+  const bySdg=new Map(); for(const p of filtered){for(const id of (p.sdg_tags||[])){bySdg.set(id,(bySdg.get(id)||0)+1);}}
+  const sdgTop=[...bySdg.entries()].sort((a,b)=>b[1]-a[1]).slice(0,2).map(([id,c])=>`${id} (${c})`).join(', ')||'—';
   box.innerHTML=`
-  <p>Inside the command center, the wall of holographic panes hums to life. A digital globe rotates slowly, speckled with nodes where research has landed. Between <strong>${startY}</strong> and <strong>${endY}</strong>, our mission launched <strong>${num(total)}</strong> signals—each a publication—fanning out like orbital trajectories.</p>
-  <p>On the left, a bar array climbs year by year while a neon line threads across—cumulative output rising like altitude. Journals align as stacked vectors by quartile; SDGs arc into a luminous ring—today’s strongest beacons: <strong>${sdgTop}</strong>. Downlink counters flicker: <strong>${num(cites)}</strong> citations received.</p>
-  <p>Retraction sentinels sweep for anomalies—${num(retractions)} markers flare, each linked to a corrective maneuver. UPES authors are highlighted on every track, their signatures etched in the telemetry.</p>
-  <p>As filters adjust, the holograms recompose—routes recalc, clusters regroup, impact ripples shift. The mission continues—precise, adaptive, brilliantly lit by data.</p>`;
+  <p>Inside the command center, a digital globe rotates, speckled with nodes where research has landed. Between <strong>${startY}</strong> and <strong>${endY}</strong>, our mission launched <strong>${num(total)}</strong> signals—each a publication—fanning out like orbital trajectories.</p>
+  <p>Bars climb year by year while a neon line threads across—cumulative output rising like altitude. Journals align as stacked vectors by quartile; SDGs arc into a luminous ring—today’s strongest beacons: <strong>${sdgTop}</strong>. Downlink counters flicker: <strong>${num(cites)}</strong> citations received.</p>
+  <p>Retraction sentinels sweep for anomalies—${num(retractions)} markers flare, each linked to a corrective maneuver. UPES authors are highlighted on every track.</p>
+  <p>As filters adjust, routes recalc, clusters regroup, and impact ripples shift. The mission continues—precise, adaptive, brilliantly lit by data.</p>`;
 }
 
 /* ====== Utils ====== */
