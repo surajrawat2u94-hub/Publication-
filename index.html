@@ -1,276 +1,279 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-  <meta charset="UTF-8"/>
-  <meta name="viewport" content="width=device-width, initial-scale=1"/>
-  <title>AI Publications Portal</title>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1"/>
+<title>AI Publications Portal</title>
 
-  <!-- Tailwind -->
-  <script src="https://cdn.tailwindcss.com"></script>
-  <!-- Icons -->
-  <script src="https://unpkg.com/lucide@latest/dist/umd/lucide.js"></script>
-  <!-- Day.js + Chart.js -->
-  <script src="https://cdn.jsdelivr.net/npm/dayjs@1/dayjs.min.js"></script>
-  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+<!-- Tailwind -->
+<script src="https://cdn.tailwindcss.com"></script>
+<!-- Icons -->
+<script src="https://unpkg.com/lucide@latest/dist/umd/lucide.js"></script>
+<!-- Day.js + Chart.js -->
+<script src="https://cdn.jsdelivr.net/npm/dayjs@1/dayjs.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
 
-  <style>
-    .card{background:rgba(255,255,255,.9);border:1px solid rgba(226,232,240,.9);border-radius:16px;box-shadow:0 12px 24px rgba(15,23,42,.06)}
-    .thin-scrollbar::-webkit-scrollbar{height:8px;width:8px}
-    .thin-scrollbar::-webkit-scrollbar-thumb{background:#CBD5E1;border-radius:6px}
-    .thin-scrollbar::-webkit-scrollbar-track{background:#F8FAFC}
-    .tab-active{color:#111827;border-color:#7c3aed;background:linear-gradient(180deg,#fff,#f8fafc)}
-    .tab-inactive{color:#6B7280;border-color:transparent}
-    .dropdown{position:relative}.dropdown-panel{position:absolute;right:0;top:100%;z-index:40}
-    .badge{display:inline-flex;align-items:center;gap:.35rem;padding:.2rem .5rem;border-radius:999px;font-size:.72rem;border:1px solid #e2e8f0;background:#f8fafc}
-    .narrative-bg{background: radial-gradient(1200px 400px at 0% 0%, rgba(124,58,237,.08), transparent 60%), radial-gradient(800px 400px at 100% 0%, rgba(14,165,233,.08), transparent 60%)}
-    .link{color:#4f46e5}
-
-    /* Narrative animation */
-    .narrative-wrap{position:relative;overflow:hidden;border-radius:16px}
-    #navCanvas{position:absolute;inset:0;width:100%;height:260px}
-    .narrative-glow{background:
-      radial-gradient(800px 200px at 0% 0%, rgba(124,58,237,.10), transparent 60%),
-      radial-gradient(600px 200px at 100% 0%, rgba(14,165,233,.10), transparent 60%)}
-  </style>
+<style>
+  .card{background:rgba(255,255,255,.92);border:1px solid rgba(226,232,240,.9);border-radius:16px;box-shadow:0 12px 24px rgba(15,23,42,.06)}
+  .thin-scrollbar::-webkit-scrollbar{height:8px;width:8px}
+  .thin-scrollbar::-webkit-scrollbar-thumb{background:#CBD5E1;border-radius:6px}
+  .thin-scrollbar::-webkit-scrollbar-track{background:#F8FAFC}
+  .tab-active{color:#111827;border-color:#7c3aed;background:linear-gradient(180deg,#fff,#f8fafc)}
+  .tab-inactive{color:#6B7280;border-color:transparent}
+  .dropdown{position:relative}
+  .dropdown-panel{position:absolute;right:0;top:100%;z-index:40}
+  .badge{display:inline-flex;align-items:center;gap:.35rem;padding:.2rem .5rem;border-radius:999px;font-size:.72rem;border:1px solid #e2e8f0;background:#fff}
+  .link{color:#4f46e5}
+  /* Narrative “holo bay” */
+  .holo-wrap{position:relative;overflow:hidden;border-radius:16px;background:
+    radial-gradient(900px 300px at 0% 0%, rgba(124,58,237,.10), transparent 60%),
+    radial-gradient(700px 300px at 100% 0%, rgba(14,165,233,.10), transparent 60%);}
+  .holo-canvas{position:absolute;inset:0;filter:drop-shadow(0 8px 16px rgba(2,6,23,.25))}
+  .type-line{font-variant-ligatures:none;white-space:pre-wrap}
+</style>
 </head>
 <body class="bg-gradient-to-b from-slate-50 to-slate-100 text-slate-900">
 
-  <!-- Header -->
-  <header class="sticky top-0 z-30 bg-gradient-to-r from-indigo-600/90 via-fuchsia-600/90 to-sky-600/90 text-white backdrop-blur">
-    <div class="max-w-7xl mx-auto px-4 py-4 flex items-center justify-between">
-      <div class="flex items-center gap-3">
-        <div class="h-10 w-10 rounded-2xl bg-white/15 grid place-content-center shadow-inner">
-          <i data-lucide="brain" class="text-white"></i>
+<!-- Header -->
+<header class="sticky top-0 z-30 bg-gradient-to-r from-indigo-600/90 via-fuchsia-600/90 to-sky-600/90 text-white backdrop-blur">
+  <div class="max-w-7xl mx-auto px-4 py-4 flex items-center justify-between">
+    <div class="flex items-center gap-3">
+      <div class="h-10 w-10 rounded-2xl bg-white/15 grid place-content-center shadow-inner">
+        <i data-lucide="brain" class="text-white"></i>
+      </div>
+      <div>
+        <h1 class="text-lg font-semibold tracking-tight">AI Publications Portal</h1>
+        <div id="lastSynced" class="text-xs text-white/80">Loading…</div>
+        <div id="errorBox" class="hidden mt-2 text-xs bg-rose-50 text-rose-700 border border-rose-200 rounded-lg px-2 py-1"></div>
+      </div>
+    </div>
+    <div class="hidden md:flex items-center gap-2 text-xs">
+      <span class="px-2 py-1 rounded-lg bg-white/10 border border-white/20">Static JSON · No live API</span>
+    </div>
+  </div>
+
+  <!-- Tabs -->
+  <div class="bg-white">
+    <div class="max-w-7xl mx-auto px-4">
+      <nav class="flex flex-wrap gap-2">
+        <button id="tabOverview"     class="px-4 py-3 text-sm border-b-2 tab-active"   onclick="switchTab('overview')">Overview</button>
+        <button id="tabPublications" class="px-4 py-3 text-sm border-b-2 tab-inactive" onclick="switchTab('publications')">Publications</button>
+        <button id="tabQuartiles"    class="px-4 py-3 text-sm border-b-2 tab-inactive" onclick="switchTab('quartiles')">Quartiles</button>
+        <button id="tabSDG"          class="px-4 py-3 text-sm border-b-2 tab-inactive" onclick="switchTab('sdg')">SDGs</button>
+        <button id="tabNarrative"    class="px-4 py-3 text-sm border-b-2 tab-inactive" onclick="switchTab('narrative')">Narrative</button>
+      </nav>
+    </div>
+  </div>
+</header>
+
+<!-- CONTENT -->
+<main class="max-w-7xl mx-auto px-4 py-6 space-y-6">
+
+  <!-- OVERVIEW -->
+  <section id="view-overview" class="space-y-6">
+    <!-- KPIs -->
+    <div class="grid grid-cols-2 md:grid-cols-4 gap-4">
+      <div class="card p-4"><div class="text-xs text-slate-500">Total items</div><div id="kpiTotal" class="mt-1 text-2xl font-semibold">—</div></div>
+      <div class="card p-4"><div class="text-xs text-slate-500">Current view</div><div id="kpiView" class="mt-1 text-2xl font-semibold">—</div></div>
+      <div class="card p-4"><div class="text-xs text-slate-500">Retracted (view)</div><div id="kpiRetr" class="mt-1 text-2xl font-semibold">—</div></div>
+      <div class="card p-4"><div class="text-xs text-slate-500">Distinct journals (view)</div><div id="kpiJournals" class="mt-1 text-2xl font-semibold">—</div></div>
+    </div>
+
+    <!-- Advanced Charts -->
+    <div class="grid grid-cols-1 lg:grid-cols-2 gap-4">
+      <div class="card p-4">
+        <div class="flex items-center justify-between">
+          <h3 class="font-semibold">Publications by Year (with cumulative)</h3>
+          <span id="rangeText" class="text-xs text-slate-500"></span>
+        </div>
+        <div class="mt-2 h-[300px]"><canvas id="chartByYear"></canvas></div>
+      </div>
+
+      <div class="card p-4">
+        <h3 class="font-semibold">Top Journals — stacked by Quartile</h3>
+        <div class="mt-2 h-[300px]"><canvas id="chartTopJournals"></canvas></div>
+        <div class="text-xs text-slate-500 mt-2">If no SJR quartiles uploaded, “Unknown” bucket is used.</div>
+      </div>
+
+      <div class="card p-4">
+        <h3 class="font-semibold">SDG Distribution</h3>
+        <div class="mt-2 h-[300px]"><canvas id="chartSDG"></canvas></div>
+      </div>
+
+      <div class="card p-4">
+        <h3 class="font-semibold">Retractions (OpenAlex + notices)</h3>
+        <div class="mt-2 h-[300px]"><canvas id="chartRetract"></canvas></div>
+      </div>
+    </div>
+    <!-- NOTE: The YouTube “Advanced chart inspiration” card was removed per your request -->
+  </section>
+
+  <!-- PUBLICATIONS -->
+  <section id="view-publications" class="hidden space-y-4">
+    <div class="card p-4">
+      <div class="flex flex-wrap items-end gap-3">
+        <div>
+          <label class="block text-xs font-medium text-slate-600">Search</label>
+          <input id="searchBox" class="px-3 py-2 rounded-xl border border-slate-300 text-sm"
+                 placeholder="Title / author / journal / DOI" oninput="applyFilters(1)"/>
         </div>
         <div>
-          <h1 class="text-lg font-semibold tracking-tight">AI Publications Portal</h1>
-          <div id="lastSynced" class="text-xs text-white/80">Loading…</div>
-          <div id="errorBox" class="hidden mt-2 text-xs bg-rose-50 text-rose-700 border border-rose-200 rounded-lg px-2 py-1"></div>
+          <label class="block text-xs font-medium text-slate-600">Year</label>
+          <select id="yearFilter" class="px-3 py-2 rounded-xl border border-slate-300 text-sm" onchange="applyFilters(1)">
+            <option value="">All years</option>
+          </select>
         </div>
-      </div>
-      <div class="hidden md:flex items-center gap-2 text-xs">
-        <span class="px-2 py-1 rounded-lg bg-white/10 border border-white/20">Static JSON · No live API</span>
-      </div>
-    </div>
-
-    <!-- Tabs -->
-    <div class="bg-white">
-      <div class="max-w-7xl mx-auto px-4">
-        <nav class="flex flex-wrap gap-2">
-          <button id="tabOverview"     class="px-4 py-3 text-sm border-b-2 tab-active"   onclick="switchTab('overview')">Overview</button>
-          <button id="tabPublications" class="px-4 py-3 text-sm border-b-2 tab-inactive" onclick="switchTab('publications')">Publications</button>
-          <button id="tabQuartiles"    class="px-4 py-3 text-sm border-b-2 tab-inactive" onclick="switchTab('quartiles')">Quartiles</button>
-          <button id="tabSDG"          class="px-4 py-3 text-sm border-b-2 tab-inactive" onclick="switchTab('sdg')">SDGs</button>
-          <button id="tabNarrative"    class="px-4 py-3 text-sm border-b-2 tab-inactive" onclick="switchTab('narrative')">Narrative</button>
-        </nav>
-      </div>
-    </div>
-  </header>
-
-  <!-- CONTENT -->
-  <main class="max-w-7xl mx-auto px-4 py-6 space-y-6">
-
-    <!-- OVERVIEW -->
-    <section id="view-overview" class="space-y-6">
-      <!-- KPIs -->
-      <div class="grid grid-cols-2 md:grid-cols-4 gap-4">
-        <div class="card p-4"><div class="text-xs text-slate-500">Total items</div><div id="kpiTotal" class="mt-1 text-2xl font-semibold">—</div></div>
-        <div class="card p-4"><div class="text-xs text-slate-500">Current view</div><div id="kpiView" class="mt-1 text-2xl font-semibold">—</div></div>
-        <div class="card p-4"><div class="text-xs text-slate-500">Retracted (view)</div><div id="kpiRetr" class="mt-1 text-2xl font-semibold">—</div></div>
-        <div class="card p-4"><div class="text-xs text-slate-500">Distinct journals (view)</div><div id="kpiJournals" class="mt-1 text-2xl font-semibold">—</div></div>
-      </div>
-
-      <!-- Charts -->
-      <div class="grid grid-cols-1 lg:grid-cols-2 gap-4">
-        <div class="card p-4">
-          <div class="flex items-center justify-between">
-            <h3 class="font-semibold">Publications by Year (with cumulative)</h3>
-            <span id="rangeText" class="text-xs text-slate-500"></span>
-          </div>
-          <div class="mt-2 h-[300px]"><canvas id="chartByYear"></canvas></div>
+        <div>
+          <label class="block text-xs font-medium text-slate-600">Retraction mode</label>
+          <select id="retractionFilter" class="px-3 py-2 rounded-xl border border-slate-300 text-sm" onchange="applyFilters(1)">
+            <option value="">All</option>
+            <option value="exclude">Exclude retracted</option>
+            <option value="only_retracted">Only retracted (OpenAlex)</option>
+            <option value="only_notices">Only retraction notices (title-based)</option>
+          </select>
+        </div>
+        <div>
+          <label class="block text-xs font-medium text-slate-600">SDG</label>
+          <select id="sdgFilter" class="px-3 py-2 rounded-xl border border-slate-300 text-sm" onchange="applyFilters(1)">
+            <option value="">All SDGs</option>
+          </select>
+        </div>
+        <div>
+          <label class="block text-xs font-medium text-slate-600">Rows per page</label>
+          <select id="pageSize" class="px-3 py-2 rounded-xl border border-slate-300 text-sm" onchange="changePageSize()">
+            <option value="25">25</option>
+            <option value="50" selected>50</option>
+            <option value="100">100</option>
+            <option value="200">200</option>
+          </select>
         </div>
 
-        <div class="card p-4">
-          <h3 class="font-semibold">Top Journals — stacked by Quartile</h3>
-          <div class="mt-2 h-[300px]"><canvas id="chartTopJournals"></canvas></div>
-          <div class="text-xs text-slate-500 mt-2">If no SJR quartiles uploaded, “Unknown” bucket is used.</div>
-        </div>
-
-        <div class="card p-4">
-          <h3 class="font-semibold">SDG Distribution</h3>
-          <div class="mt-2 h-[300px]"><canvas id="chartSDG"></canvas></div>
-        </div>
-
-        <div class="card p-4">
-          <h3 class="font-semibold">Retractions (OpenAlex + notices)</h3>
-          <div class="mt-2 h-[300px]"><canvas id="chartRetract"></canvas></div>
-        </div>
-      </div>
-    </section>
-
-    <!-- PUBLICATIONS -->
-    <section id="view-publications" class="hidden space-y-4">
-      <div class="card p-4">
-        <div class="flex flex-wrap items-end gap-3">
-          <div>
-            <label class="block text-xs font-medium text-slate-600">Search</label>
-            <input id="searchBox" class="px-3 py-2 rounded-xl border border-slate-300 text-sm"
-                   placeholder="Title / author / journal / DOI" oninput="applyFilters(1)"/>
-          </div>
-          <div>
-            <label class="block text-xs font-medium text-slate-600">Year</label>
-            <select id="yearFilter" class="px-3 py-2 rounded-xl border border-slate-300 text-sm" onchange="applyFilters(1)">
-              <option value="">All years</option>
-            </select>
-          </div>
-          <div>
-            <label class="block text-xs font-medium text-slate-600">Retraction mode</label>
-            <select id="retractionFilter" class="px-3 py-2 rounded-xl border border-slate-300 text-sm" onchange="applyFilters(1)">
-              <option value="">All</option>
-              <option value="exclude">Exclude retracted</option>
-              <option value="only_retracted">Only retracted (OpenAlex)</option>
-              <option value="only_notices">Only retraction notices (title-based)</option>
-            </select>
-          </div>
-          <div>
-            <label class="block text-xs font-medium text-slate-600">SDG</label>
-            <select id="sdgFilter" class="px-3 py-2 rounded-xl border border-slate-300 text-sm" onchange="applyFilters(1)">
-              <option value="">All SDGs</option>
-            </select>
-          </div>
-          <div>
-            <label class="block text-xs font-medium text-slate-600">Rows per page</label>
-            <select id="pageSize" class="px-3 py-2 rounded-xl border border-slate-300 text-sm" onchange="changePageSize()">
-              <option value="25">25</option>
-              <option value="50" selected>50</option>
-              <option value="100">100</option>
-              <option value="200">200</option>
-            </select>
-          </div>
-
-          <!-- Column chooser -->
-          <div class="ml-auto dropdown">
-            <button id="colBtn" class="px-3 py-2 rounded-xl bg-slate-100 border border-slate-300 text-sm flex items-center gap-2"
-                    onclick="toggleColumnsPanel()">
-              <i data-lucide="columns-3"></i> Columns
-            </button>
-            <div id="columnsPanel" class="dropdown-panel hidden mt-2 bg-white border border-slate-200 rounded-xl shadow-lg w-80 p-3">
-              <div class="text-xs text-slate-500 mb-2">Choose fields to display</div>
-              <div id="columnsList" class="grid grid-cols-2 gap-y-2 text-sm"></div>
-              <div class="flex justify-end gap-2 mt-3">
-                <button class="px-3 py-1.5 rounded-lg border border-slate-300" onclick="resetColumns()">Reset</button>
-                <button class="px-3 py-1.5 rounded-lg bg-indigo-600 text-white" onclick="applyColumnSelection()">Apply</button>
-              </div>
+        <!-- Column chooser -->
+        <div class="ml-auto dropdown">
+          <button id="colBtn" class="px-3 py-2 rounded-xl bg-slate-100 border border-slate-300 text-sm flex items-center gap-2"
+                  onclick="toggleColumnsPanel()">
+            <i data-lucide="columns-3"></i> Columns
+          </button>
+          <div id="columnsPanel" class="dropdown-panel hidden mt-2 bg-white border border-slate-200 rounded-xl shadow-lg w-80 p-3">
+            <div class="text-xs text-slate-500 mb-2">Choose fields to display</div>
+            <div id="columnsList" class="grid grid-cols-2 gap-y-2 text-sm"></div>
+            <div class="flex justify-end gap-2 mt-3">
+              <button class="px-3 py-1.5 rounded-lg border border-slate-300" onclick="resetColumns()">Reset</button>
+              <button class="px-3 py-1.5 rounded-lg bg-indigo-600 text-white" onclick="applyColumnSelection()">Apply</button>
             </div>
           </div>
+        </div>
 
-          <div class="flex items-center gap-2">
-            <button class="px-3 py-2 rounded-xl bg-indigo-600 text-white text-sm" onclick="exportCSV()">Export CSV</button>
-            <button class="px-3 py-2 rounded-xl bg-indigo-50 text-indigo-700 border border-indigo-200 text-sm" onclick="exportJSON()">Export JSON</button>
-          </div>
+        <div class="flex items-center gap-2">
+          <button class="px-3 py-2 rounded-xl bg-indigo-600 text-white text-sm" onclick="exportCSV()">Export CSV</button>
+          <button class="px-3 py-2 rounded-xl bg-indigo-50 text-indigo-700 border border-indigo-200 text-sm" onclick="exportJSON()">Export JSON</button>
         </div>
       </div>
+    </div>
 
-      <!-- Table -->
-      <div class="card">
-        <div class="px-4 py-3 border-b border-slate-200 flex items-center justify-between">
-          <div class="font-semibold">All Publications</div>
-          <div class="text-xs text-slate-500" id="countInfo"></div>
-        </div>
-        <div class="overflow-x-auto thin-scrollbar">
-          <table class="w-full text-sm" id="pubTable">
-            <thead class="bg-slate-50 text-slate-600">
-              <tr id="pubHeadRow"></tr>
-            </thead>
-            <tbody id="pubBody"></tbody>
-          </table>
-        </div>
-        <div class="px-4 py-3 flex items-center justify-between">
-          <div class="text-xs text-slate-500" id="pageInfo">Page 1 / 1</div>
-          <div class="flex gap-2">
-            <button class="px-3 py-1.5 rounded-lg border border-slate-300" onclick="goFirst()">« First</button>
-            <button class="px-3 py-1.5 rounded-lg border border-slate-300" onclick="goPrev()">‹ Prev</button>
-            <button class="px-3 py-1.5 rounded-lg border border-slate-300" onclick="goNext()">Next ›</button>
-            <button class="px-3 py-1.5 rounded-lg border border-slate-300" onclick="goLast()">Last »</button>
-          </div>
+    <!-- Table -->
+    <div class="card">
+      <div class="px-4 py-3 border-b border-slate-200 flex items-center justify-between">
+        <div class="font-semibold">All Publications</div>
+        <div class="text-xs text-slate-500" id="countInfo"></div>
+      </div>
+      <div class="overflow-x-auto thin-scrollbar">
+        <table class="w-full text-sm" id="pubTable">
+          <thead class="bg-slate-50 text-slate-600">
+            <tr id="pubHeadRow"></tr>
+          </thead>
+          <tbody id="pubBody"></tbody>
+        </table>
+      </div>
+      <div class="px-4 py-3 flex items-center justify-between">
+        <div class="text-xs text-slate-500" id="pageInfo">Page 1 / 1</div>
+        <div class="flex gap-2">
+          <button class="px-3 py-1.5 rounded-lg border border-slate-300" onclick="goFirst()">« First</button>
+          <button class="px-3 py-1.5 rounded-lg border border-slate-300" onclick="goPrev()">‹ Prev</button>
+          <button class="px-3 py-1.5 rounded-lg border border-slate-300" onclick="goNext()">Next ›</button>
+          <button class="px-3 py-1.5 rounded-lg border border-slate-300" onclick="goLast()">Last »</button>
         </div>
       </div>
-    </section>
+    </div>
+  </section>
 
-    <!-- QUARTILES -->
-    <section id="view-quartiles" class="hidden space-y-4">
-      <div class="card p-4">
-        <div class="flex items-center justify-between">
-          <div>
-            <h3 class="font-semibold">Quartile Mapping</h3>
-            <p class="text-xs text-slate-500">
-              Upload SJR quartiles as <code>.csv</code> (Title/Journal, ISSN, Quartile) or <code>.json</code>
-              (array with <code>title</code>/<code>issn</code>/<code>quartile</code>).
-            </p>
-          </div>
-          <div class="flex items-center gap-2">
-            <input id="sjrFile" type="file" accept=".csv,.json" class="hidden"/>
-            <button class="px-3 py-2 rounded-xl bg-slate-100 border border-slate-300 text-sm"
-                    onclick="document.getElementById('sjrFile').click()">
-              <i data-lucide="upload"></i> Upload Quartiles
-            </button>
-          </div>
-        </div>
-        <div id="sjrStatus" class="mt-2 text-xs text-slate-500"></div>
-      </div>
-
-      <div class="card p-4">
-        <h4 class="font-semibold mb-2">Coverage in current view</h4>
-        <div class="text-sm" id="mapCoverage">—</div>
-      </div>
-    </section>
-
-    <!-- SDG -->
-    <section id="view-sdg" class="hidden space-y-4">
-      <div class="card p-4">
-        <div class="flex items-center justify-between">
-          <div>
-            <h3 class="font-semibold">Sustainable Development Goals (auto-mapped)</h3>
-            <p class="text-xs text-slate-500">Titles (and subjects, if present) are heuristically mapped to SDGs.</p>
-          </div>
-          <div class="flex items-center gap-2">
-            <select id="sdgOnlyFilter" class="px-3 py-2 rounded-xl border border-slate-300 text-sm" onchange="applyFilters(1)">
-              <option value="">All SDGs</option>
-            </select>
-          </div>
-        </div>
-      </div>
-
-      <div class="grid grid-cols-1 lg:grid-cols-2 gap-4">
-        <div class="card p-4">
-          <h4 class="font-semibold">SDG Distribution (view)</h4>
-          <div class="mt-2 h-[280px]"><canvas id="chartSDG_tab"></canvas></div>
-        </div>
-        <div class="card p-4">
-          <h4 class="font-semibold mb-2">Legend</h4>
-          <div id="sdgLegend" class="flex flex-wrap gap-2 text-sm"></div>
-        </div>
-      </div>
-    </section>
-
-    <!-- NARRATIVE -->
-    <section id="view-narrative" class="hidden space-y-4">
-      <div class="card narrative-wrap narrative-glow p-0">
-        <canvas id="navCanvas"></canvas>
-        <div class="p-6 relative z-10">
-          <h3 class="font-semibold text-lg mb-2">Immersive Mission Narrative</h3>
-          <p class="text-sm text-slate-600 mb-4">
-            Auto-generated from the current filtered view. Adjust filters in the Publications tab to change this story.
+  <!-- QUARTILES -->
+  <section id="view-quartiles" class="hidden space-y-4">
+    <div class="card p-4">
+      <div class="flex items-center justify-between">
+        <div>
+          <h3 class="font-semibold">Quartile Mapping</h3>
+          <p class="text-xs text-slate-500">
+            Upload SJR/Scimago as <code>.csv</code> (columns may be named e.g. <em>Title / Journal, ISSN, eISSN, ISSN / e-ISSN, Best Quartile, SJR Best Quartile, Quartile, Q</em>) or <code>.json</code> (array with <code>title</code>/<code>issn</code>/<code>quartile</code>). Delimiters “,” “;” or tab are detected automatically.
           </p>
-          <div id="narrativeBox" class="prose prose-slate max-w-none text-slate-800 leading-relaxed space-y-4"></div>
+        </div>
+        <div class="flex items-center gap-2">
+          <input id="sjrFile" type="file" accept=".csv,.json" class="hidden"/>
+          <button class="px-3 py-2 rounded-xl bg-slate-100 border border-slate-300 text-sm"
+                  onclick="document.getElementById('sjrFile').click()">
+            <i data-lucide="upload"></i> Upload Quartiles
+          </button>
         </div>
       </div>
-    </section>
-  </main>
+      <div id="sjrStatus" class="mt-2 text-xs text-slate-500">Loaded 0 ISSN entries and 0 title entries</div>
+    </div>
 
-  <footer class="text-center text-xs text-slate-500 pb-8">
-    Data from <code>institution_data.json</code> · Quartiles mapped client-side · SDG & retraction notices are heuristic
-  </footer>
+    <div class="card p-4">
+      <h4 class="font-semibold mb-2">Coverage in current view</h4>
+      <div class="text-sm" id="mapCoverage">—</div>
+    </div>
+  </section>
+
+  <!-- SDG -->
+  <section id="view-sdg" class="hidden space-y-4">
+    <div class="card p-4">
+      <div class="flex items-center justify-between">
+        <div>
+          <h3 class="font-semibold">Sustainable Development Goals (auto-mapped)</h3>
+          <p class="text-xs text-slate-500">Titles (and subjects, if present) are heuristically mapped to SDGs.</p>
+        </div>
+        <div class="flex items-center gap-2">
+          <select id="sdgOnlyFilter" class="px-3 py-2 rounded-xl border border-slate-300 text-sm" onchange="applyFilters(1)">
+            <option value="">All SDGs</option>
+          </select>
+        </div>
+      </div>
+    </div>
+
+    <div class="grid grid-cols-1 lg:grid-cols-2 gap-4">
+      <div class="card p-4">
+        <h4 class="font-semibold">SDG Distribution (view)</h4>
+        <div class="mt-2 h-[280px]"><canvas id="chartSDG_tab"></canvas></div>
+      </div>
+      <div class="card p-4">
+        <h4 class="font-semibold mb-2">Legend</h4>
+        <div id="sdgLegend" class="flex flex-wrap gap-2 text-sm"></div>
+      </div>
+    </div>
+  </section>
+
+  <!-- NARRATIVE -->
+  <section id="view-narrative" class="hidden space-y-4">
+    <div class="card holo-wrap p-0">
+      <canvas id="narrCanvas" class="holo-canvas"></canvas>
+      <div class="relative p-6">
+        <div class="flex items-center justify-between mb-2">
+          <h3 class="font-semibold text-lg">Immersive Mission Narrative</h3>
+          <div class="flex gap-2">
+            <button id="btnPlay"  class="px-3 py-1.5 rounded-lg bg-indigo-600 text-white text-sm" onclick="playStory()">Play</button>
+            <button id="btnStop"  class="px-3 py-1.5 rounded-lg bg-slate-100 border border-slate-300 text-sm" onclick="stopStory()">Reset</button>
+          </div>
+        </div>
+        <p class="text-sm text-slate-600">Auto-generated from your current filters. Press <strong>Play</strong> for an animated story.</p>
+        <div id="narrativeBox" class="prose prose-slate max-w-none text-slate-800 leading-relaxed space-y-3 mt-3"></div>
+      </div>
+    </div>
+  </section>
+</main>
+
+<footer class="text-center text-xs text-slate-500 pb-8">
+  Data from <code>institution_data.json</code> · Quartiles mapped client-side · SDG & retraction notices are heuristic
+</footer>
 
 <script>
 /* ---------------- BOOTSTRAP ---------------- */
@@ -284,7 +287,7 @@ Chart.defaults.plugins.tooltip.borderWidth = 1;
 Chart.defaults.plugins.tooltip.padding = 12;
 Chart.defaults.plugins.legend.labels.boxWidth = 10;
 
-// Plugins
+// Fancy shadow plugin
 const shadowPlugin = {
   id: 'shadowPlugin',
   beforeDatasetsDraw(chart, args, opts) {
@@ -294,21 +297,19 @@ const shadowPlugin = {
     ctx.shadowOffsetX = opts?.offsetX || 0;
     ctx.shadowOffsetY = opts?.offsetY || 8;
   },
-  afterDatasetsDraw(chart) { chart.ctx.restore(); }
+  afterDatasetsDraw(chart){ chart.ctx.restore(); }
 };
 Chart.register(shadowPlugin);
 
+// Doughnut center text
 const centerTextPlugin = {
-  id: 'centerText',
+  id:'centerText',
   afterDraw(chart){
     if (chart.config.type !== 'doughnut') return;
-    const meta = chart.getDatasetMeta(0)?.data?.[0];
-    if (!meta) return;
-    const {ctx} = chart; const text = chart.config.options.centerText;
-    if(!text) return;
+    const meta = chart.getDatasetMeta(0)?.data?.[0]; if (!meta) return;
+    const {ctx} = chart; const text = chart.config.options.centerText; if (!text) return;
     ctx.save(); ctx.font='600 18px Inter, system-ui'; ctx.fillStyle='#0f172a';
-    ctx.textAlign='center'; ctx.textBaseline='middle';
-    ctx.fillText(text, meta.x, meta.y); ctx.restore();
+    ctx.textAlign='center'; ctx.textBaseline='middle'; ctx.fillText(text, meta.x, meta.y); ctx.restore();
   }
 };
 Chart.register(centerTextPlugin);
@@ -319,12 +320,13 @@ function gradientVertical(ctx, c1='#6366f1', c2='#a855f7'){
 }
 
 /* ---------------- STATE ---------------- */
-const AFFIL_ROR = '04q2jes40';   // UPES ROR (code or URL substring)
-let all = [];
-let filtered = [];
+const AFFIL_ROR = '04q2jes40'; // UPES ROR code
+let all = [];          // full dataset
+let filtered = [];     // active view
 let currentPage = 1;
 let pageSize = 50;
 
+// Quartiles maps
 const sjrByIssn = new Map();
 const sjrByTitle = new Map();
 let haveSJR = false;
@@ -334,7 +336,7 @@ const ALL_COLUMNS = [
   { key:'year',         label:'Year',          default:true },
   { key:'title',        label:'Title',         default:true },
   { key:'journal',      label:'Journal',       default:true },
-  { key:'authors',      label:'Authors (UPES first)', default:true },
+  { key:'authors',      label:'Authors (UPES affiliated only)', default:true },
   { key:'citations',    label:'Citations',     default:true },
   { key:'quartile',     label:'Quartile',      default:true },
   { key:'retraction_info', label:'Retraction Info', default:true },
@@ -375,7 +377,7 @@ const SDG_COLORS = {1:'#E5243B',2:'#DDA63A',3:'#4C9F38',4:'#C5192D',5:'#FF3A21',
 
 // Retraction detection
 const RETRACT_PREFIXES = [/^retraction\s*note\s*:/i,/^retraction\s*of\s*:/i,/^retraction\s*:/i,/^notice\s+of\s+retraction\s*:/i,/^withdrawn\s*:/i];
-const DOI_REGEX = /\b(10\.\d{4,9}\/\S+)\b/i;
+const DOI_REGEX = /\b10\.\d{4,9}\/\S+\b/i;
 
 /* ---------------- Tabs ---------------- */
 function switchTab(name){
@@ -388,7 +390,6 @@ function switchTab(name){
   }
   if (name==='quartiles') updateCoverage();
   if (name==='sdg'){ renderSDGChart(true); }
-  if (name==='narrative'){ renderNarrative(); startNarrativeAnim(); } else { cancelNarrativeAnim(); }
 }
 
 /* ---------------- Load data ---------------- */
@@ -409,11 +410,11 @@ async function autoLoad(){
       err('institution_data.json loaded but contains no items (expected an array of publications).');
       return;
     }
-    const box = document.getElementById('errorBox'); if (box) box.classList.add('hidden');
+    document.getElementById('errorBox').classList.add('hidden');
 
     all = items;
 
-    // normalize citations & flatten authors for search
+    // Normalize citations & flatten authors for search
     for (const p of all){
       if (typeof p.citations === 'undefined' && typeof p.cited_by_count !== 'undefined'){
         p.citations = p.cited_by_count;
@@ -421,22 +422,26 @@ async function autoLoad(){
       p.authors = (p.authorships||[]).map(a => a.author?.display_name || a.author_name || '').filter(Boolean);
     }
 
+    // Timestamp (if present)
     const ts = (j.updated || null);
     document.getElementById('lastSynced').textContent =
       ts ? `Last synced: ${dayjs(ts).format('DD MMM YYYY, HH:mm')}` : 'Loaded';
 
+    // year options
     const years = [...new Set(all.map(x=>x.year).filter(Boolean))].sort((a,b)=>b-a);
     const yearSel = document.getElementById('yearFilter');
     if (yearSel){
       yearSel.innerHTML = '<option value="">All years</option>' + years.map(y=>`<option>${y}</option>`).join('');
     }
 
+    // SDG filter options
     const opts = SDG_LIST.map(s=>`<option value="${s.id}">${s.id}. ${s.name}</option>`).join('');
     document.getElementById('sdgFilter').innerHTML = '<option value="">All SDGs</option>' + opts;
     document.getElementById('sdgOnlyFilter').innerHTML = '<option value="">All SDGs</option>' + opts;
 
     pageSize = parseInt(document.getElementById('pageSize')?.value,10) || 50;
 
+    // Retraction + SDGs
     buildRetractionIndex(all);
     for (const p of all) p.sdg_tags = guessSDGs(p);
 
@@ -444,6 +449,9 @@ async function autoLoad(){
     buildColumnsPanel();
     buildSDGLegend();
     applyFilters(1);
+
+    // kick off narrative canvas
+    startCanvas();
   }catch(e){
     err('Failed to parse institution_data.json: ' + (e?.message || e));
   }
@@ -463,7 +471,7 @@ function buildRetractionIndex(items){
     if (p.retraction_notice){
       const m = title.match(DOI_REGEX);
       if (m){
-        const target = mapByDOI.get(m[1].toLowerCase());
+        const target = mapByDOI.get(m[0].toLowerCase());
         if (target){ p.retraction_of = { doi: target.doi, title: target.title }; target.retracted_by = { doi: p.doi, title: p.title }; }
       } else {
         const stripped = stripRetractionPrefix(title);
@@ -510,7 +518,6 @@ function applyFilters(goToPage=1){
   renderOverviewCharts();
   renderSDGChart();
   updateCoverage();
-  if (!document.getElementById('view-narrative').classList.contains('hidden')) { renderNarrative(); startNarrativeAnim(); }
 }
 
 function changePageSize(){ pageSize = parseInt(document.getElementById('pageSize')?.value,10) || 50; currentPage=1; renderTable(); }
@@ -534,7 +541,7 @@ function renderTable(){
   const body=document.getElementById('pubBody'); if (!body) return;
   body.innerHTML='';
   for (const p of rows){
-    const tds = selectedColumns.map(col=>`<td class="px-4 py-2 align-top">${renderCell(col.key,p)}</td>`).join('');
+    const tds = selectedColumns.map(col=>`<td class="px-4 py-2">${renderCell(col.key,p)}</td>`).join('');
     const tr=document.createElement('tr'); tr.className='border-b border-slate-100 hover:bg-slate-50'; tr.innerHTML=tds; body.appendChild(tr);
   }
 
@@ -547,23 +554,13 @@ function renderTable(){
   if (rangeText) rangeText.textContent = countInfo ? countInfo.textContent : '';
 }
 
-// --- UPES-affiliation helpers ---
-function hasAffilUPES(authorship) {
-  return (authorship?.institutions || []).some(inst => {
-    const r = String(inst?.ror || '').toLowerCase();
-    return r.includes(AFFIL_ROR.toLowerCase());
-  });
-}
-// returns [affiliatedNames, allNames]
-function collectAuthors(p) {
-  const all = []; const aff = [];
-  for (const a of (p.authorships || [])) {
-    const name = a.author?.display_name || a.author_name || '';
-    if (!name) continue;
-    all.push(name);
-    if (hasAffilUPES(a)) aff.push(name);
-  }
-  return [aff, all];
+// Only UPES-affiliated authors appear
+function getAffilAuthors(p){
+  if (!Array.isArray(p.authorships)) return [];
+  return p.authorships
+    .filter(a => (a.institutions||[]).some(inst => (inst.ror||'').toLowerCase().includes(AFFIL_ROR.toLowerCase())))
+    .map(a => a.author?.display_name || a.author_name || '')
+    .filter(Boolean);
 }
 
 function renderCell(key,p){
@@ -572,19 +569,13 @@ function renderCell(key,p){
     case 'title': return p.url ? `<a class="link hover:underline" href="${p.url}" target="_blank" rel="noopener">${esc(p.title||'')}</a>` : esc(p.title||'');
     case 'journal': return esc(p.journal||'');
     case 'authors': {
-      const [aff, all] = collectAuthors(p);
-      if (aff.length) {
-        const rest = all.filter(n => !aff.includes(n));
-        const badge = aff.map(n => `<span class="badge" style="border-color:#4f46e5;background:#fff">${esc(n)}</span>`).join(' ');
-        const others = rest.length ? `<span class="text-slate-500"> · ${esc(rest.join(', '))}</span>` : '';
-        return `${badge}${others}`;
-      }
-      return all.length ? esc(all.join(', ')) : '—';
+      const names = getAffilAuthors(p);
+      return names.length ? esc(names.join(', ')) : '—';
     }
     case 'citations': return p.citations ?? 0;
     case 'quartile': return esc(p.quartile || '');
     case 'retraction_info': return renderRetractionInfo(p);
-    case 'is_retracted': return p.is_retracted ? '<span class="badge" style="border-color:#ef4444;background:#fff;color:#b91c1c">Yes</span>' : 'No';
+    case 'is_retracted': return p.is_retracted ? '<span class="badge" style="border-color:#ef4444;color:#b91c1c">Yes</span>' : 'No';
     case 'type': return esc(p.type || '');
     case 'doi': return esc(p.doi || '');
     case 'url': return p.url ? `<a class="link" href="${p.url}" target="_blank" rel="noopener">Open</a>` : '';
@@ -634,6 +625,7 @@ function loadSelectedColumns(){
 
 /* ---------------- Overview Charts ---------------- */
 function renderOverviewCharts(){
+  // Publications by Year (bars + cumulative line)
   const ctxY = document.getElementById('chartByYear')?.getContext('2d'); if (!ctxY) return;
   const byYear={}; for (const p of filtered){ if (p.year) byYear[p.year]=(byYear[p.year]||0)+1; }
   const labelsY = Object.keys(byYear).sort((a,b)=>a-b);
@@ -657,6 +649,7 @@ function renderOverviewCharts(){
     plugins:[{id:'shadowPlugin'}]
   });
 
+  // Top Journals stacked by Quartile
   const ctxJ = document.getElementById('chartTopJournals')?.getContext('2d'); if (!ctxJ) return;
   const journalAgg = new Map(); // journal -> {Q1,Q2,Q3,Q4,Unknown,total}
   for (const p of filtered){
@@ -670,20 +663,28 @@ function renderOverviewCharts(){
   const labelsJ = top.map(([j])=>j);
   const series = ['Q1','Q2','Q3','Q4','Unknown'];
   const colors = {Q1:'#16a34a', Q2:'#22c55e', Q3:'#84cc16', Q4:'#a3e635', Unknown:'#cbd5e1'};
-  const datasetsJ = series.map(s=>({ type:'bar', label:s, data: top.map(([,v])=>v[s]), backgroundColor: colors[s], borderRadius:12, borderSkipped:false }));
+  const datasetsJ = series.map(s=>({
+    type:'bar', label:s, data: top.map(([,v])=>v[s]),
+    backgroundColor: colors[s], borderRadius:12, borderSkipped:false
+  }));
   if (chartTopJournals) chartTopJournals.destroy();
   chartTopJournals = new Chart(ctxJ, {
     data:{ labels:labelsJ, datasets:datasetsJ },
     options:{
       indexAxis:'y', responsive:true, maintainAspectRatio:false,
       plugins:{ legend:{ position:'top' }, shadowPlugin:{}, tooltip:{ mode:'index', intersect:false } },
-      scales:{ x:{ stacked:true, grid:{ color:'#e2e8f0' }, beginAtZero:true }, y:{ stacked:true, grid:{ display:false } } }
+      scales:{
+        x:{ stacked:true, grid:{ color:'#e2e8f0' }, beginAtZero:true },
+        y:{ stacked:true, grid:{ display:false } }
+      }
     },
     plugins:[{id:'shadowPlugin'}]
   });
 
+  // SDG donut (overview)
   renderSDGChart(false);
 
+  // Retraction donut
   const ctxR = document.getElementById('chartRetract')?.getContext('2d'); if (!ctxR) return;
   const retracted = filtered.filter(p=>p.is_retracted || p.retraction_notice).length;
   const clean = Math.max(0, filtered.length - retracted);
@@ -705,6 +706,7 @@ function renderSDGChart(forTab=false){
   const data   = SDG_LIST.map(s=>counts[s.id]||0);
   const colors = SDG_LIST.map(s=>SDG_COLORS[s.id]);
 
+  // Overview SDG donut
   const ctxO = document.getElementById('chartSDG')?.getContext('2d'); if (ctxO){
     const total = data.reduce((a,b)=>a+b,0);
     if (chartSDG) chartSDG.destroy();
@@ -716,6 +718,7 @@ function renderSDGChart(forTab=false){
     });
   }
 
+  // SDG tab bar chart
   if (forTab){
     const ctxT = document.getElementById('chartSDG_tab')?.getContext('2d'); if (!ctxT) return;
     if (chartSDG_tab) chartSDG_tab.destroy();
@@ -736,79 +739,82 @@ function renderSDGChart(forTab=false){
 function guessSDGs(p){
   const text = [(p.title||''),(p.journal||''),extractSubjects(p)].join(' ').toLowerCase();
   const hits=[]; for (const s of SDG_LIST){ for (const kw of s.kw){ if (text.includes(kw.toLowerCase())){ hits.push(s.id); break; } } }
-  return Array.from(new Set(hits)).slice(0,2);
+  return Array.from(new Set(hits)).slice(0,2); // max 2 tags
 }
 function renderSDGBadges(ids){
   if (!ids.length) return '';
-  return ids.map(id=>`<span class="badge" style="border-color:${SDG_COLORS[id]};background:#fff">${id}</span>`).join(' ');
+  return ids.map(id=>`<span class="badge" style="border-color:${SDG_COLORS[id]}">${id}</span>`).join(' ');
 }
 function buildSDGLegend(){
   const box=document.getElementById('sdgLegend'); if (!box) return;
   box.innerHTML='';
   for (const s of SDG_LIST){
-    box.insertAdjacentHTML('beforeend', `<span class="badge" title="${s.name}" style="border-color:${SDG_COLORS[s.id]};background:#fff">${s.id} — ${s.name}</span>`);
+    box.insertAdjacentHTML('beforeend', `<span class="badge" title="${s.name}" style="border-color:${SDG_COLORS[s.id]}">${s.id} — ${s.name}</span>`);
   }
 }
 
-/* ---------------- Quartiles (upload & map) ---------------- */
+/* ---------------- Quartiles (robust upload & map) ---------------- */
 document.getElementById('sjrFile')?.addEventListener('change', async (e)=>{
   const file=e.target.files[0]; if(!file) return;
   const name=file.name.toLowerCase(); const text=await file.text();
   sjrByIssn.clear(); sjrByTitle.clear(); haveSJR=false;
   try{
-    if (name.endsWith('.json')) { const arr=JSON.parse(text); for (const row of arr) addQuartileRow(row); }
-    else if (name.endsWith('.csv')){ parseCSV(text, addQuartileRow); }
-    else { throw new Error('Unsupported file type'); }
+    if (name.endsWith('.json')) {
+      const arr=JSON.parse(text); for (const row of arr) addQuartileRow(row);
+    } else if (name.endsWith('.csv')){
+      parseFlexibleCSV(text, addQuartileRow);
+    } else { throw new Error('Unsupported file type'); }
     haveSJR = (sjrByIssn.size + sjrByTitle.size) > 0;
     document.getElementById('sjrStatus').textContent = `Loaded ${sjrByIssn.size} ISSN entries and ${sjrByTitle.size} title entries`;
     applyFilters();
     updateCoverage();
-  }catch(err){ document.getElementById('sjrStatus').textContent = 'Failed: ' + err.message; }
+  }catch(err){
+    document.getElementById('sjrStatus').textContent = 'Failed: ' + err.message;
+  }
 });
 
+// Accept many header names and multiple ISSN columns
 function addQuartileRow(row){
-  const q = normQuartile(row.quartile || row.Quarter || row.Q || row['SJR Best Quartile'] || row.q || '');
-  const title = normTitle(row.title || row.Title || row.Journal || row['Journal Title'] || '');
-  const issn  = normIssn (row.issn  || row.ISSN  || row['ISSN Print'] || row['ISSN (print)'] || row['ISSN(e)'] || '');
-  if (issn && q)  sjrByIssn.set(issn, q);
-  if (title && q) sjrByTitle.set(title, q);
-}
-function parseCSV(text, onRow){
-  const firstLine = text.split(/\r?\n/).find(Boolean) || '';
-  const delim = (firstLine.match(/;/g)?.length || 0) > (firstLine.match(/,/g)?.length || 0) ? ';' : ',';
-
-  const lines = text.split(/\r?\n/).filter(l => l.trim().length);
-  const header = lines.shift().split(delim).map(h => h.replace(/(^"|"$)/g,'').trim());
-
-  const idx = (names) => header.findIndex(h => names.some(n => new RegExp(`^${n}$`, 'i').test(h)));
-
-  const idxTitle  = idx(['title','journal','journal title']);
-  const idxIssn   = idx(['issn','issn print','issn \\(print\\)','issn\\(e\\)','issn\\(e\\)']);
-  const idxQuart  = idx(['quartile','q','sjr best quartile']);
-
-  if (idxQuart < 0 || (idxTitle < 0 && idxIssn < 0))
-    throw new Error('CSV must include a Quartile column and a Title or ISSN column');
-
-  for (const line of lines){
-    const cols = splitCsvFlexible(line, delim);
-    onRow({
-      title: idxTitle >= 0 ? cols[idxTitle] : '',
-      issn:  idxIssn  >= 0 ? cols[idxIssn]  : '',
-      quartile: idxQuart >= 0 ? cols[idxQuart] : ''
-    });
+  const q = normQuartile(row.quartile || row['best quartile'] || row['sjr best quartile'] || row['sjr quartile'] || row['q'] || row['quartile (best)'] || row['quartiles'] || '');
+  const title = normTitle(row.title || row.journal || row['journal title'] || row['source title'] || '');
+  const issnCols = [
+    row.issn, row['issn '], row['eissn'], row['e-issn'], row['print issn'], row['p-issn'],
+    row['issn/eissn'], row['issn / e-issn'], row['issn / eissn'], row['issn print'], row['issn (print)'], row['issn (online)']
+  ];
+  const issns = (issnCols.filter(Boolean).join(',').split(/[;,/ ]+/)).map(normIssn).filter(Boolean);
+  if (q){
+    for (const code of issns){ sjrByIssn.set(code, q); }
+    if (title) sjrByTitle.set(title, q);
   }
 }
-function splitCsvFlexible(line, delim){
+
+// Very tolerant CSV parser: detects delimiter, handles quotes, BOM
+function parseFlexibleCSV(text, onRow){
+  const src = text.replace(/^\uFEFF/, ''); // BOM
+  const firstLine = src.split(/\r?\n/)[0] || '';
+  const delim = (firstLine.split(';').length > firstLine.split(',').length)
+                 ? ';' : (firstLine.split('\t').length > firstLine.split(',').length ? '\t' : ',');
+  const lines = src.split(/\r?\n/).filter(l=>l.trim().length>0);
+  const header = splitCSVLine(lines.shift(), delim).map(h=>h.trim().toLowerCase());
+
+  for (const line of lines){
+    const cols = splitCSVLine(line, delim);
+    const row = {};
+    header.forEach((h,i)=> row[h]=cols[i] ?? '');
+    onRow(row);
+  }
+}
+function splitCSVLine(line, delim){
   const out=[]; let cur=''; let inQ=false;
   for (let i=0;i<line.length;i++){
     const ch=line[i];
-    if (ch === '"'){ inQ = !inQ; continue; }
-    if (ch === delim && !inQ){ out.push(cur.replace(/(^"|"$)/g,'').trim()); cur=''; continue; }
-    cur += ch;
+    if (ch==='\"'){ const next=line[i+1]; if (next==='\"'){ cur+='\"'; i++; } else { inQ=!inQ; } continue; }
+    if (ch===delim && !inQ){ out.push(cur.trim()); cur=''; continue; }
+    cur+=ch;
   }
-  out.push(cur.replace(/(^"|"$)/g,'').trim());
-  return out;
+  out.push(cur.trim()); return out;
 }
+
 function resolveQuartile(p){
   const issns=(p.issns||[]).map(normIssn).filter(Boolean);
   for (const id of issns){ if (sjrByIssn.has(id)) return sjrByIssn.get(id); }
@@ -826,7 +832,7 @@ function updateCoverage(){
 function renderRetractionInfo(p){
   const parts=[];
   if (p.retraction_notice){
-    parts.push('<span class="badge" style="border-color:#ef4444;background:#fff;color:#b91c1c">Retraction notice</span>');
+    parts.push('<span class="badge" style="border-color:#ef4444;color:#b91c1c">Retraction notice</span>');
     if (p.retraction_of){
       const t = esc(p.retraction_of.title || '');
       const d = p.retraction_of.doi ? `<a href="https://doi.org/${p.retraction_of.doi}" target="_blank" rel="noopener">${esc(p.retraction_of.doi)}</a>` : '';
@@ -834,7 +840,7 @@ function renderRetractionInfo(p){
     }
   }
   if (p.is_retracted){
-    parts.push('<span class="badge" style="border-color:#ef4444;background:#fff;color:#b91c1c">Retracted (OpenAlex)</span>');
+    parts.push('<span class="badge" style="border-color:#ef4444;color:#b91c1c">Retracted (OpenAlex)</span>');
     if (p.retracted_by){
       const t = esc(p.retracted_by.title || '');
       const d = p.retracted_by.doi ? `<a href="https://doi.org/${p.retracted_by.doi}" target="_blank" rel="noopener">${esc(p.retracted_by.doi)}</a>` : '';
@@ -851,7 +857,7 @@ function exportCSV(){
   const rows = filtered.slice(start,end);
   const header = selectedColumns.map(c=>c.label);
   const csv = [header.join(',')].concat(
-    rows.map(r => selectedColumns.map(c => q(textForExport(c.key, r))).join(',' ))
+    rows.map(r => selectedColumns.map(c => q(textForExport(c.key, r))).join(','))
   ).join('\n');
   downloadBlob('publications_view.csv', csv, 'text/csv');
 }
@@ -864,7 +870,7 @@ function exportJSON(){
 }
 function textForExport(key,p){
   switch(key){
-    case 'authors': { const [aff, all] = collectAuthors(p); return aff.length ? (aff.join('; ') + (all.length>aff.length? `; ${all.filter(n=>!aff.includes(n)).join('; ')}`:'')) : all.join('; '); }
+    case 'authors': return getAffilAuthors(p).join('; ');
     case 'issns':   return (p.issns||[]).join('; ');
     case 'subjects':return extractSubjects(p);
     case 'sdg_tags':return (p.sdg_tags||[]).join('; ');
@@ -879,95 +885,84 @@ function rawForExport(key,p){
   return p[key];
 }
 
-/* ---------------- Narrative ---------------- */
-function renderNarrative(){
-  const box = document.getElementById('narrativeBox'); if (!box) return;
+/* ---------------- Narrative: animated canvas + story ---------------- */
+let narrRAF=null, narrNodes=[];
+function startCanvas(){
+  const canvas = document.getElementById('narrCanvas');
+  if (!canvas) return;
+  const ctx = canvas.getContext('2d');
+  const resize = ()=>{ canvas.width = canvas.clientWidth; canvas.height = 260; };
+  resize(); window.addEventListener('resize', resize);
+
+  // nodes
+  const N = 80; narrNodes = [];
+  for (let i=0;i<N;i++){
+    narrNodes.push({
+      x: Math.random()*canvas.width,
+      y: Math.random()*canvas.height,
+      vx: (Math.random()-.5)*0.6,
+      vy: (Math.random()-.5)*0.6
+    });
+  }
+  const draw = ()=>{
+    ctx.clearRect(0,0,canvas.width,canvas.height);
+    // connections
+    for (let i=0;i<N;i++){
+      const a=narrNodes[i];
+      for (let j=i+1;j<N;j++){
+        const b=narrNodes[j]; const dx=a.x-b.x, dy=a.y-b.y; const d=Math.hypot(dx,dy);
+        if (d<120){
+          ctx.strokeStyle = `rgba(99,102,241,${(120-d)/240})`;
+          ctx.lineWidth = 1; ctx.beginPath(); ctx.moveTo(a.x,a.y); ctx.lineTo(b.x,b.y); ctx.stroke();
+        }
+      }
+    }
+    // nodes
+    for (const p of narrNodes){
+      p.x+=p.vx; p.y+=p.vy;
+      if (p.x<0||p.x>canvas.width) p.vx*=-1;
+      if (p.y<0||p.y>canvas.height) p.vy*=-1;
+      ctx.fillStyle='rgba(56,189,248,.9)';
+      ctx.beginPath(); ctx.arc(p.x,p.y,2,0,6.283); ctx.fill();
+    }
+    narrRAF = requestAnimationFrame(draw);
+  };
+  cancelAnimationFrame(narrRAF); draw();
+}
+
+// typewriter story
+let storyTimer=null;
+function stopStory(){ clearInterval(storyTimer); storyTimer=null; document.getElementById('narrativeBox').innerHTML=''; }
+function playStory(){
+  stopStory();
   const total = filtered.length;
   const years = [...new Set(filtered.map(x=>x.year).filter(Boolean))].sort((a,b)=>a-b);
   const startY = years[0] || '—', endY = years[years.length-1] || '—';
   const cites = filtered.reduce((a,b)=>a+(b.citations||0),0);
   const retractions = filtered.filter(x=>x.is_retracted || x.retraction_notice).length;
-
   const bySdg = new Map();
   for (const p of filtered){ for (const id of (p.sdg_tags||[])){ bySdg.set(id, (bySdg.get(id)||0)+1); } }
   const sdgTop = [...bySdg.entries()].sort((a,b)=>b[1]-a[1]).slice(0,2)
-                  .map(([id,c])=>`${id} (${c})`).join(', ') || '—';
+                    .map(([id,c])=>`${id} (${c})`).join(', ') || '—';
 
-  const text = `
-    <p>Inside the command center, the wall of holographic panes hums to life. A digital globe
-    rotates slowly, constellated with glowing nodes that pulse where research has landed. Between
-    <strong>${startY}</strong> and <strong>${endY}</strong>, our mission has launched
-    <strong>${num(total)}</strong> signals—each a publication—fanning out like orbital trajectories.</p>
+  const scenes = [
+    `The holo wall wakes. A digital globe spins—nodes pulsing where research lands.\nBetween ${startY} and ${endY}, we launched ${num(total)} signals (publications).`,
+    `Bars climb year by year while a neon line rises—the cumulative trajectory.\nQuartile bands align by journal; SDG vectors peak at: ${sdgTop}.`,
+    `Downlink counters flicker: ${num(cites)} citations received.\nRetraction sentinels flag ${retractions} events and their notices.`,
+    `UPES-affiliated authors glow on each orbit.\nAdjust any filter and the hologram recomposes instantly—mission path updated.`
+  ];
 
-    <p>On the left, a bar array climbs year by year while a neon line threads across it—cumulative output
-    rising like altitude. To the right, journals align as stacked vectors, their quartile bands revealing
-    the strength of our staging grounds. SDG frequencies arc into a luminous ring; today’s strongest beacons:
-    <strong>${sdgTop}</strong>. Downlink counters flicker: <strong>${num(cites)}</strong> citations received,
-    feedback from the wider cosmos.</p>
-
-    <p>Retraction sentinels sweep for anomalies—${num(retractions)} markers flare, each linked to a corrective
-    maneuver. Authors affiliated with UPES are highlighted on every track, their signatures etched in the
-    telemetry for clarity and credit.</p>
-
-    <p>As filters adjust, the holograms recompose instantly—routes recalc, clusters regroup, impact ripples shift.
-    Breakthroughs and collaborations sketch luminous arcs over the globe, charting a flightpath of inquiry
-    and innovation. The mission continues—precise, adaptive, and brilliantly lit by data.</p>
-  `;
-  box.innerHTML = text;
+  const box = document.getElementById('narrativeBox');
+  let ix=0, pos=0; box.innerHTML='';
+  storyTimer = setInterval(()=>{
+    if (ix>=scenes.length){ clearInterval(storyTimer); storyTimer=null; return; }
+    const line = scenes[ix];
+    box.innerHTML = scenes.slice(0,ix).map(s=>`<div class="type-line">${esc(s)}</div>`).join('');
+    box.insertAdjacentHTML('beforeend', `<div class="type-line">${esc(line.slice(0,pos))}<span class="opacity-50">▌</span></div>`);
+    pos++;
+    if (pos>line.length){ ix++; pos=0; }
+  }, 25);
 }
-
-/* ---- holographic network animation for narrative ---- */
-let navAnim = { raf: null, nodes: [], links: [] };
-function startNarrativeAnim(){
-  const c = document.getElementById('navCanvas'); if (!c) return;
-  const dpr = Math.max(1, window.devicePixelRatio || 1);
-  const rect = c.getBoundingClientRect();
-  c.width = Math.floor(rect.width * dpr);
-  c.height = Math.floor(260 * dpr);
-  const ctx = c.getContext('2d'); ctx.scale(dpr,dpr);
-
-  const W = rect.width, H = 260;
-  const N = 46;
-  navAnim.nodes = Array.from({length:N}, () => ({
-    x: Math.random()*W, y: Math.random()*H,
-    vx:(Math.random()-.5)*0.6, vy:(Math.random()-.5)*0.6,
-    r: 1.5 + Math.random()*2.5
-  }));
-  navAnim.links = [];
-  for (let i=0;i<N;i++){
-    for (let j=i+1;j<N;j++){
-      if (Math.random() < 0.035) navAnim.links.push([i,j]);
-    }
-  }
-
-  const draw = () => {
-    ctx.clearRect(0,0,W,H);
-    for (const n of navAnim.nodes){
-      n.x += n.vx; n.y += n.vy;
-      if (n.x<0||n.x>W) n.vx*=-1;
-      if (n.y<0||n.y>H) n.vy*=-1;
-    }
-    ctx.lineWidth = 1;
-    for (const [a,b] of navAnim.links){
-      const A = navAnim.nodes[a], B = navAnim.nodes[b];
-      const dx=A.x-B.x, dy=A.y-B.y, dist=Math.hypot(dx,dy);
-      const alpha = Math.max(0, 1 - dist/180);
-      if (alpha>0.02){
-        ctx.strokeStyle = `rgba(59,130,246,${0.25*alpha})`;
-        ctx.beginPath(); ctx.moveTo(A.x,A.y); ctx.lineTo(B.x,B.y); ctx.stroke();
-      }
-    }
-    for (const n of navAnim.nodes){
-      ctx.fillStyle='rgba(56,189,248,.9)';
-      ctx.beginPath(); ctx.arc(n.x,n.y,n.r,0,Math.PI*2); ctx.fill();
-    }
-    navAnim.raf = requestAnimationFrame(draw);
-  };
-  cancelNarrativeAnim();
-  navAnim.raf = requestAnimationFrame(draw);
-}
-function cancelNarrativeAnim(){ if (navAnim.raf){ cancelAnimationFrame(navAnim.raf); navAnim.raf=null; } }
-window.addEventListener('visibilitychange', ()=>{ if (document.hidden) cancelNarrativeAnim(); else if (!document.getElementById('view-narrative')?.classList.contains('hidden')) startNarrativeAnim(); });
 
 /* ---------------- Utils ---------------- */
 function esc(s){ return String(s).replace(/[&<>"']/g, m=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m])); }
@@ -976,7 +971,7 @@ function downloadBlob(name, content, type){ const blob=new Blob([content],{type}
 function num(n){ return (n||0).toLocaleString(); }
 function normTitle(t){ return String(t||'').toLowerCase().replace(/\s+/g,' ').trim(); }
 function normIssn(s){ const x=String(s||'').replace(/[^0-9xX]/g,'').toUpperCase(); return x.length===8? x.slice(0,4)+'-'+x.slice(4): (x.length===7? x.slice(0,3)+'-'+x.slice(3): ''); }
-function normQuartile(q){ const s=String(q||'').toUpperCase().replace(/[^Q0-9]/g,'').trim(); return /^Q[1-4]$/.test(s)? s : ''; }
+function normQuartile(q){ const s=String(q||'').toUpperCase().trim(); const m=s.match(/Q\s*([1-4])/i); return m? `Q${m[1]}` : (/^Q[1-4]$/.test(s)? s : ''); }
 function extractSubjects(p){
   if (Array.isArray(p.subjects) && p.subjects.length) return p.subjects.slice(0,3).join(', ');
   if (Array.isArray(p.concepts) && p.concepts.length){
