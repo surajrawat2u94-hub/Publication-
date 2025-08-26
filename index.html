@@ -1,632 +1,474 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-<meta charset="UTF-8"/>
-<meta name="viewport" content="width=device-width, initial-scale=1"/>
-<title>AI Publications Portal</title>
+  <meta charset="UTF-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1"/>
+  <title>AI Publications Portal</title>
 
-<!-- Tailwind -->
-<script src="https://cdn.tailwindcss.com"></script>
-<!-- Icons -->
-<script src="https://unpkg.com/lucide@latest/dist/umd/lucide.js"></script>
-<!-- Day.js + Chart.js -->
-<script src="https://cdn.jsdelivr.net/npm/dayjs@1/dayjs.min.js"></script>
-<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+  <!-- Tailwind -->
+  <script src="https://cdn.tailwindcss.com"></script>
+  <!-- Icons -->
+  <script src="https://unpkg.com/lucide@latest/dist/umd/lucide.js"></script>
+  <!-- Day.js + Chart.js -->
+  <script src="https://cdn.jsdelivr.net/npm/dayjs@1/dayjs.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
 
-<style>
-  :root{
-    --ring:#7c3aed;
-    --bg:linear-gradient(180deg,#f8fafc 0%,#eef2ff 100%);
-  }
-  body{background:var(--bg)}
-  .card{backdrop-filter:saturate(140%) blur(6px);background:rgba(255,255,255,.92);
-        border:1px solid rgba(226,232,240,.9);border-radius:16px;box-shadow:0 18px 40px rgba(2,6,23,.08)}
-  .thin-scrollbar::-webkit-scrollbar{height:8px;width:8px}
-  .thin-scrollbar::-webkit-scrollbar-thumb{background:#CBD5E1;border-radius:6px}
-  .thin-scrollbar::-webkit-scrollbar-track{background:#F8FAFC}
-  .tab-active{color:#0f172a;border-color:#7c3aed;background:linear-gradient(180deg,#fff,#f8fafc)}
-  .tab-inactive{color:#657085;border-color:transparent}
-  .dropdown{position:relative}
-  .dropdown-panel{position:absolute;right:0;top:100%;z-index:40}
-  .badge{display:inline-flex;align-items:center;gap:.35rem;padding:.22rem .6rem;border-radius:999px;font-size:.72rem;border:1px solid #e5e7eb;background:#fff}
-  .chip{padding:.4rem .65rem;border-radius:12px;background:#f8fafc;border:1px solid #e5e7eb}
-  .link{color:#4f46e5}
-  input,select,button{outline:none}
-  input:focus,select:focus,button:focus{box-shadow:0 0 0 3px color-mix(in srgb,var(--ring) 28%,transparent)}
-  /* Narrative “holo bay” */
-  .holo-wrap{position:relative;overflow:hidden;border-radius:16px;background:
-    radial-gradient(900px 300px at 0% 0%, rgba(124,58,237,.10), transparent 60%),
-    radial-gradient(700px 300px at 100% 0%, rgba(14,165,233,.10), transparent 60%);}
-  .holo-canvas{position:absolute;inset:0;filter:drop-shadow(0 8px 16px rgba(2,6,23,.25))}
-  .type-line{font-variant-ligatures:none;white-space:pre-wrap}
-</style>
+  <style>
+    body{background:linear-gradient(180deg,#f8fafc,#eef2ff)}
+    .card{background:rgba(255,255,255,.95);border:1px solid rgba(226,232,240,.95);
+      border-radius:16px;box-shadow:0 12px 24px rgba(15,23,42,.06)}
+    .thin-scrollbar::-webkit-scrollbar{height:8px;width:8px}
+    .thin-scrollbar::-webkit-scrollbar-thumb{background:#cbd5e1;border-radius:6px}
+    .thin-scrollbar::-webkit-scrollbar-track{background:#f8fafc}
+    .tab-active{color:#111827;border-color:#7c3aed;background:linear-gradient(180deg,#fff,#f8fafc)}
+    .tab-inactive{color:#6b7280;border-color:transparent}
+    .dropdown{position:relative}.dropdown-panel{position:absolute;right:0;top:100%;z-index:40}
+    .badge{display:inline-flex;align-items:center;gap:.35rem;padding:.2rem .5rem;border-radius:999px;
+      font-size:.72rem;border:1px solid #e2e8f0;background:#fff}
+    .link{color:#4f46e5}
+    /* Databases */
+    .db-card{border:1px solid rgba(226,232,240,.95);background:linear-gradient(180deg,#fff,#f8fafc);
+      border-radius:14px;padding:14px;cursor:grab;user-select:none}
+    .db-name{font-size:.75rem;color:#64748b;letter-spacing:.02em}
+    .db-value{font-size:1.6rem;font-weight:700;line-height:1}
+    .db-sub{font-size:.7rem;color:#64748b}
+    .db-dot{width:8px;height:8px;border-radius:999px;display:inline-block;margin-right:.4rem}
+    .db-card.dragging{opacity:.6}
+    /* Narrative bg */
+    .narrative-bg{
+      background:
+        radial-gradient(900px 360px at 0% 0%, rgba(124,58,237,.10), transparent 60%),
+        radial-gradient(700px 360px at 100% 0%, rgba(14,165,233,.10), transparent 60%)
+    }
+  </style>
 </head>
 <body class="text-slate-900">
 
-<!-- Header -->
-<header class="sticky top-0 z-30 bg-gradient-to-r from-indigo-600/95 via-fuchsia-600/95 to-sky-600/95 text-white">
-  <div class="max-w-7xl mx-auto px-4 py-4 flex items-center justify-between">
-    <div class="flex items-center gap-3">
-      <div class="h-10 w-10 rounded-2xl bg-white/15 grid place-content-center shadow-inner">
-        <i data-lucide="brain" class="text-white"></i>
+  <!-- Header -->
+  <header class="sticky top-0 z-30 bg-gradient-to-r from-indigo-600/90 via-fuchsia-600/90 to-sky-600/90 text-white backdrop-blur">
+    <div class="max-w-7xl mx-auto px-4 py-4 flex items-center justify-between">
+      <div class="flex items-center gap-3">
+        <div class="h-10 w-10 rounded-2xl bg-white/15 grid place-content-center shadow-inner">
+          <i data-lucide="brain" class="text-white"></i>
+        </div>
+        <div>
+          <h1 class="text-lg font-semibold tracking-tight">AI Publications Portal</h1>
+          <div id="lastSynced" class="text-xs text-white/80">Loading…</div>
+          <div id="errorBox" class="hidden mt-2 text-xs bg-rose-50 text-rose-700 border border-rose-200 rounded-lg px-2 py-1"></div>
+        </div>
       </div>
-      <div>
-        <h1 class="text-lg font-semibold tracking-tight">AI Publications Portal</h1>
-        <div id="lastSynced" class="text-xs text-white/80">Loading…</div>
-        <div id="errorBox" class="hidden mt-2 text-xs bg-rose-50 text-rose-700 border border-rose-200 rounded-lg px-2 py-1"></div>
+      <div class="hidden md:flex items-center gap-2 text-xs">
+        <span class="px-2 py-1 rounded-lg bg-white/10 border border-white/20">Static JSON · No live API</span>
       </div>
     </div>
-    <div class="hidden md:flex items-center gap-2 text-xs">
-      <span class="px-2 py-1 rounded-lg bg-white/10 border border-white/20">Static JSON · No live API</span>
+
+    <!-- Tabs -->
+    <div class="bg-white">
+      <div class="max-w-7xl mx-auto px-4">
+        <nav class="flex flex-wrap gap-2">
+          <button id="tabOverview"     class="px-4 py-3 text-sm border-b-2 tab-active"   onclick="switchTab('overview')">Overview</button>
+          <button id="tabPublications" class="px-4 py-3 text-sm border-b-2 tab-inactive" onclick="switchTab('publications')">Publications</button>
+          <button id="tabQuartiles"    class="px-4 py-3 text-sm border-b-2 tab-inactive" onclick="switchTab('quartiles')">Quartiles</button>
+          <button id="tabSDG"          class="px-4 py-3 text-sm border-b-2 tab-inactive" onclick="switchTab('sdg')">SDGs</button>
+          <button id="tabDatabases"    class="px-4 py-3 text-sm border-b-2 tab-inactive" onclick="switchTab('databases')">Databases</button>
+          <button id="tabNarrative"    class="px-4 py-3 text-sm border-b-2 tab-inactive" onclick="switchTab('narrative')">Narrative</button>
+        </nav>
+      </div>
     </div>
-  </div>
+  </header>
 
-  <!-- Tabs -->
-  <div class="bg-white">
-    <div class="max-w-7xl mx-auto px-4">
-      <nav class="flex flex-wrap gap-2">
-        <button id="tabOverview"     class="px-4 py-3 text-sm border-b-2 tab-active"   onclick="switchTab('overview')">Overview</button>
-        <button id="tabPublications" class="px-4 py-3 text-sm border-b-2 tab-inactive" onclick="switchTab('publications')">Publications</button>
-        <button id="tabQuartiles"    class="px-4 py-3 text-sm border-b-2 tab-inactive" onclick="switchTab('quartiles')">Quartiles</button>
-        <button id="tabSDG"          class="px-4 py-3 text-sm border-b-2 tab-inactive" onclick="switchTab('sdg')">SDGs</button>
-        <button id="tabNarrative"    class="px-4 py-3 text-sm border-b-2 tab-inactive" onclick="switchTab('narrative')">Narrative</button>
-      </nav>
-    </div>
-  </div>
-</header>
+  <!-- CONTENT -->
+  <main class="max-w-7xl mx-auto px-4 py-6 space-y-6">
 
-<!-- CONTENT -->
-<main class="max-w-7xl mx-auto px-4 py-6 space-y-6">
+    <!-- OVERVIEW -->
+    <section id="view-overview" class="space-y-6">
+      <div class="grid grid-cols-2 md:grid-cols-4 gap-4">
+        <div class="card p-4"><div class="text-xs text-slate-500">Total items</div><div id="kpiTotal" class="mt-1 text-2xl font-semibold">—</div></div>
+        <div class="card p-4"><div class="text-xs text-slate-500">Current view</div><div id="kpiView" class="mt-1 text-2xl font-semibold">—</div></div>
+        <div class="card p-4"><div class="text-xs text-slate-500">Retracted (view)</div><div id="kpiRetr" class="mt-1 text-2xl font-semibold">—</div></div>
+        <div class="card p-4"><div class="text-xs text-slate-500">Distinct journals (view)</div><div id="kpiJournals" class="mt-1 text-2xl font-semibold">—</div></div>
+      </div>
 
-  <!-- OVERVIEW -->
-  <section id="view-overview" class="space-y-6">
-    <!-- KPIs -->
-    <div class="grid grid-cols-2 md:grid-cols-5 gap-4">
-      <div class="card p-4"><div class="text-xs text-slate-500">Total items</div><div id="kpiTotal" class="mt-1 text-2xl font-semibold">—</div></div>
-      <div class="card p-4"><div class="text-xs text-slate-500">Current view</div><div id="kpiView" class="mt-1 text-2xl font-semibold">—</div></div>
-      <div class="card p-4"><div class="text-xs text-slate-500">Retracted (OpenAlex)</div><div id="kpiRetrOnly" class="mt-1 text-2xl font-semibold">—</div></div>
-      <div class="card p-4"><div class="text-xs text-slate-500">Retraction notices (title-based)</div><div id="kpiNotices" class="mt-1 text-2xl font-semibold">—</div></div>
-      <div class="card p-4"><div class="text-xs text-slate-500">Distinct journals (view)</div><div id="kpiJournals" class="mt-1 text-2xl font-semibold">—</div></div>
-    </div>
+      <div class="grid grid-cols-1 lg:grid-cols-2 gap-4">
+        <div class="card p-4">
+          <div class="flex items-center justify-between">
+            <h3 class="font-semibold">Publications by Year (with cumulative)</h3>
+            <span id="rangeText" class="text-xs text-slate-500"></span>
+          </div>
+          <div class="mt-2 h-[300px]"><canvas id="chartByYear"></canvas></div>
+        </div>
+        <div class="card p-4">
+          <h3 class="font-semibold">Top Journals — stacked by Quartile</h3>
+          <div class="mt-2 h-[300px]"><canvas id="chartTopJournals"></canvas></div>
+          <div class="text-xs text-slate-500 mt-2">If no SJR quartiles uploaded, “Unknown” bucket is used.</div>
+        </div>
+        <div class="card p-4">
+          <h3 class="font-semibold">SDG Distribution</h3>
+          <div class="mt-2 h-[300px]"><canvas id="chartSDG"></canvas></div>
+        </div>
+        <div class="card p-4">
+          <h3 class="font-semibold">Retractions (OpenAlex + title notices)</h3>
+          <div class="mt-2 h-[300px]"><canvas id="chartRetract"></canvas></div>
+        </div>
+      </div>
+    </section>
 
-    <!-- Advanced Charts -->
-    <div class="grid grid-cols-1 lg:grid-cols-2 gap-4">
+    <!-- PUBLICATIONS -->
+    <section id="view-publications" class="hidden space-y-4">
       <div class="card p-4">
-        <div class="flex items-center justify-between">
-          <h3 class="font-semibold">Publications by Year (with cumulative)</h3>
-          <span id="rangeText" class="text-xs text-slate-500"></span>
-        </div>
-        <div class="mt-2 h-[300px]"><canvas id="chartByYear"></canvas></div>
-      </div>
-
-      <div class="card p-4">
-        <h3 class="font-semibold">Top Journals — stacked by Quartile</h3>
-        <div class="mt-2 h-[300px]"><canvas id="chartTopJournals"></canvas></div>
-        <div class="text-xs text-slate-500 mt-2">If no SJR quartiles uploaded, “Unknown” bucket is used.</div>
-      </div>
-
-      <div class="card p-4">
-        <h3 class="font-semibold">SDG Distribution</h3>
-        <div class="mt-2 h-[300px]"><canvas id="chartSDG"></canvas></div>
-      </div>
-
-      <div class="card p-4">
-        <h3 class="font-semibold">Retractions (OpenAlex + notices)</h3>
-        <div class="mt-2 h-[300px]"><canvas id="chartRetract"></canvas></div>
-      </div>
-    </div>
-    <!-- (YouTube inspiration block removed by request) -->
-  </section>
-
-  <!-- PUBLICATIONS -->
-  <section id="view-publications" class="hidden space-y-4">
-    <div class="card p-4">
-      <div class="flex flex-wrap items-end gap-3">
-        <div>
-          <label class="block text-xs font-medium text-slate-600">Search</label>
-          <input id="searchBox" class="px-3 py-2 rounded-xl border border-slate-300 text-sm"
-                 placeholder="Title / author / journal / DOI" oninput="applyFilters(1)"/>
-        </div>
-        <div>
-          <label class="block text-xs font-medium text-slate-600">Year</label>
-          <select id="yearFilter" class="px-3 py-2 rounded-xl border border-slate-300 text-sm" onchange="applyFilters(1)">
-            <option value="">All years</option>
-          </select>
-        </div>
-        <div>
-          <label class="block text-xs font-medium text-slate-600">Retraction mode</label>
-          <select id="retractionFilter" class="px-3 py-2 rounded-xl border border-slate-300 text-sm" onchange="applyFilters(1)">
-            <option value="">All</option>
-            <option value="exclude">Exclude retracted</option>
-            <option value="only_retracted">Only retracted (OpenAlex)</option>
-            <option value="only_notices">Only retraction notices (title-based)</option>
-          </select>
-        </div>
-        <div>
-          <label class="block text-xs font-medium text-slate-600">SDG</label>
-          <select id="sdgFilter" class="px-3 py-2 rounded-xl border border-slate-300 text-sm" onchange="applyFilters(1)">
-            <option value="">All SDGs</option>
-          </select>
-        </div>
-
-        <!-- NEW: Quartile filter -->
-        <div>
-          <label class="block text-xs font-medium text-slate-600">Quartile</label>
-          <select id="quartileFilter" class="px-3 py-2 rounded-xl border border-slate-300 text-sm" onchange="applyFilters(1)">
-            <option value="">All quartiles</option>
-            <option>Q1</option><option>Q2</option><option>Q3</option><option>Q4</option>
-            <option value="Unknown">Unknown</option>
-          </select>
-        </div>
-
-        <div>
-          <label class="block text-xs font-medium text-slate-600">Rows per page</label>
-          <select id="pageSize" class="px-3 py-2 rounded-xl border border-slate-300 text-sm" onchange="changePageSize()">
-            <option value="25">25</option>
-            <option value="50" selected>50</option>
-            <option value="100">100</option>
-            <option value="200">200</option>
-          </select>
-        </div>
-
-        <!-- Column chooser -->
-        <div class="ml-auto dropdown">
-          <button id="colBtn" class="px-3 py-2 rounded-xl bg-slate-100 border border-slate-300 text-sm flex items-center gap-2"
-                  onclick="toggleColumnsPanel()">
-            <i data-lucide="columns-3"></i> Columns
-          </button>
-          <div id="columnsPanel" class="dropdown-panel hidden mt-2 bg-white border border-slate-200 rounded-xl shadow-xl w-80 p-3">
-            <div class="text-xs text-slate-500 mb-2">Choose fields to display</div>
-            <div id="columnsList" class="grid grid-cols-2 gap-y-2 text-sm"></div>
-            <div class="flex justify-end gap-2 mt-3">
-              <button class="px-3 py-1.5 rounded-lg border border-slate-300" onclick="resetColumns()">Reset</button>
-              <button class="px-3 py-1.5 rounded-lg bg-indigo-600 text-white" onclick="applyColumnSelection()">Apply</button>
+        <div class="flex flex-wrap items-end gap-3">
+          <div>
+            <label class="block text-xs font-medium text-slate-600">Search</label>
+            <input id="searchBox" class="px-3 py-2 rounded-xl border border-slate-300 text-sm" placeholder="Title / author / journal / DOI" oninput="applyFilters(1)"/>
+          </div>
+          <div>
+            <label class="block text-xs font-medium text-slate-600">Year</label>
+            <select id="yearFilter" class="px-3 py-2 rounded-xl border border-slate-300 text-sm" onchange="applyFilters(1)"><option value="">All years</option></select>
+          </div>
+          <div>
+            <label class="block text-xs font-medium text-slate-600">Quartile</label>
+            <select id="quartileFilter" class="px-3 py-2 rounded-xl border border-slate-300 text-sm" onchange="applyFilters(1)">
+              <option value="">All</option><option>Q1</option><option>Q2</option><option>Q3</option><option>Q4</option><option>Unknown</option>
+            </select>
+          </div>
+          <div>
+            <label class="block text-xs font-medium text-slate-600">Retraction mode</label>
+            <select id="retractionFilter" class="px-3 py-2 rounded-xl border border-slate-300 text-sm" onchange="applyFilters(1)">
+              <option value="">All</option>
+              <option value="exclude">Exclude retracted</option>
+              <option value="only_retracted">Only retracted (OpenAlex)</option>
+              <option value="only_notices">Only retraction notices (title-based)</option>
+            </select>
+          </div>
+          <div>
+            <label class="block text-xs font-medium text-slate-600">SDG</label>
+            <select id="sdgFilter" class="px-3 py-2 rounded-xl border border-slate-300 text-sm" onchange="applyFilters(1)"><option value="">All SDGs</option></select>
+          </div>
+          <div>
+            <label class="block text-xs font-medium text-slate-600">Rows per page</label>
+            <select id="pageSize" class="px-3 py-2 rounded-xl border border-slate-300 text-sm" onchange="changePageSize()">
+              <option value="25">25</option><option value="50" selected>50</option><option value="100">100</option><option value="200">200</option>
+            </select>
+          </div>
+          <!-- Column chooser -->
+          <div class="ml-auto dropdown">
+            <button id="colBtn" class="px-3 py-2 rounded-xl bg-slate-100 border border-slate-300 text-sm flex items-center gap-2" onclick="toggleColumnsPanel()">
+              <i data-lucide="columns-3"></i> Columns
+            </button>
+            <div id="columnsPanel" class="dropdown-panel hidden mt-2 bg-white border border-slate-200 rounded-xl shadow-lg w-80 p-3">
+              <div class="text-xs text-slate-500 mb-2">Choose fields to display</div>
+              <div id="columnsList" class="grid grid-cols-2 gap-y-2 text-sm"></div>
+              <div class="flex justify-end gap-2 mt-3">
+                <button class="px-3 py-1.5 rounded-lg border border-slate-300" onclick="resetColumns()">Reset</button>
+                <button class="px-3 py-1.5 rounded-lg bg-indigo-600 text-white" onclick="applyColumnSelection()">Apply</button>
+              </div>
             </div>
           </div>
-        </div>
-
-        <div class="flex items-center gap-2">
-          <button class="px-3 py-2 rounded-xl bg-indigo-600 text-white text-sm" onclick="exportCSV()">Export CSV</button>
-          <button class="px-3 py-2 rounded-xl bg-indigo-50 text-indigo-700 border border-indigo-200 text-sm" onclick="exportJSON()">Export JSON</button>
-        </div>
-      </div>
-    </div>
-
-    <!-- Table -->
-    <div class="card">
-      <div class="px-4 py-3 border-b border-slate-200 flex items-center justify-between">
-        <div class="font-semibold">All Publications</div>
-        <div class="text-xs text-slate-500" id="countInfo"></div>
-      </div>
-      <div class="overflow-x-auto thin-scrollbar">
-        <table class="w-full text-sm" id="pubTable">
-          <thead class="bg-slate-50 text-slate-600">
-            <tr id="pubHeadRow"></tr>
-          </thead>
-          <tbody id="pubBody"></tbody>
-        </table>
-      </div>
-      <div class="px-4 py-3 flex items-center justify-between">
-        <div class="text-xs text-slate-500" id="pageInfo">Page 1 / 1</div>
-        <div class="flex gap-2">
-          <button class="px-3 py-1.5 rounded-lg border border-slate-300" onclick="goFirst()">« First</button>
-          <button class="px-3 py-1.5 rounded-lg border border-slate-300" onclick="goPrev()">‹ Prev</button>
-          <button class="px-3 py-1.5 rounded-lg border border-slate-300" onclick="goNext()">Next ›</button>
-          <button class="px-3 py-1.5 rounded-lg border border-slate-300" onclick="goLast()">Last »</button>
-        </div>
-      </div>
-    </div>
-  </section>
-
-  <!-- QUARTILES -->
-  <section id="view-quartiles" class="hidden space-y-4">
-    <div class="card p-4">
-      <div class="flex items-center justify-between">
-        <div>
-          <h3 class="font-semibold">Quartile Mapping</h3>
-          <p class="text-xs text-slate-500">
-            Upload SJR/Scimago as <code>.csv</code> (columns like <em>Title / Journal, ISSN, eISSN, Best Quartile / SJR Best Quartile / Quartile / Q</em>)
-            or <code>.json</code> (<code>title, issn, quartile</code>). Delimiters “,” “;” or tab are detected automatically.
-          </p>
-        </div>
-        <div class="flex items-center gap-2">
-          <input id="sjrFile" type="file" accept=".csv,.json" class="hidden"/>
-          <button class="px-3 py-2 rounded-xl bg-slate-100 border border-slate-300 text-sm"
-                  onclick="document.getElementById('sjrFile').click()">
-            <i data-lucide="upload"></i> Upload Quartiles
-          </button>
-        </div>
-      </div>
-      <div id="sjrStatus" class="mt-2 text-xs text-slate-500">Loaded 0 ISSN entries and 0 title entries</div>
-    </div>
-
-    <div class="card p-4">
-      <h4 class="font-semibold mb-2">Coverage in current view</h4>
-      <div class="text-sm" id="mapCoverage">—</div>
-    </div>
-  </section>
-
-  <!-- SDG -->
-  <section id="view-sdg" class="hidden space-y-4">
-    <div class="card p-4">
-      <div class="flex items-center justify-between">
-        <div>
-          <h3 class="font-semibold">Sustainable Development Goals (auto-mapped)</h3>
-          <p class="text-xs text-slate-500">Titles (and subjects, if present) are heuristically mapped to SDGs.</p>
-        </div>
-        <div class="flex items-center gap-2">
-          <select id="sdgOnlyFilter" class="px-3 py-2 rounded-xl border border-slate-300 text-sm" onchange="applyFilters(1)">
-            <option value="">All SDGs</option>
-          </select>
-        </div>
-      </div>
-    </div>
-
-    <div class="grid grid-cols-1 lg:grid-cols-2 gap-4">
-      <div class="card p-4">
-        <h4 class="font-semibold">SDG Distribution (view)</h4>
-        <div class="mt-2 h-[280px]"><canvas id="chartSDG_tab"></canvas></div>
-      </div>
-      <div class="card p-4">
-        <h4 class="font-semibold mb-2">Legend</h4>
-        <div id="sdgLegend" class="flex flex-wrap gap-2 text-sm"></div>
-      </div>
-    </div>
-  </section>
-
-  <!-- NARRATIVE -->
-  <section id="view-narrative" class="hidden space-y-4">
-    <div class="card holo-wrap p-0">
-      <canvas id="narrCanvas" class="holo-canvas"></canvas>
-      <div class="relative p-6">
-        <div class="flex items-center justify-between mb-2">
-          <h3 class="font-semibold text-lg">Immersive Mission Narrative</h3>
-          <div class="flex gap-2">
-            <button id="btnPlay"  class="px-3 py-1.5 rounded-lg bg-indigo-600 text-white text-sm" onclick="playStory()">Play</button>
-            <button id="btnStop"  class="px-3 py-1.5 rounded-lg bg-slate-100 border border-slate-300 text-sm" onclick="stopStory()">Reset</button>
+          <div class="flex items-center gap-2">
+            <button class="px-3 py-2 rounded-xl bg-indigo-600 text-white text-sm" onclick="exportCSV()">Export CSV</button>
+            <button class="px-3 py-2 rounded-xl bg-indigo-50 text-indigo-700 border border-indigo-200 text-sm" onclick="exportJSON()">Export JSON</button>
           </div>
         </div>
-        <p class="text-sm text-slate-600">Auto-generated from your current filters. Press <strong>Play</strong> for an animated story.</p>
-        <div id="narrativeBox" class="prose prose-slate max-w-none text-slate-800 leading-relaxed space-y-3 mt-3"></div>
       </div>
-    </div>
-  </section>
-</main>
 
-<footer class="text-center text-xs text-slate-500 pb-8">
-  Data from <code>institution_data.json</code> · Quartiles mapped client-side · SDG & retraction notices are heuristic
-</footer>
+      <div class="card">
+        <div class="px-4 py-3 border-b border-slate-200 flex items-center justify-between">
+          <div class="font-semibold">All Publications</div>
+          <div class="text-xs text-slate-500" id="countInfo"></div>
+        </div>
+        <div class="overflow-x-auto thin-scrollbar">
+          <table class="w-full text-sm" id="pubTable">
+            <thead class="bg-slate-50 text-slate-600"><tr id="pubHeadRow"></tr></thead>
+            <tbody id="pubBody"></tbody>
+          </table>
+        </div>
+        <div class="px-4 py-3 flex items-center justify-between">
+          <div class="text-xs text-slate-500" id="pageInfo">Page 1 / 1</div>
+          <div class="flex gap-2">
+            <button class="px-3 py-1.5 rounded-lg border border-slate-300" onclick="goFirst()">« First</button>
+            <button class="px-3 py-1.5 rounded-lg border border-slate-300" onclick="goPrev()">‹ Prev</button>
+            <button class="px-3 py-1.5 rounded-lg border border-slate-300" onclick="goNext()">Next ›</button>
+            <button class="px-3 py-1.5 rounded-lg border border-slate-300" onclick="goLast()">Last »</button>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- QUARTILES -->
+    <section id="view-quartiles" class="hidden space-y-4">
+      <div class="card p-4">
+        <div class="flex items-center justify-between">
+          <div>
+            <h3 class="font-semibold">Quartile Mapping</h3>
+            <p class="text-xs text-slate-500">
+              Upload SJR quartiles as <code>.csv</code> (Title/ISSN/Quartile) or <code>.json</code> (array of {title|issn|quartile}).
+            </p>
+          </div>
+          <div class="flex items-center gap-2">
+            <input id="sjrFile" type="file" accept=".csv,.json" class="hidden"/>
+            <button class="px-3 py-2 rounded-xl bg-slate-100 border border-slate-300 text-sm" onclick="document.getElementById('sjrFile').click()">
+              <i data-lucide="upload"></i> Upload Quartiles
+            </button>
+          </div>
+        </div>
+        <div id="sjrStatus" class="mt-2 text-xs text-slate-500"></div>
+      </div>
+      <div class="card p-4">
+        <h4 class="font-semibold mb-2">Coverage in current view</h4>
+        <div class="text-sm" id="mapCoverage">—</div>
+      </div>
+    </section>
+
+    <!-- SDG -->
+    <section id="view-sdg" class="hidden space-y-4">
+      <div class="grid grid-cols-1 lg:grid-cols-2 gap-4">
+        <div class="card p-4">
+          <h4 class="font-semibold">SDG Distribution (view)</h4>
+          <div class="mt-2 h-[280px]"><canvas id="chartSDG_tab"></canvas></div>
+        </div>
+        <div class="card p-4">
+          <h4 class="font-semibold mb-2">Legend</h4>
+          <div id="sdgLegend" class="flex flex-wrap gap-2 text-sm"></div>
+        </div>
+      </div>
+    </section>
+
+    <!-- DATABASES -->
+    <section id="view-databases" class="hidden space-y-4">
+      <div class="card p-4">
+        <div class="flex flex-wrap items-center justify-between gap-3">
+          <div>
+            <h3 class="font-semibold">Databases (current filtered view)</h3>
+            <p class="text-xs text-slate-500">
+              Drag cards to re-order. Counts & h-index are from the current view.
+              Upload a mapping CSV (database, ISSN) for WOS/SCI/PubMed/ABDC/IEEE.
+            </p>
+          </div>
+          <div class="flex items-center gap-2">
+            <input id="dbMapFile" type="file" accept=".csv" class="hidden">
+            <button class="px-3 py-2 rounded-xl bg-slate-100 border border-slate-300 text-sm" onclick="document.getElementById('dbMapFile').click()">
+              <i data-lucide="upload"></i> Upload DB mapping (CSV)
+            </button>
+            <button class="px-3 py-2 rounded-xl bg-white border border-slate-300 text-sm" onclick="resetDatabaseOrder()">Reset order</button>
+          </div>
+        </div>
+        <div id="dbMapStatus" class="mt-2 text-xs text-slate-500"></div>
+      </div>
+      <div class="card p-4">
+        <div id="dbGrid" class="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-7 gap-3"></div>
+      </div>
+    </section>
+
+    <!-- NARRATIVE -->
+    <section id="view-narrative" class="hidden space-y-4">
+      <div class="card narrative-bg p-6">
+        <h3 class="font-semibold text-lg mb-2">Immersive Mission Narrative</h3>
+        <p class="text-sm text-slate-600 mb-4">Auto-generated from the current filtered view.</p>
+        <div id="narrativeBox" class="prose prose-slate max-w-none text-slate-800 leading-relaxed space-y-4"></div>
+      </div>
+    </section>
+  </main>
+
+  <footer class="text-center text-xs text-slate-500 pb-8">
+    Data from <code>institution_data.json</code> · Quartiles mapped client-side · SDG & retraction notices are heuristic
+  </footer>
 
 <script>
-/* ---------------- BOOTSTRAP ---------------- */
+/* ====== BOOTSTRAP ====== */
 lucide.createIcons();
-
-// Chart.js defaults
 Chart.defaults.font.family = "'Inter', system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial";
 Chart.defaults.plugins.tooltip.backgroundColor = '#0f172a';
 Chart.defaults.plugins.tooltip.borderColor = '#334155';
 Chart.defaults.plugins.tooltip.borderWidth = 1;
 Chart.defaults.plugins.tooltip.padding = 12;
 Chart.defaults.plugins.legend.labels.boxWidth = 10;
+const shadowPlugin={id:'shadowPlugin',beforeDatasetsDraw(c,a,o){const{ctx}=c;ctx.save();
+  ctx.shadowColor=o?.shadowColor||'rgba(2,6,23,.15)';ctx.shadowBlur=o?.shadowBlur||16;ctx.shadowOffsetY=o?.offsetY||8;},
+  afterDatasetsDraw(c){c.ctx.restore();}};
+const centerTextPlugin={id:'centerText',afterDraw(chart){if(chart.config.type!=='doughnut')return;
+  const meta=chart.getDatasetMeta(0)?.data?.[0];if(!meta)return;const{ctx}=chart;const text=chart.config.options.centerText;if(!text)return;
+  ctx.save();ctx.font='600 18px Inter, system-ui';ctx.fillStyle='#0f172a';ctx.textAlign='center';ctx.textBaseline='middle';ctx.fillText(text,meta.x,meta.y);ctx.restore();}};
+Chart.register(shadowPlugin,centerTextPlugin);
+function gradientVertical(ctx,c1='#6366f1',c2='#a855f7'){const g=ctx.createLinearGradient(0,0,0,ctx.canvas.height);g.addColorStop(0,c1);g.addColorStop(1,c2);return g;}
 
-// Drop shadow for charts
-const shadowPlugin = {
-  id: 'shadowPlugin',
-  beforeDatasetsDraw(chart, args, opts) {
-    const {ctx} = chart; ctx.save();
-    ctx.shadowColor = opts?.shadowColor || 'rgba(2,6,23,.14)';
-    ctx.shadowBlur = opts?.shadowBlur || 18;
-    ctx.shadowOffsetX = opts?.offsetX || 0;
-    ctx.shadowOffsetY = opts?.offsetY || 10;
-  },
-  afterDatasetsDraw(chart){ chart.ctx.restore(); }
-};
-Chart.register(shadowPlugin);
-
-// Doughnut center text
-const centerTextPlugin = {
-  id:'centerText',
-  afterDraw(chart){
-    if (chart.config.type !== 'doughnut') return;
-    const meta = chart.getDatasetMeta(0)?.data?.[0]; if (!meta) return;
-    const {ctx} = chart; const text = chart.config.options.centerText; if (!text) return;
-    ctx.save(); ctx.font='600 18px Inter, system-ui'; ctx.fillStyle='#0f172a';
-    ctx.textAlign='center'; ctx.textBaseline='middle'; ctx.fillText(text, meta.x, meta.y); ctx.restore();
-  }
-};
-Chart.register(centerTextPlugin);
-
-function gradientVertical(ctx, c1='#6366f1', c2='#a855f7'){
-  const g = ctx.createLinearGradient(0, 0, 0, ctx.canvas.height);
-  g.addColorStop(0, c1); g.addColorStop(1, c2); return g;
-}
-
-/* ---------------- STATE ---------------- */
-const AFFIL_ROR = '04q2jes40'; // UPES ROR code
-let all = [];          // full dataset
-let filtered = [];     // active view
-let currentPage = 1;
-let pageSize = 50;
-
-// Quartiles maps
-const sjrByIssn = new Map();
-const sjrByTitle = new Map();
-let haveSJR = false;
-
-// Columns
-const ALL_COLUMNS = [
-  { key:'year',         label:'Year',          default:true },
-  { key:'title',        label:'Title',         default:true },
-  { key:'journal',      label:'Journal',       default:true },
-  { key:'authors',      label:'Authors (UPES first)', default:true },
-  { key:'citations',    label:'Citations',     default:true },
-  { key:'quartile',     label:'Quartile',      default:true },
-  { key:'retraction_info', label:'Retraction Info', default:true },
-  { key:'is_retracted', label:'Retracted (OpenAlex)', default:false },
-  { key:'type',         label:'Type',          default:false },
-  { key:'doi',          label:'DOI',           default:false },
-  { key:'url',          label:'URL',           default:false },
-  { key:'issns',        label:'ISSNs',         default:false },
-  { key:'subjects',     label:'Subject areas', default:false },
-  { key:'sdg_tags',     label:'SDGs',          default:false },
+/* ====== STATE ====== */
+const AFFIL_ROR='04q2jes40';
+let all=[], filtered=[], currentPage=1, pageSize=50;
+const sjrByIssn=new Map(), sjrByTitle=new Map(); let haveSJR=false;
+const ALL_COLUMNS=[
+  {key:'year',label:'Year',default:true},{key:'title',label:'Title',default:true},
+  {key:'journal',label:'Journal',default:true},
+  {key:'authors',label:'Authors (UPES first)',default:true},
+  {key:'citations',label:'Citations',default:true},
+  {key:'quartile',label:'Quartile',default:true},
+  {key:'retraction_info',label:'Retraction Info',default:true},
+  {key:'is_retracted',label:'Retracted (OpenAlex)',default:false},
+  {key:'type',label:'Type',default:false},
+  {key:'doi',label:'DOI',default:false},
+  {key:'url',label:'URL',default:false},
+  {key:'issns',label:'ISSNs',default:false},
+  {key:'subjects',label:'Subject areas',default:false},
+  {key:'sdg_tags',label:'SDGs',default:false},
 ];
-let selectedColumns = loadSelectedColumns();
+let selectedColumns=loadSelectedColumns();
+let chartByYear=null,chartTopJournals=null,chartSDG=null,chartRetract=null,chartSDG_tab=null;
 
-// Charts
-let chartByYear=null, chartTopJournals=null, chartSDG=null, chartRetract=null, chartSDG_tab=null;
+/* ====== SDGs & Retractions ====== */
+const SDG_LIST=[{id:1,name:'No Poverty',kw:['poverty','low-income','income inequality']},
+{id:2,name:'Zero Hunger',kw:['hunger','food security','malnutrition','agriculture','crop','farm']},
+{id:3,name:'Good Health & Well-being',kw:['health','disease','medicine','mental','epidemic','pandemic','hospital','clinical']},
+{id:4,name:'Quality Education',kw:['education','school','teaching','learning','curriculum','literacy','students']},
+{id:5,name:'Gender Equality',kw:['gender','women','female','girls','violence against women','equality']},
+{id:6,name:'Clean Water & Sanitation',kw:['water','sanitation','wastewater','drinking water','hygiene']},
+{id:7,name:'Affordable & Clean Energy',kw:['energy','renewable','solar','wind','battery','hydrogen']},
+{id:8,name:'Decent Work & Economic Growth',kw:['employment','workforce','productivity','economy','economic growth','entrepreneur']},
+{id:9,name:'Industry, Innovation & Infrastructure',kw:['industry','manufacturing','infrastructure','innovation','iot','robotics','blockchain']},
+{id:10,name:'Reduced Inequalities',kw:['inequality','social justice','marginalized','inclusion']},
+{id:11,name:'Sustainable Cities & Communities',kw:['urban','smart city','transport','housing','resilience','disaster']},
+{id:12,name:'Responsible Consumption & Production',kw:['circular economy','sustainability','recycling','waste','lifecycle','supply chain']},
+{id:13,name:'Climate Action',kw:['climate','carbon','ghg','emission','adaptation','mitigation','global warming']},
+{id:14,name:'Life Below Water',kw:['marine','ocean','sea','fisheries','aquatic','coral']},
+{id:15,name:'Life on Land',kw:['biodiversity','forest','wildlife','ecosystem','soil','land use']},
+{id:16,name:'Peace, Justice & Strong Institutions',kw:['policy','governance','corruption','crime','justice','conflict']},
+{id:17,name:'Partnerships for the Goals',kw:['partnership','collaboration','sdg','stakeholder','international']}];
+const SDG_COLORS={1:'#E5243B',2:'#DDA63A',3:'#4C9F38',4:'#C5192D',5:'#FF3A21',6:'#26BDE2',7:'#FCC30B',
+8:'#A21942',9:'#FD6925',10:'#DD1367',11:'#FD9D24',12:'#BF8B2E',13:'#3F7E44',14:'#0A97D9',15:'#56C02B',16:'#00689D',17:'#19486A'};
+const RETRACT_PREFIXES=[/^retraction\s*note\s*:/i,/^retraction\s*of\s*:/i,/^retraction\s*:/i,/^notice\s+of\s+retraction\s*:/i,/^withdrawn\s*:/i];
+const DOI_REGEX=/\b10\.\d{4,9}\/\S+\b/i;
 
-// SDGs
-const SDG_LIST = [
-  { id:1,  name:'No Poverty',                   kw:['poverty','low-income','income inequality'] },
-  { id:2,  name:'Zero Hunger',                  kw:['hunger','food security','malnutrition','agriculture','crop','farm'] },
-  { id:3,  name:'Good Health & Well-being',     kw:['health','disease','medicine','mental','epidemic','pandemic','hospital','clinical'] },
-  { id:4,  name:'Quality Education',            kw:['education','school','teaching','learning','curriculum','literacy','students'] },
-  { id:5,  name:'Gender Equality',              kw:['gender','women','female','girls','violence against women','equality'] },
-  { id:6,  name:'Clean Water & Sanitation',     kw:['water','sanitation','wastewater','drinking water','hygiene'] },
-  { id:7,  name:'Affordable & Clean Energy',    kw:['energy','renewable','solar','wind','battery','hydrogen'] },
-  { id:8,  name:'Decent Work & Economic Growth',kw:['employment','workforce','productivity','economy','economic growth','entrepreneur'] },
-  { id:9,  name:'Industry, Innovation & Infrastructure', kw:['industry','manufacturing','infrastructure','innovation','iot','robotics','blockchain'] },
-  { id:10, name:'Reduced Inequalities',         kw:['inequality','social justice','marginalized','inclusion'] },
-  { id:11, name:'Sustainable Cities & Communities', kw:['urban','smart city','transport','housing','resilience','disaster'] },
-  { id:12, name:'Responsible Consumption & Production', kw:['circular economy','sustainability','recycling','waste','lifecycle','supply chain'] },
-  { id:13, name:'Climate Action',               kw:['climate','carbon','ghg','emission','adaptation','mitigation','global warming'] },
-  { id:14, name:'Life Below Water',             kw:['marine','ocean','sea','fisheries','aquatic','coral'] },
-  { id:15, name:'Life on Land',                 kw:['biodiversity','forest','wildlife','ecosystem','soil','land use'] },
-  { id:16, name:'Peace, Justice & Strong Institutions', kw:['governance','policy','corruption','crime','justice','conflict'] },
-  { id:17, name:'Partnerships for the Goals',   kw:['partnership','collaboration','sdg','stakeholder','international'] },
-];
-const SDG_COLORS = {1:'#E5243B',2:'#DDA63A',3:'#4C9F38',4:'#C5192D',5:'#FF3A21',6:'#26BDE2',7:'#FCC30B',8:'#A21942',9:'#FD6925',10:'#DD1367',11:'#FD9D24',12:'#BF8B2E',13:'#3F7E44',14:'#0A97D9',15:'#56C02B',16:'#00689D',17:'#19486A'};
-
-/* STRICT title-prefix detection for notices (anchored at start, tolerant to separators) */
-const RETRACT_PREFIXES = [
-  /^\s*retraction\s*(?:note|notice|statement)?\s*[:\-–—]/i,
-  /^\s*retraction\s+of\s*[:\-–—]?/i,
-  /^\s*notice\s+of\s+retraction\s*[:\-–—]?/i,
-  /^\s*withdrawal|^\s*withdrawn\s*[:\-–—]?/i
-];
-const DOI_REGEX = /\b10\.\d{4,9}\/\S+\b/i;
-
-/* ---------------- Tabs ---------------- */
+/* ====== Tabs ====== */
 function switchTab(name){
-  const tabs=['overview','publications','quartiles','sdg','narrative'];
-  for (const t of tabs){
-    const view = document.getElementById(`view-${t}`);
-    if (view) view.classList.toggle('hidden', t!==name);
-    const el = document.getElementById(`tab${t[0].toUpperCase()+t.slice(1)}`);
-    if (el){ el.classList.toggle('tab-active', t===name); el.classList.toggle('tab-inactive', t!==name); }
+  const tabs=['overview','publications','quartiles','sdg','databases','narrative'];
+  for(const t of tabs){
+    document.getElementById(`view-${t}`)?.classList.toggle('hidden',t!==name);
+    const el=document.getElementById(`tab${t[0].toUpperCase()+t.slice(1)}`);
+    if(el){el.classList.toggle('tab-active',t===name);el.classList.toggle('tab-inactive',t!==name);}
   }
-  if (name==='quartiles') updateCoverage();
-  if (name==='sdg'){ renderSDGChart(true); }
+  if(name==='quartiles') updateCoverage();
+  if(name==='sdg') renderSDGChart(true);
+  if(name==='databases') renderDatabases();
+  if(name==='narrative') renderNarrative();
 }
 
-/* ---------------- Load data ---------------- */
+/* ====== Load data ====== */
 async function autoLoad(){
-  const err = (msg) => {
-    const box = document.getElementById('errorBox');
-    if (box) { box.textContent = msg; box.classList.remove('hidden'); }
-    console.error(msg);
-  };
-
+  const err=(m)=>{const box=document.getElementById('errorBox');if(box){box.textContent=m;box.classList.remove('hidden');}console.error(m);};
   try{
-    const res = await fetch('institution_data.json?v=' + Date.now(), { cache:'no-store' });
-    if (!res.ok){ err('institution_data.json not found at the same path as index.html'); return; }
-    const j = await res.json();
-
-    const items = Array.isArray(j?.items) ? j.items : (Array.isArray(j) ? j : []);
-    if (!Array.isArray(items) || items.length === 0){
-      err('institution_data.json loaded but contains no items (expected an array of publications).');
-      return;
+    const res=await fetch('institution_data.json?v='+Date.now(),{cache:'no-store'});
+    if(!res.ok){err('institution_data.json not found at the same path as index.html');return;}
+    const j=await res.json();const items=Array.isArray(j?.items)?j.items:(Array.isArray(j)?j:[]);
+    if(!Array.isArray(items)||!items.length){err('institution_data.json loaded but has no items.');return;}
+    document.getElementById('errorBox')?.classList.add('hidden');
+    all=items;
+    for(const p of all){
+      if(typeof p.citations==='undefined'&&typeof p.cited_by_count!=='undefined') p.citations=p.cited_by_count;
+      p.authors=(p.authorships||[]).map(a=>a.author?.display_name||a.author_name||'').filter(Boolean);
     }
-    document.getElementById('errorBox').classList.add('hidden');
-
-    all = items;
-
-    // Normalize citations & flatten authors for search
-    for (const p of all){
-      if (typeof p.citations === 'undefined' && typeof p.cited_by_count !== 'undefined'){
-        p.citations = p.cited_by_count;
-      }
-      p.authors = (p.authorships||[]).map(a => a.author?.display_name || a.author_name || '').filter(Boolean);
-    }
-
-    // Timestamp (if present)
-    const ts = (j.updated || null);
-    document.getElementById('lastSynced').textContent =
-      ts ? `Last synced: ${dayjs(ts).format('DD MMM YYYY, HH:mm')}` : 'Loaded';
-
-    // year options
-    const years = [...new Set(all.map(x=>x.year).filter(Boolean))].sort((a,b)=>b-a);
-    const yearSel = document.getElementById('yearFilter');
-    if (yearSel){
-      yearSel.innerHTML = '<option value="">All years</option>' + years.map(y=>`<option>${y}</option>`).join('');
-    }
-
-    // SDG filter options
-    const opts = SDG_LIST.map(s=>`<option value="${s.id}">${s.id}. ${s.name}</option>`).join('');
-    document.getElementById('sdgFilter').innerHTML = '<option value="">All SDGs</option>' + opts;
-    document.getElementById('sdgOnlyFilter').innerHTML = '<option value="">All SDGs</option>' + opts;
-
-    pageSize = parseInt(document.getElementById('pageSize')?.value,10) || 50;
-
-    // Retraction + SDGs
+    const ts=(j.updated||null);
+    document.getElementById('lastSynced').textContent=ts?`Last synced: ${dayjs(ts).format('DD MMM YYYY, HH:mm')}`:'Loaded';
+    const years=[...new Set(all.map(x=>x.year).filter(Boolean))].sort((a,b)=>b-a);
+    const yearSel=document.getElementById('yearFilter');
+    yearSel.innerHTML='<option value="">All years</option>'+years.map(y=>`<option>${y}</option>`).join('');
+    const opts=SDG_LIST.map(s=>`<option value="${s.id}">${s.id}. ${s.name}</option>`).join('');
+    document.getElementById('sdgFilter').innerHTML='<option value="">All SDGs</option>'+opts;
+    pageSize=parseInt(document.getElementById('pageSize')?.value,10)||50;
     buildRetractionIndex(all);
-    for (const p of all) p.sdg_tags = guessSDGs(p);
-
-    document.getElementById('kpiTotal').textContent = num(all.length);
-    buildColumnsPanel();
-    buildSDGLegend();
-    applyFilters(1);
-
-    // kick off narrative canvas
-    startCanvas();
-  }catch(e){
-    err('Failed to parse institution_data.json: ' + (e?.message || e));
-  }
+    for(const p of all) p.sdg_tags=guessSDGs(p);
+    document.getElementById('kpiTotal').textContent=num(all.length);
+    buildColumnsPanel(); buildSDGLegend(); applyFilters(1);
+  }catch(e){err('Failed to parse institution_data.json: '+(e?.message||e));}
 }
-
 function buildRetractionIndex(items){
-  const mapByTitle = new Map();
-  const mapByDOI   = new Map();
-  for (const p of items){
-    if (p.doi) mapByDOI.set(String(p.doi).toLowerCase(), p);
-    const nt = normTitle(p.title||''); if (nt) mapByTitle.set(nt, p);
-  }
-  for (const p of items){
-    const title = p.title || '';
-    p.retraction_notice = isRetractionNotice(title);
-    p.retracted_by = null; p.retraction_of = null;
-    if (p.retraction_notice){
-      const m = title.match(DOI_REGEX);
-      if (m){
-        const target = mapByDOI.get(m[0].toLowerCase());
-        if (target){ p.retraction_of = { doi: target.doi, title: target.title }; target.retracted_by = { doi: p.doi, title: p.title }; }
-      } else {
-        const stripped = stripRetractionPrefix(title);
-        const candidate = mapByTitle.get(normTitle(stripped));
-        if (candidate){ p.retraction_of = { doi: candidate.doi, title: candidate.title }; candidate.retracted_by = { doi: p.doi, title: p.title }; }
-      }
+  const mapByTitle=new Map(), mapByDOI=new Map();
+  for(const p of items){ if(p.doi) mapByDOI.set(String(p.doi).toLowerCase(),p);
+    const nt=normTitle(p.title||''); if(nt) mapByTitle.set(nt,p);}
+  for(const p of items){
+    const title=p.title||''; p.retraction_notice=isRetractionNotice(title);
+    p.retracted_by=null; p.retraction_of=null;
+    if(p.retraction_notice){
+      const m=title.match(DOI_REGEX);
+      if(m){ const target=mapByDOI.get(m[0].toLowerCase()); if(target){p.retraction_of={doi:target.doi,title:target.title}; target.retracted_by={doi:p.doi,title:p.title};}}
+      else{ const stripped=stripRetractionPrefix(title); const cand=mapByTitle.get(normTitle(stripped));
+        if(cand){p.retraction_of={doi:cand.doi,title:cand.title}; cand.retracted_by={doi:p.doi,title:p.title};}}
     }
   }
 }
+function isRetractionNotice(title){return RETRACT_PREFIXES.some(rx=>rx.test(String(title||''))); }
+function stripRetractionPrefix(title){let t=String(title||'');for(const rx of RETRACT_PREFIXES){if(rx.test(t)) return t.replace(rx,'').trim();}return t;}
 
-// STRICT: title must start with a supported prefix
-function isRetractionNotice(title){
-  const t=String(title||'');
-  return RETRACT_PREFIXES.some(rx => rx.test(t));
-}
-function stripRetractionPrefix(title){
-  let t=String(title||'');
-  for (const rx of RETRACT_PREFIXES){ if (rx.test(t)) return t.replace(rx,'').trim(); }
-  return t;
-}
-
-/* ---------------- Filters / Paging ---------------- */
+/* ====== Filters / paging ====== */
 function applyFilters(goToPage=1){
-  const q = (document.getElementById('searchBox')?.value || '').toLowerCase().trim();
-  const year = document.getElementById('yearFilter')?.value || '';
-  const sdg = document.getElementById('sdgFilter')?.value || document.getElementById('sdgOnlyFilter')?.value || '';
-  const retractMode = document.getElementById('retractionFilter')?.value || '';
-  const qfilter = document.getElementById('quartileFilter')?.value || '';
+  const q=(document.getElementById('searchBox')?.value||'').toLowerCase().trim();
+  const year=document.getElementById('yearFilter')?.value||'';
+  const sdg=document.getElementById('sdgFilter')?.value||'';
+  const quart=document.getElementById('quartileFilter')?.value||'';
+  const retractMode=document.getElementById('retractionFilter')?.value||'';
 
-  filtered = all.filter(p=>{
-    if (year && String(p.year)!==year) return false;
-    if (sdg && !(p.sdg_tags||[]).includes(Number(sdg))) return false;
-
-    // Resolve quartile on-demand if user selected any quartile
-    if (qfilter){
-      const qv = (p.quartile || resolveQuartile(p) || '') || '';
-      if (qfilter==='Unknown'){ if (['Q1','Q2','Q3','Q4'].includes(String(qv).toUpperCase())) return false; }
-      else if (String(qv).toUpperCase()!==qfilter.toUpperCase()) return false;
+  filtered=all.filter(p=>{
+    if(year && String(p.year)!==year) return false;
+    if(sdg && !(p.sdg_tags||[]).includes(Number(sdg))) return false;
+    if(quart){
+      const qv=(p.quartile||'').toUpperCase()||'UNKNOWN';
+      if(quart==='Unknown'){ if(qv!=='UNKNOWN') return false; }
+      else if(qv!==quart) return false;
     }
-
-    if (retractMode === 'exclude'){ if (p.is_retracted || p.retraction_notice) return false; }
-    else if (retractMode === 'only_retracted'){ if (!p.is_retracted) return false; }
-    else if (retractMode === 'only_notices'){ if (!p.retraction_notice) return false; }
-
-    if (q){
-      const hay = [p.title||'',p.journal||'',p.doi||'',...(p.authors||[])].join(' ').toLowerCase();
-      if (!hay.includes(q)) return false;
+    if(retractMode==='exclude'){ if(p.is_retracted||p.retraction_notice) return false; }
+    else if(retractMode==='only_retracted'){ if(!p.is_retracted) return false; }
+    else if(retractMode==='only_notices'){ if(!p.retraction_notice) return false; }
+    if(q){
+      const hay=[p.title||'',p.journal||'',p.doi||'',...(p.authors||[])].join(' ').toLowerCase();
+      if(!hay.includes(q)) return false;
     }
     return true;
   });
 
-  if (haveSJR){ for (const p of filtered) p.quartile = resolveQuartile(p); }
+  if(haveSJR){ for(const p of filtered) p.quartile=resolveQuartile(p) || p.quartile; }
+  document.getElementById('kpiView').textContent=num(filtered.length);
+  document.getElementById('kpiRetr').textContent=num(filtered.filter(x=>x.is_retracted||x.retraction_notice).length);
+  const journals=new Set(filtered.map(x=>(x.journal||'').trim()).filter(Boolean));
+  document.getElementById('kpiJournals').textContent=num(journals.size);
 
-  // KPIs
-  document.getElementById('kpiView').textContent = num(filtered.length);
-  const retrOnly = filtered.filter(x=>x.is_retracted).length;
-  const notices  = filtered.filter(x=>x.retraction_notice).length;
-  document.getElementById('kpiRetrOnly').textContent = num(retrOnly);
-  document.getElementById('kpiNotices').textContent = num(notices);
-  const journals = new Set(filtered.map(x=>(x.journal||'').trim()).filter(Boolean));
-  document.getElementById('kpiJournals').textContent = num(journals.size);
-
-  if (goToPage===1) currentPage = 1;
-  renderTable();
-  renderOverviewCharts();
-  renderSDGChart();
-  updateCoverage();
+  if(goToPage===1) currentPage=1;
+  renderTable(); renderOverviewCharts(); renderSDGChart(); updateCoverage(); renderDatabases();
 }
+function changePageSize(){pageSize=parseInt(document.getElementById('pageSize')?.value,10)||50;currentPage=1;renderTable();}
+function totalPages(){return Math.max(1,Math.ceil(filtered.length/pageSize));}
+function goFirst(){currentPage=1;renderTable()} function goPrev(){if(currentPage>1)currentPage--;renderTable()}
+function goNext(){if(currentPage<totalPages())currentPage++;renderTable()} function goLast(){currentPage=totalPages();renderTable()}
 
-function changePageSize(){ pageSize = parseInt(document.getElementById('pageSize')?.value,10) || 50; currentPage=1; renderTable(); }
-function totalPages(){ return Math.max(1, Math.ceil(filtered.length/pageSize)); }
-function goFirst(){ currentPage = 1; renderTable(); }
-function goPrev(){ if (currentPage>1) currentPage--; renderTable(); }
-function goNext(){ if (currentPage<totalPages()) currentPage++; renderTable(); }
-function goLast(){ currentPage = totalPages(); renderTable(); }
-
-/* ---------------- Table (dynamic columns) ---------------- */
+/* ====== Table ====== */
 function renderTable(){
-  const head=document.getElementById('pubHeadRow'); if (!head) return;
-  head.innerHTML='';
-  for (const col of selectedColumns){
-    const th=document.createElement('th'); th.className='text-left px-4 py-2'; th.textContent=col.label; head.appendChild(th);
-  }
-
-  const start=(currentPage-1)*pageSize, end=Math.min(start+pageSize, filtered.length);
-  const rows=filtered.slice(start,end);
-
-  const body=document.getElementById('pubBody'); if (!body) return;
-  body.innerHTML='';
-  for (const p of rows){
-    const tds = selectedColumns.map(col=>`<td class="px-4 py-2 align-top">${renderCell(col.key,p)}</td>`).join('');
+  const head=document.getElementById('pubHeadRow'); head.innerHTML='';
+  for(const col of selectedColumns){const th=document.createElement('th'); th.className='text-left px-4 py-2'; th.textContent=col.label; head.appendChild(th);}
+  const start=(currentPage-1)*pageSize, end=Math.min(start+pageSize,filtered.length);
+  const rows=filtered.slice(start,end); const body=document.getElementById('pubBody'); body.innerHTML='';
+  for(const p of rows){
+    const tds=selectedColumns.map(col=>`<td class="px-4 py-2">${renderCell(col.key,p)}</td>`).join('');
     const tr=document.createElement('tr'); tr.className='border-b border-slate-100 hover:bg-slate-50'; tr.innerHTML=tds; body.appendChild(tr);
   }
-
-  const pageInfo=document.getElementById('pageInfo');
-  if (pageInfo) pageInfo.textContent = `Page ${totalPages()?currentPage:0} / ${totalPages()}`;
-  const countInfo=document.getElementById('countInfo');
-  if (countInfo) countInfo.textContent = filtered.length
-    ? `Showing ${num(start+1)}–${num(end)} of ${num(filtered.length)} (filtered)` : `Showing 0 of 0`;
-  const rangeText=document.getElementById('rangeText');
-  if (rangeText) rangeText.textContent = countInfo ? countInfo.textContent : '';
+  document.getElementById('pageInfo').textContent=`Page ${totalPages()?currentPage:0} / ${totalPages()}`;
+  document.getElementById('countInfo').textContent=filtered.length?`Showing ${num(start+1)}–${num(end)} of ${num(filtered.length)} (filtered)`:`Showing 0 of 0`;
+  document.getElementById('rangeText').textContent=document.getElementById('countInfo').textContent;
 }
-
-// UPES-affiliated authors first (only)
 function getAffilAuthors(p){
-  if (!Array.isArray(p.authorships)) return [];
+  if(!Array.isArray(p.authorships)) return [];
   return p.authorships
-    .filter(a => (a.institutions||[]).some(inst => (inst.ror||'').toLowerCase().includes(AFFIL_ROR.toLowerCase())))
-    .map(a => a.author?.display_name || a.author_name || '')
-    .filter(Boolean);
+    .filter(a=>(a.institutions||[]).some(inst=>(inst.ror||'').toLowerCase().includes(AFFIL_ROR.toLowerCase())))
+    .map(a=>a.author?.display_name||a.author_name||'').filter(Boolean);
 }
-
 function renderCell(key,p){
   switch(key){
-    case 'year': return p.year ?? '';
-    case 'title': return p.url ? `<a class="link hover:underline" href="${p.url}" target="_blank" rel="noopener">${esc(p.title||'')}</a>` : esc(p.title||'');
+    case 'year': return p.year??'';
+    case 'title': return p.url? `<a class="link hover:underline" href="${p.url}" target="_blank" rel="noopener">${esc(p.title||'')}</a>` : esc(p.title||'');
     case 'journal': return esc(p.journal||'');
-    case 'authors': {
-      const names = getAffilAuthors(p);
-      return names.length ? esc(names.join(', ')) : '—';
-    }
-    case 'citations': return p.citations ?? 0;
-    case 'quartile': return esc(p.quartile || '');
+    case 'authors': { const names=getAffilAuthors(p); return names.length? esc(names.join(', ')) : '—'; }
+    case 'citations': return p.citations??0;
+    case 'quartile': return esc(p.quartile||'');
     case 'retraction_info': return renderRetractionInfo(p);
-    case 'is_retracted': return p.is_retracted ? '<span class="badge" style="border-color:#ef4444;background:#fff;color:#b91c1c">Yes</span>' : 'No';
-    case 'type': return esc(p.type || '');
-    case 'doi': return esc(p.doi || '');
-    case 'url': return p.url ? `<a class="link" href="${p.url}" target="_blank" rel="noopener">Open</a>` : '';
+    case 'is_retracted': return p.is_retracted?'<span class="badge" style="border-color:#ef4444;color:#b91c1c">Yes</span>':'No';
+    case 'type': return esc(p.type||'');
+    case 'doi': return esc(p.doi||'');
+    case 'url': return p.url?`<a class="link" href="${p.url}" target="_blank" rel="noopener">Open</a>`:'';
     case 'issns': return esc((p.issns||[]).join(', '));
     case 'subjects': return esc(extractSubjects(p));
     case 'sdg_tags': return renderSDGBadges(p.sdg_tags||[]);
@@ -634,405 +476,184 @@ function renderCell(key,p){
   }
 }
 
-/* ---------------- Column chooser ---------------- */
+/* ====== Column chooser ====== */
 function buildColumnsPanel(){
-  const container=document.getElementById('columnsList'); if (!container) return;
-  container.innerHTML='';
-  const selectedKeys=new Set(selectedColumns.map(c=>c.key));
-  for (const col of ALL_COLUMNS){
-    const id=`col_${col.key}`, checked=selectedKeys.has(col.key)?'checked':'';
-    container.insertAdjacentHTML('beforeend', `
-      <label class="flex items-center gap-2"><input type="checkbox" id="${id}" ${checked}/><span>${col.label}</span></label>
-    `);
+  const c=document.getElementById('columnsList'); c.innerHTML='';
+  const sel=new Set(selectedColumns.map(c=>c.key));
+  for(const col of ALL_COLUMNS){
+    const id=`col_${col.key}`, checked=sel.has(col.key)?'checked':'';
+    c.insertAdjacentHTML('beforeend',`<label class="flex items-center gap-2"><input type="checkbox" id="${id}" ${checked}/><span>${col.label}</span></label>`);
   }
 }
-function toggleColumnsPanel(){ const p=document.getElementById('columnsPanel'); if (p) p.classList.toggle('hidden'); }
+function toggleColumnsPanel(){document.getElementById('columnsPanel').classList.toggle('hidden');}
 function applyColumnSelection(){
-  const chosen=[];
-  for (const col of ALL_COLUMNS){
-    const box=document.getElementById(`col_${col.key}`);
-    if (box && box.checked) chosen.push({key:col.key,label:col.label});
-  }
-  selectedColumns = chosen.length ? chosen : ALL_COLUMNS.filter(c=>c.default).map(c=>({key:c.key,label:c.label}));
+  const chosen=[]; for(const col of ALL_COLUMNS){const box=document.getElementById(`col_${col.key}`); if(box&&box.checked) chosen.push({key:col.key,label:col.label});}
+  selectedColumns=chosen.length?chosen:ALL_COLUMNS.filter(c=>c.default).map(c=>({key:c.key,label:c.label}));
   saveSelectedColumns(); toggleColumnsPanel(); renderTable();
 }
-function resetColumns(){
-  selectedColumns = ALL_COLUMNS.filter(c=>c.default).map(c=>({key:c.key,label:c.label}));
-  saveSelectedColumns(); buildColumnsPanel(); renderTable();
-}
-function saveSelectedColumns(){ try{ localStorage.setItem('pub_columns', JSON.stringify(selectedColumns)); }catch{} }
-function loadSelectedColumns(){
-  try{
-    const s=localStorage.getItem('pub_columns'); if (s){
-      const arr=JSON.parse(s); const valid=new Map(ALL_COLUMNS.map(c=>[c.key,c.label]));
-      return arr.filter(x=>valid.has(x.key)).map(x=>({key:x.key,label:valid.get(x.key)}));
-    }
-  }catch{}
-  return ALL_COLUMNS.filter(c=>c.default).map(c=>({key:c.key,label:c.label}));
-}
+function resetColumns(){selectedColumns=ALL_COLUMNS.filter(c=>c.default).map(c=>({key:c.key,label:c.label})); saveSelectedColumns(); buildColumnsPanel(); renderTable();}
+function saveSelectedColumns(){try{localStorage.setItem('pub_columns',JSON.stringify(selectedColumns));}catch{}}
+function loadSelectedColumns(){try{const s=localStorage.getItem('pub_columns'); if(s){const arr=JSON.parse(s); const valid=new Map(ALL_COLUMNS.map(c=>[c.key,c.label])); return arr.filter(x=>valid.has(x.key)).map(x=>({key:x.key,label:valid.get(x.key)}));}}catch{} return ALL_COLUMNS.filter(c=>c.default).map(c=>({key:c.key,label:c.label}));}
 
-/* ---------------- Overview Charts ---------------- */
+/* ====== Overview charts ====== */
 function renderOverviewCharts(){
-  const ctxY = document.getElementById('chartByYear')?.getContext('2d'); if (!ctxY) return;
-  const byYear={}; for (const p of filtered){ if (p.year) byYear[p.year]=(byYear[p.year]||0)+1; }
-  const labelsY = Object.keys(byYear).sort((a,b)=>a-b);
-  const dataY   = labelsY.map(y=>byYear[y]);
-  let cum=0; const growth=dataY.map(v=>cum+=v);
-  if (chartByYear) chartByYear.destroy();
-  const gradY = gradientVertical(ctxY,'#6366f1','#a855f7');
-  chartByYear = new Chart(ctxY, {
-    data:{
-      labels:labelsY,
-      datasets:[
-        { type:'bar', label:'Publications', data:dataY, borderRadius:12, borderSkipped:false, backgroundColor:gradY },
-        { type:'line', label:'Cumulative', data:growth, borderColor:'#14b8a6', borderWidth:3, fill:false, tension:0.3, pointRadius:0 }
-      ]
-    },
-    options:{
-      responsive:true, maintainAspectRatio:false,
-      plugins:{ legend:{ position:'top' }, shadowPlugin:{} },
-      scales:{ x:{ grid:{ display:false } }, y:{ beginAtZero:true, grid:{ color:'#e2e8f0' } } }
-    },
-    plugins:[{id:'shadowPlugin'}]
-  });
+  const ctxY=document.getElementById('chartByYear')?.getContext('2d'); if(!ctxY) return;
+  const byYear={}; for(const p of filtered){ if(p.year) byYear[p.year]=(byYear[p.year]||0)+1; }
+  const labelsY=Object.keys(byYear).sort((a,b)=>a-b); const dataY=labelsY.map(y=>byYear[y]); let cum=0; const growth=dataY.map(v=>cum+=v);
+  if(chartByYear) chartByYear.destroy(); const gradY=gradientVertical(ctxY,'#6366f1','#a855f7');
+  chartByYear=new Chart(ctxY,{data:{labels:labelsY,datasets:[{type:'bar',label:'Publications',data:dataY,borderRadius:12,borderSkipped:false,backgroundColor:gradY},{type:'line',label:'Cumulative',data:growth,borderColor:'#14b8a6',borderWidth:3,fill:false,tension:0.3,pointRadius:0}]},
+    options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{position:'top'},shadowPlugin:{}},scales:{x:{grid:{display:false}},y:{beginAtZero:true,grid:{color:'#e2e8f0'}}}});
+  const ctxJ=document.getElementById('chartTopJournals')?.getContext('2d'); if(!ctxJ) return;
+  const agg=new Map(); for(const p of filtered){const j=(p.journal||'').trim(); if(!j) continue; const q=(p.quartile||'').toUpperCase(); const rec=agg.get(j)||{Q1:0,Q2:0,Q3:0,Q4:0,Unknown:0,total:0}; if(/^Q[1-4]$/.test(q)) rec[q]++; else rec.Unknown++; rec.total++; agg.set(j,rec); }
+  const top=Array.from(agg.entries()).sort((a,b)=>b[1].total-a[1].total).slice(0,10); const labelsJ=top.map(([j])=>j); const series=['Q1','Q2','Q3','Q4','Unknown']; const colors={Q1:'#16a34a',Q2:'#22c55e',Q3:'#84cc16',Q4:'#a3e635',Unknown:'#cbd5e1'};
+  const datasets=series.map(s=>({type:'bar',label:s,data:top.map(([,v])=>v[s]),backgroundColor:colors[s],borderRadius:12,borderSkipped:false}));
+  if(chartTopJournals) chartTopJournals.destroy();
+  chartTopJournals=new Chart(ctxJ,{data:{labels:labelsJ,datasets:datasets},options:{indexAxis:'y',responsive:true,maintainAspectRatio:false,plugins:{legend:{position:'top'},shadowPlugin:{},tooltip:{mode:'index',intersect:false}},scales:{x:{stacked:true,grid:{color:'#e2e8f0'},beginAtZero:true},y:{stacked:true,grid:{display:false}}}});
 
-  // Top Journals stacked by Quartile
-  const ctxJ = document.getElementById('chartTopJournals')?.getContext('2d'); if (!ctxJ) return;
-  const journalAgg = new Map();
-  for (const p of filtered){
-    const j = (p.journal||'').trim(); if (!j) continue;
-    const q = (p.quartile || '').toUpperCase() || 'Unknown';
-    const rec = journalAgg.get(j) || {Q1:0,Q2:0,Q3:0,Q4:0,Unknown:0,total:0};
-    if (q==='Q1'||q==='Q2'||q==='Q3'||q==='Q4'){ rec[q]++; } else { rec.Unknown++; }
-    rec.total++; journalAgg.set(j, rec);
-  }
-  const top = Array.from(journalAgg.entries()).sort((a,b)=>b[1].total - a[1].total).slice(0,10);
-  const labelsJ = top.map(([j])=>j);
-  const series = ['Q1','Q2','Q3','Q4','Unknown'];
-  const colors = {Q1:'#16a34a', Q2:'#22c55e', Q3:'#84cc16', Q4:'#a3e635', Unknown:'#cbd5e1'};
-  const datasetsJ = series.map(s=>({
-    type:'bar', label:s, data: top.map(([,v])=>v[s]),
-    backgroundColor: colors[s], borderRadius:12, borderSkipped:false
-  }));
-  if (chartTopJournals) chartTopJournals.destroy();
-  chartTopJournals = new Chart(ctxJ, {
-    data:{ labels:labelsJ, datasets:datasetsJ },
-    options:{
-      indexAxis:'y', responsive:true, maintainAspectRatio:false,
-      plugins:{ legend:{ position:'top' }, shadowPlugin:{}, tooltip:{ mode:'index', intersect:false } },
-      scales:{ x:{ stacked:true, grid:{ color:'#e2e8f0' }, beginAtZero:true },
-               y:{ stacked:true, grid:{ display:false } } }
-    },
-    plugins:[{id:'shadowPlugin'}]
-  });
-
-  // SDG donut (overview)
   renderSDGChart(false);
-
-  // Retraction donut
-  const ctxR = document.getElementById('chartRetract')?.getContext('2d'); if (!ctxR) return;
-  const notices  = filtered.filter(p=>p.retraction_notice).length;
-  const openalex = filtered.filter(p=>p.is_retracted).length;
-  const other = Math.max(0, filtered.length - (notices + openalex));
-  if (chartRetract) chartRetract.destroy();
-  chartRetract = new Chart(ctxR, {
-    type:'doughnut',
-    data:{ labels:['Notices','OpenAlex retracted','Other'],
-      datasets:[{ data:[notices, openalex, other], backgroundColor:['#f59e0b','#ef4444','#94a3b8'] }] },
-    options:{ responsive:true, maintainAspectRatio:false, cutout:'65%', centerText:String(filtered.length) },
-    plugins:[{id:'centerText'}]
-  });
+  const ctxR=document.getElementById('chartRetract')?.getContext('2d'); if(!ctxR) return;
+  const retracted=filtered.filter(p=>p.is_retracted||p.retraction_notice).length; const clean=Math.max(0,filtered.length-retracted);
+  const pct=filtered.length?Math.round((retracted*100)/filtered.length):0; if(chartRetract) chartRetract.destroy();
+  chartRetract=new Chart(ctxR,{type:'doughnut',data:{labels:['Retracted/Notices','Other'],datasets:[{data:[retracted,clean],backgroundColor:['#ef4444','#94a3b8']}]},options:{responsive:true,maintainAspectRatio:false,cutout:'65%',centerText:`${pct}%`}});
 }
 
-/* ---------------- SDG charts (overview + tab) ---------------- */
+/* ====== SDG charts ====== */
 function renderSDGChart(forTab=false){
-  const counts = new Array(18).fill(0);
-  for (const p of filtered){ for (const id of (p.sdg_tags||[])) counts[id]++; }
-  const labels = SDG_LIST.map(s=>`${s.id}`);
-  const data   = SDG_LIST.map(s=>counts[s.id]||0);
-  const colors = SDG_LIST.map(s=>SDG_COLORS[s.id]);
-
-  // Overview SDG donut
-  const ctxO = document.getElementById('chartSDG')?.getContext('2d'); if (ctxO){
-    const total = data.reduce((a,b)=>a+b,0);
-    if (chartSDG) chartSDG.destroy();
-    chartSDG = new Chart(ctxO, {
-      type:'doughnut',
-      data:{ labels, datasets:[{ data, backgroundColor:colors }] },
-      options:{ responsive:true, maintainAspectRatio:false, cutout:'65%', centerText: String(total) },
-      plugins:[{id:'centerText'}]
-    });
-  }
-
-  // SDG tab bar chart
-  if (forTab){
-    const ctxT = document.getElementById('chartSDG_tab')?.getContext('2d'); if (!ctxT) return;
-    if (chartSDG_tab) chartSDG_tab.destroy();
-    chartSDG_tab = new Chart(ctxT, {
-      type:'bar',
-      data:{ labels, datasets:[{ label:'Count', data, borderRadius:12, borderSkipped:false, backgroundColor:colors }] },
-      options:{
-        responsive:true, maintainAspectRatio:false,
-        plugins:{ legend:{display:false}, shadowPlugin:{}, tooltip:{mode:'index', intersect:false} },
-        scales:{ x:{ grid:{ display:false } }, y:{ grid:{ color:'#e2e8f0' }, beginAtZero:true } }
-      },
-      plugins:[{id:'shadowPlugin'}]
-    });
-  }
+  const counts=new Array(18).fill(0); for(const p of filtered){for(const id of (p.sdg_tags||[])) counts[id]++;}
+  const labels=SDG_LIST.map(s=>`${s.id}`), data=SDG_LIST.map(s=>counts[s.id]||0), colors=SDG_LIST.map(s=>SDG_COLORS[s.id]);
+  const ctxO=document.getElementById('chartSDG')?.getContext('2d'); if(ctxO){const total=data.reduce((a,b)=>a+b,0); if(chartSDG) chartSDG.destroy(); chartSDG=new Chart(ctxO,{type:'doughnut',data:{labels,datasets:[{data,backgroundColor:colors}]},options:{responsive:true,maintainAspectRatio:false,cutout:'65%',centerText:String(total)}});}
+  if(forTab){const ctxT=document.getElementById('chartSDG_tab')?.getContext('2d'); if(!ctxT) return; if(chartSDG_tab) chartSDG_tab.destroy();
+    chartSDG_tab=new Chart(ctxT,{type:'bar',data:{labels,datasets:[{label:'Count',data,borderRadius:12,borderSkipped:false,backgroundColor:colors}]},options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{display:false},shadowPlugin:{},tooltip:{mode:'index',intersect:false}},scales:{x:{grid:{display:false}},y:{grid:{color:'#e2e8f0'},beginAtZero:true}}}});}
 }
+function guessSDGs(p){const text=[(p.title||''),(p.journal||''),extractSubjects(p)].join(' ').toLowerCase(); const hits=[]; for(const s of SDG_LIST){for(const kw of s.kw){if(text.includes(kw.toLowerCase())){hits.push(s.id);break;}}} return Array.from(new Set(hits)).slice(0,2);}
+function renderSDGBadges(ids){if(!ids.length) return ''; return ids.map(id=>`<span class="badge" style="border-color:${SDG_COLORS[id]}">${id}</span>`).join(' ');}
+function buildSDGLegend(){const box=document.getElementById('sdgLegend'); if(!box) return; box.innerHTML=''; for(const s of SDG_LIST){box.insertAdjacentHTML('beforeend',`<span class="badge" title="${s.name}" style="border-color:${SDG_COLORS[s.id]}">${s.id} — ${s.name}</span>`);}}
 
-/* ---------------- SDG mapping ---------------- */
-function guessSDGs(p){
-  const text = [(p.title||''),(p.journal||''),extractSubjects(p)].join(' ').toLowerCase();
-  const hits=[]; for (const s of SDG_LIST){ for (const kw of s.kw){ if (text.includes(kw.toLowerCase())){ hits.push(s.id); break; } } }
-  return Array.from(new Set(hits)).slice(0,2); // max 2 tags
-}
-function renderSDGBadges(ids){
-  if (!ids.length) return '';
-  return ids.map(id=>`<span class="badge" style="border-color:${SDG_COLORS[id]}">${id}</span>`).join(' ');
-}
-function buildSDGLegend(){
-  const box=document.getElementById('sdgLegend'); if (!box) return;
-  box.innerHTML='';
-  for (const s of SDG_LIST){
-    box.insertAdjacentHTML('beforeend', `<span class="badge" title="${s.name}" style="border-color:${SDG_COLORS[s.id]}">${s.id} — ${s.name}</span>`);
-  }
-}
-
-/* ---------------- Quartiles (robust upload & map) ---------------- */
+/* ====== Quartiles upload & map ====== */
 document.getElementById('sjrFile')?.addEventListener('change', async (e)=>{
-  const file=e.target.files[0]; if(!file) return;
-  const name=file.name.toLowerCase(); const text=await file.text();
+  const file=e.target.files[0]; if(!file) return; const name=file.name.toLowerCase(); const text=await file.text();
   sjrByIssn.clear(); sjrByTitle.clear(); haveSJR=false;
   try{
-    if (name.endsWith('.json')) {
-      const arr=JSON.parse(text); for (const row of arr) addQuartileRow(row);
-    } else if (name.endsWith('.csv')){
-      parseFlexibleCSV(text, addQuartileRow);
-    } else { throw new Error('Unsupported file type'); }
-    haveSJR = (sjrByIssn.size + sjrByTitle.size) > 0;
-    document.getElementById('sjrStatus').textContent = `Loaded ${sjrByIssn.size} ISSN entries and ${sjrByTitle.size} title entries`;
-    applyFilters();
-    updateCoverage();
-  }catch(err){
-    document.getElementById('sjrStatus').textContent = 'Failed: ' + err.message;
-  }
+    if(name.endsWith('.json')){const arr=JSON.parse(text); for(const row of arr) addQuartileRow(row);}
+    else if(name.endsWith('.csv')){parseCSV(text,addQuartileRow);}
+    else throw new Error('Unsupported file type');
+    haveSJR=(sjrByIssn.size+sjrByTitle.size)>0;
+    document.getElementById('sjrStatus').textContent=`Loaded ${sjrByIssn.size} ISSN and ${sjrByTitle.size} title entries`;
+    applyFilters(); updateCoverage();
+  }catch(err){document.getElementById('sjrStatus').textContent='Failed: '+err.message;}
 });
-
-// Accept many header names and multiple ISSN columns
 function addQuartileRow(row){
-  const q = normQuartile(row.quartile || row['best quartile'] || row['sjr best quartile'] || row['sjr quartile'] || row['q'] || row['quartile (best)'] || row['quartiles'] || '');
-  const title = normTitle(row.title || row.journal || row['journal title'] || row['source title'] || '');
-  const issnCols = [
-    row.issn, row['issn '], row['eissn'], row['e-issn'], row['print issn'], row['p-issn'],
-    row['issn/eissn'], row['issn / e-issn'], row['issn / eissn'], row['issn print'], row['issn (print)'], row['issn (online)']
-  ];
-  const issns = (issnCols.filter(Boolean).join(',').split(/[;,/ ]+/)).map(normIssn).filter(Boolean);
-  if (q){
-    for (const code of issns){ sjrByIssn.set(code, q); }
-    if (title) sjrByTitle.set(title, q);
-  }
+  const q=normQuartile(row.quartile||row['SJR Best Quartile']||row.Quarter||row.Q||row.q||'');
+  const title=normTitle(row.title||row.Title||row.Journal||'');
+  const issn=normIssn(row.issn||row.ISSN||row['Issn']||row['eISSN']||row['Print ISSN']||'');
+  if(issn && q) sjrByIssn.set(issn,q); if(title && q) sjrByTitle.set(title,q);
 }
+function parseCSV(text,onRow){
+  const lines=text.split(/\r?\n/).filter(Boolean);
+  const sep = (lines[0].includes(';')? ';' : (lines[0].includes('\t')? '\t' : ','));
+  const header=lines.shift().split(sep).map(h=>h.trim().toLowerCase());
+  const idxTitle=header.findIndex(h=>/title|journal/.test(h));
+  const idxIssn =header.findIndex(h=>/issn/.test(h));
+  const idxQuart=header.findIndex(h=>/quartile|^q$|sjr/.test(h));
+  if(idxQuart<0 || (idxTitle<0 && idxIssn<0)) throw new Error('CSV needs Title/ISSN + Quartile columns');
+  for(const line of lines){const cols=splitCsv(line,sep); onRow({title:idxTitle>=0?cols[idxTitle]:'',issn:idxIssn>=0?cols[idxIssn]:'',quartile:idxQuart>=0?cols[idxQuart]:''});}
+}
+function splitCsv(line, sep){const out=[];let cur='',inQ=false;for(let i=0;i<line.length;i++){const ch=line[i]; if(ch==='\"'){inQ=!inQ;continue;} if(ch===sep && !inQ){out.push(cur.trim());cur='';continue;} cur+=ch;} out.push(cur.trim()); return out;}
+function resolveQuartile(p){const issns=(p.issns||[]).map(normIssn).filter(Boolean); for(const id of issns){if(sjrByIssn.has(id)) return sjrByIssn.get(id);} const t=normTitle(p.journal||''); if(t && sjrByTitle.has(t)) return sjrByTitle.get(t); return '';}
+function updateCoverage(){const el=document.getElementById('mapCoverage'); if(!el) return; let mapped=0,total=filtered.length; for(const p of filtered) if(p.quartile) mapped++; const pct=total?Math.round(mapped*100/total):0; el.textContent=`${mapped} / ${total} mapped (${pct}%)`;}
 
-// Flexible CSV parser: detects delimiter, handles quotes, BOM
-function parseFlexibleCSV(text, onRow){
-  const src = text.replace(/^\uFEFF/, '');
-  const firstLine = src.split(/\r?\n/)[0] || '';
-  const delim = (firstLine.split(';').length > firstLine.split(',').length)
-                 ? ';' : (firstLine.split('\t').length > firstLine.split(',').length ? '\t' : ',');
-  const lines = src.split(/\r?\n/).filter(l=>l.trim().length>0);
-  const header = splitCSVLine(lines.shift(), delim).map(h=>h.trim().toLowerCase());
-
-  for (const line of lines){
-    const cols = splitCSVLine(line, delim);
-    const row = {};
-    header.forEach((h,i)=> row[h]=cols[i] ?? '');
-    onRow(row);
-  }
-}
-function splitCSVLine(line, delim){
-  const out=[]; let cur=''; let inQ=false;
-  for (let i=0;i<line.length;i++){
-    const ch=line[i];
-    if (ch==='\"'){ const next=line[i+1]; if (next==='\"'){ cur+='\"'; i++; } else { inQ=!inQ; } continue; }
-    if (ch===delim && !inQ){ out.push(cur.trim()); cur=''; continue; }
-    cur+=ch;
-  }
-  out.push(cur.trim()); return out;
-}
-
-function resolveQuartile(p){
-  const issns=(p.issns||[]).map(normIssn).filter(Boolean);
-  for (const id of issns){ if (sjrByIssn.has(id)) return sjrByIssn.get(id); }
-  const t=normTitle(p.journal||''); if (t && sjrByTitle.has(t)) return sjrByTitle.get(t);
-  return '';
-}
-function updateCoverage(){
-  const el=document.getElementById('mapCoverage'); if (!el) return;
-  let mapped=0,total=filtered.length; for (const p of filtered) if (p.quartile) mapped++;
-  const pct= total? Math.round(mapped*100/total):0;
-  el.textContent = `${mapped} / ${total} in current view mapped (${pct}%)`;
-}
-
-/* ---------------- Retraction info rendering ---------------- */
+/* ====== Retraction info rendering ====== */
 function renderRetractionInfo(p){
-  const parts=[];
-  if (p.retraction_notice){
-    parts.push('<span class="badge" style="border-color:#f59e0b;background:#fff;color:#92400e">Retraction notice</span>');
-    if (p.retraction_of){
-      const t = esc(p.retraction_of.title || '');
-      const d = p.retraction_of.doi ? `<a href="https://doi.org/${p.retraction_of.doi}" target="_blank" rel="noopener">${esc(p.retraction_of.doi)}</a>` : '';
-      parts.push(`<div class="text-xs text-slate-600 mt-1">of: ${t} ${d}</div>`);
-    }
-  }
-  if (p.is_retracted){
-    parts.push('<span class="badge" style="border-color:#ef4444;background:#fff;color:#b91c1c">Retracted (OpenAlex)</span>');
-    if (p.retracted_by){
-      const t = esc(p.retracted_by.title || '');
-      const d = p.retracted_by.doi ? `<a href="https://doi.org/${p.retracted_by.doi}" target="_blank" rel="noopener">${esc(p.retracted_by.doi)}</a>` : '';
-      parts.push(`<div class="text-xs text-slate-600 mt-1">by: ${t} ${d}</div>`);
-    }
-  }
-  return parts.join(' ') || '';
+  const parts=[]; if(p.retraction_notice){parts.push('<span class="badge" style="border-color:#ef4444;color:#b91c1c">Retraction notice</span>');
+    if(p.retraction_of){const t=esc(p.retraction_of.title||''); const d=p.retraction_of.doi?` <a href="https://doi.org/${p.retraction_of.doi}" target="_blank" rel="noopener">${esc(p.retraction_of.doi)}</a>`:''; parts.push(`<div class="text-xs text-slate-600 mt-1">of: ${t}${d}</div>`);}}
+  if(p.is_retracted){parts.push('<span class="badge" style="border-color:#ef4444;color:#b91c1c">Retracted (OpenAlex)</span>');
+    if(p.retracted_by){const t=esc(p.retracted_by.title||''); const d=p.retracted_by.doi?` <a href="https://doi.org/${p.retracted_by.doi}" target="_blank" rel="noopener">${esc(p.retracted_by.doi)}</a>`:''; parts.push(`<div class="text-xs text-slate-600 mt-1">by: ${t}${d}</div>`);}}
+  return parts.join(' ')||'';
 }
 
-/* ---------------- Export ---------------- */
-function exportCSV(){
-  if (!filtered.length) return;
-  const start=(currentPage-1)*pageSize, end=Math.min(start+pageSize, filtered.length);
-  const rows = filtered.slice(start,end);
-  const header = selectedColumns.map(c=>c.label);
-  const csv = [header.join(',')].concat(
-    rows.map(r => selectedColumns.map(c => q(textForExport(c.key, r))).join(','))
-  ).join('\n');
-  downloadBlob('publications_view.csv', csv, 'text/csv');
-}
-function exportJSON(){
-  const start=(currentPage-1)*pageSize, end=Math.min(start+pageSize, filtered.length);
-  const rows = filtered.slice(start,end).map(r=>{
-    const obj={}; for (const c of selectedColumns){ obj[c.key] = rawForExport(c.key, r); } return obj;
-  });
-  downloadBlob('publications_view.json', JSON.stringify(rows,null,2), 'application/json');
-}
-function textForExport(key,p){
-  switch(key){
-    case 'authors': return getAffilAuthors(p).join('; ');
-    case 'issns':   return (p.issns||[]).join('; ');
-    case 'subjects':return extractSubjects(p);
-    case 'sdg_tags':return (p.sdg_tags||[]).join('; ');
-    case 'retraction_info': return stripHtml(renderRetractionInfo(p));
-    case 'is_retracted': return p.is_retracted ? 'Yes' : 'No';
-    default: return rawForExport(key, p) ?? '';
-  }
-}
-function rawForExport(key,p){
-  if (key==='subjects') return extractSubjects(p);
-  if (key==='retraction_info') return stripHtml(renderRetractionInfo(p));
-  return p[key];
-}
+/* ====== Export ====== */
+function exportCSV(){if(!filtered.length) return; const start=(currentPage-1)*pageSize, end=Math.min(start+pageSize,filtered.length);
+  const rows=filtered.slice(start,end); const header=selectedColumns.map(c=>c.label);
+  const csv=[header.join(',')].concat(rows.map(r=>selectedColumns.map(c=>q(textForExport(c.key,r))).join(','))).join('\n');
+  downloadBlob('publications_view.csv',csv,'text/csv');}
+function exportJSON(){const start=(currentPage-1)*pageSize, end=Math.min(start+pageSize,filtered.length);
+  const rows=filtered.slice(start,end).map(r=>{const o={}; for(const c of selectedColumns){o[c.key]=rawForExport(c.key,r);} return o;});
+  downloadBlob('publications_view.json',JSON.stringify(rows,null,2),'application/json');}
+function textForExport(key,p){switch(key){case 'authors': return getAffilAuthors(p).join('; '); case 'issns': return (p.issns||[]).join('; '); case 'subjects': return extractSubjects(p); case 'sdg_tags': return (p.sdg_tags||[]).join('; '); case 'retraction_info': return stripHtml(renderRetractionInfo(p)); case 'is_retracted': return p.is_retracted?'Yes':'No'; default: return rawForExport(key,p)??'';}}
+function rawForExport(key,p){if(key==='subjects') return extractSubjects(p); if(key==='retraction_info') return stripHtml(renderRetractionInfo(p)); return p[key];}
 
-/* ---------------- Narrative: animated canvas + story ---------------- */
-let narrRAF=null, narrNodes=[];
-function startCanvas(){
-  const canvas = document.getElementById('narrCanvas');
-  if (!canvas) return;
-  const ctx = canvas.getContext('2d');
-  const resize = ()=>{ canvas.width = canvas.clientWidth; canvas.height = 260; };
-  resize(); window.addEventListener('resize', resize);
+/* ====== Databases ====== */
+const DB_CATEGORIES_DEFAULT=[
+  {id:'gs',label:'GS',color:'#22d3ee'},{id:'scopus',label:'SCOPUS',color:'#f59e0b'},
+  {id:'wos',label:'WOS',color:'#a78bfa'},{id:'sci',label:'SCI',color:'#10b981'},
+  {id:'pubmed',label:'PUBMED',color:'#06b6d4'},{id:'ieee',label:'IEEE',color:'#f97316'},
+  {id:'abdc',label:'ABDC',color:'#ef4444'}
+];
+let DB_ORDER=loadDBOrder(); let DB_MAP=loadDBMap(); let DB_CATEGORIES=buildDbCategories();
+function buildDbCategories(){const cats=DB_CATEGORIES_DEFAULT.map(c=>({...c}));
+  for(const c of cats){if(c.id==='gs') c.detect=(p)=>true;
+    else if(c.id==='scopus') c.detect=(p)=>!!((p.quartile||'').match(/^Q[1-4]$/));
+    else if(c.id==='ieee') c.detect=(p)=>/IEEE/i.test(p.journal||'')||hasIssnIn('ieee',p);
+    else c.detect=(p)=>hasIssnIn(c.id,p);} return cats;}
+function hasIssnIn(dbid,p){const set=DB_MAP[dbid]; if(!set||!p.issns) return false; for(const x of p.issns){if(set.has(x)) return true;} return false;}
+function hIndex(cites){const a=cites.filter(x=>Number.isFinite(x)).map(x=>+x).sort((A,B)=>B-A);let h=0;for(let i=0;i<a.length;i++){if(a[i]>=i+1)h=i+1;else break;}return h;}
+function renderDatabases(){const grid=document.getElementById('dbGrid'); if(!grid) return;
+  const order=DB_ORDER.length?DB_ORDER:DB_CATEGORIES.map(c=>c.id); const catsById=new Map(DB_CATEGORIES.map(c=>[c.id,c]));
+  const counts=new Map(), hvals=new Map();
+  for(const id of order){const cat=catsById.get(id); if(!cat) continue; const items=filtered.filter(cat.detect); counts.set(id,items.length); hvals.set(id,hIndex(items.map(x=>x.citations||0)));}
+  grid.innerHTML=''; for(const id of order){const cat=catsById.get(id); if(!cat) continue;
+    const count=counts.get(id)||0; const h=hvals.get(id)||0; const card=document.createElement('div'); card.className='db-card'; card.setAttribute('draggable','true'); card.dataset.dbid=id;
+    card.innerHTML=`<div class="db-name"><span class="db-dot" style="background:${cat.color}"></span>${cat.label}</div>
+      <div class="db-value" style="color:${cat.color}">${num(count)}</div><div class="db-sub">h-index ${h}</div>`;
+    card.addEventListener('dragstart',onDbDragStart); card.addEventListener('dragover',onDbDragOver); card.addEventListener('drop',onDbDrop); card.addEventListener('dragend',onDbDragEnd);
+    grid.appendChild(card);}
+}
+let DB_DRAGGING_ID=null; function onDbDragStart(e){this.classList.add('dragging'); DB_DRAGGING_ID=this.dataset.dbid; e.dataTransfer.effectAllowed='move';}
+function onDbDragOver(e){e.preventDefault(); e.dataTransfer.dropEffect='move';}
+function onDbDrop(e){e.preventDefault();const from=DB_DRAGGING_ID,to=this.dataset.dbid; if(!from||!to||from===to) return;
+  const order=DB_ORDER.length?[...DB_ORDER]:DB_CATEGORIES.map(c=>c.id); const i=order.indexOf(from),j=order.indexOf(to); if(i<0||j<0) return; order.splice(i,1); order.splice(j,0,from); DB_ORDER=order; saveDBOrder(); renderDatabases();}
+function onDbDragEnd(){this.classList.remove('dragging'); DB_DRAGGING_ID=null;}
+function resetDatabaseOrder(){DB_ORDER=[]; saveDBOrder(); renderDatabases();}
+function saveDBOrder(){try{localStorage.setItem('db_order',JSON.stringify(DB_ORDER));}catch{}}
+function loadDBOrder(){try{const s=localStorage.getItem('db_order'); return s?JSON.parse(s):[];}catch{return [];}}
+function loadDBMap(){try{const s=localStorage.getItem('db_map'); if(!s) return {}; const raw=JSON.parse(s), out={}; for(const k of Object.keys(raw)){out[k]=new Set(raw[k]);} return out;}catch{return {};}}
+function saveDBMap(){try{const raw={}; for(const k of Object.keys(DB_MAP)){raw[k]=Array.from(DB_MAP[k]);} localStorage.setItem('db_map',JSON.stringify(raw));}catch{}}
+document.getElementById('dbMapFile')?.addEventListener('change', async (e)=>{
+  const f=e.target.files[0]; if(!f) return; const text=await f.text(); const lines=text.split(/\r?\n/).filter(Boolean); if(!lines.length){setDbStatus('Empty file.'); return;}
+  const sep=(lines[0].includes(';')? ';' : (lines[0].includes('\t')? '\t' : ',')); const head=lines.shift().split(sep).map(s=>s.trim().toLowerCase());
+  let idxDB=head.findIndex(h=>/db|database/.test(h)), idxISSN=head.findIndex(h=>/issn/.test(h)); if(idxDB<0||idxISSN<0){setDbStatus('CSV must contain "database" and "ISSN" columns.'); return;}
+  let added=0; for(const line of lines){const cols=splitGenericCSV(line,sep); const db=String(cols[idxDB]||'').trim().toLowerCase(); const issnRaw=String(cols[idxISSN]||'').trim(); if(!db||!issnRaw) continue;
+    const id=normalizeDbId(db); if(!id) continue; const issns=issnRaw.split(/[;,\s]+/).map(normIssn).filter(Boolean); if(!issns.length) continue; if(!DB_MAP[id]) DB_MAP[id]=new Set(); for(const x of issns){DB_MAP[id].add(x); added++;}}
+  saveDBMap(); DB_CATEGORIES=buildDbCategories(); renderDatabases(); setDbStatus(`Loaded ${num(added)} ISSN links across ${Object.keys(DB_MAP).length} databases.`); e.target.value='';});
+function setDbStatus(t){const el=document.getElementById('dbMapStatus'); if(el) el.textContent=t||'';}
+function splitGenericCSV(line,sep){const out=[];let cur='',inQ=false;for(let i=0;i<line.length;i++){const ch=line[i]; if(ch=='"'){inQ=!inQ;continue;} if(ch===sep&&!inQ){out.push(cur);cur='';continue;} cur+=ch;} out.push(cur); return out.map(s=>s.trim());}
+function normalizeDbId(s){s=s.toLowerCase(); if(/^gs|google/.test(s))return 'gs'; if(/scopus|sjr/.test(s))return 'scopus'; if(/wos|web\s*of\s*science/.test(s))return 'wos'; if(/^sci$|science\s*citation/.test(s))return 'sci'; if(/pubmed|medline/.test(s))return 'pubmed'; if(/ieee/.test(s))return 'ieee'; if(/abdc/.test(s))return 'abdc'; return null;}
 
-  const N = 80; narrNodes = [];
-  for (let i=0;i<N;i++){
-    narrNodes.push({
-      x: Math.random()*canvas.width,
-      y: Math.random()*canvas.height,
-      vx: (Math.random()-.5)*0.6,
-      vy: (Math.random()-.5)*0.6
-    });
-  }
-  const draw = ()=>{
-    ctx.clearRect(0,0,canvas.width,canvas.height);
-    for (let i=0;i<N;i++){
-      const a=narrNodes[i];
-      for (let j=i+1;j<N;j++){
-        const b=narrNodes[j]; const dx=a.x-b.x, dy=a.y-b.y; const d=Math.hypot(dx,dy);
-        if (d<120){
-          ctx.strokeStyle = `rgba(99,102,241,${(120-d)/240})`;
-          ctx.lineWidth = 1; ctx.beginPath(); ctx.moveTo(a.x,a.y); ctx.lineTo(b.x,b.y); ctx.stroke();
-        }
-      }
-    }
-    for (const p of narrNodes){
-      p.x+=p.vx; p.y+=p.vy;
-      if (p.x<0||p.x>canvas.width) p.vx*=-1;
-      if (p.y<0||p.y>canvas.height) p.vy*=-1;
-      ctx.fillStyle='rgba(56,189,248,.9)';
-      ctx.beginPath(); ctx.arc(p.x,p.y,2,0,6.283); ctx.fill();
-    }
-    narrRAF = requestAnimationFrame(draw);
-  };
-  cancelAnimationFrame(narrRAF); draw();
+/* ====== Narrative ====== */
+function renderNarrative(){
+  const box=document.getElementById('narrativeBox'); if(!box) return;
+  const total=filtered.length; const years=[...new Set(filtered.map(x=>x.year).filter(Boolean))].sort((a,b)=>a-b); const startY=years[0]||'—', endY=years[years.length-1]||'—';
+  const cites=filtered.reduce((a,b)=>a+(b.citations||0),0); const retractions=filtered.filter(x=>x.is_retracted||x.retraction_notice).length;
+  const bySdg=new Map(); for(const p of filtered){for(const id of (p.sdg_tags||[])){bySdg.set(id,(bySdg.get(id)||0)+1);}} const sdgTop=[...bySdg.entries()].sort((a,b)=>b[1]-a[1]).slice(0,2).map(([id,c])=>`${id} (${c})`).join(', ')||'—';
+  box.innerHTML=`
+  <p>Inside the command center, the wall of holographic panes hums to life. A digital globe rotates slowly, speckled with nodes where research has landed. Between <strong>${startY}</strong> and <strong>${endY}</strong>, our mission launched <strong>${num(total)}</strong> signals—each a publication—fanning out like orbital trajectories.</p>
+  <p>On the left, a bar array climbs year by year while a neon line threads across—cumulative output rising like altitude. Journals align as stacked vectors by quartile; SDGs arc into a luminous ring—today’s strongest beacons: <strong>${sdgTop}</strong>. Downlink counters flicker: <strong>${num(cites)}</strong> citations received.</p>
+  <p>Retraction sentinels sweep for anomalies—${num(retractions)} markers flare, each linked to a corrective maneuver. UPES authors are highlighted on every track, their signatures etched in the telemetry.</p>
+  <p>As filters adjust, the holograms recompose—routes recalc, clusters regroup, impact ripples shift. The mission continues—precise, adaptive, brilliantly lit by data.</p>`;
 }
 
-// typewriter story
-let storyTimer=null;
-function stopStory(){ clearInterval(storyTimer); storyTimer=null; document.getElementById('narrativeBox').innerHTML=''; }
-function playStory(){
-  stopStory();
-  const total = filtered.length;
-  const years = [...new Set(filtered.map(x=>x.year).filter(Boolean))].sort((a,b)=>a-b);
-  const startY = years[0] || '—', endY = years[years.length-1] || '—';
-  const cites = filtered.reduce((a,b)=>a+(b.citations||0),0);
-  const retractions = filtered.filter(x=>x.is_retracted || x.retraction_notice).length;
-  const bySdg = new Map();
-  for (const p of filtered){ for (const id of (p.sdg_tags||[])){ bySdg.set(id, (bySdg.get(id)||0)+1); } }
-  const sdgTop = [...bySdg.entries()].sort((a,b)=>b[1]-a[1]).slice(0,2)
-                    .map(([id,c])=>`${id} (${c})`).join(', ') || '—';
-
-  const scenes = [
-    `The holo wall wakes. A digital globe spins—nodes pulsing where research lands.\nBetween ${startY} and ${endY}, we launched ${num(total)} signals (publications).`,
-    `Bars climb year by year while a neon line rises—the cumulative trajectory.\nQuartile bands align by journal; SDG vectors peak at: ${sdgTop}.`,
-    `Downlink counters flicker: ${num(cites)} citations received.\nRetraction sentinels flag ${retractions} events and their notices.`,
-    `UPES-affiliated authors glow on each orbit.\nAdjust any filter and the hologram recomposes instantly—mission path updated.`
-  ];
-
-  const box = document.getElementById('narrativeBox');
-  let ix=0, pos=0; box.innerHTML='';
-  storyTimer = setInterval(()=>{
-    if (ix>=scenes.length){ clearInterval(storyTimer); storyTimer=null; return; }
-    const line = scenes[ix];
-    box.innerHTML = scenes.slice(0,ix).map(s=>`<div class="type-line">${esc(s)}</div>`).join('');
-    box.insertAdjacentHTML('beforeend', `<div class="type-line">${esc(line.slice(0,pos))}<span class="opacity-50">▌</span></div>`);
-    pos++;
-    if (pos>line.length){ ix++; pos=0; }
-  }, 25);
-}
-
-/* ---------------- Utils ---------------- */
-function esc(s){ return String(s).replace(/[&<>"']/g, m=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m])); }
-function q(s){ return `"${String(s).replace(/"/g,'""')}"`; }
-function downloadBlob(name, content, type){ const blob=new Blob([content],{type}); const a=document.createElement('a'); a.href=URL.createObjectURL(blob); a.download=name; a.click(); URL.revokeObjectURL(a.href); }
-function num(n){ return (n||0).toLocaleString(); }
-function normTitle(t){ return String(t||'').toLowerCase().replace(/\s+/g,' ').trim(); }
-function normIssn(s){ const x=String(s||'').replace(/[^0-9xX]/g,'').toUpperCase(); return x.length===8? x.slice(0,4)+'-'+x.slice(4): (x.length===7? x.slice(0,3)+'-'+x.slice(3): ''); }
-function normQuartile(q){ const s=String(q||'').toUpperCase().trim(); const m=s.match(/Q\s*([1-4])/i); return m? `Q${m[1]}` : (/^Q[1-4]$/.test(s)? s : ''); }
-function extractSubjects(p){
-  if (Array.isArray(p.subjects) && p.subjects.length) return p.subjects.slice(0,3).join(', ');
-  if (Array.isArray(p.concepts) && p.concepts.length){
-    const arr = p.concepts.map(c=>c.display_name||c.name||'').filter(Boolean).slice(0,3); return arr.join(', ');
-  }
-  return '';
-}
-function stripHtml(html){ const d=document.createElement('div'); d.innerHTML=html; return d.textContent||d.innerText||''; }
-
-// Close dropdown on outside click
-document.addEventListener('click', (e)=>{
-  const panel=document.getElementById('columnsPanel'); const btn=document.getElementById('colBtn');
-  if (!panel || panel.classList.contains('hidden')) return;
-  if (!panel.contains(e.target) && !btn.contains(e.target)) panel.classList.add('hidden');
-});
-
-// Init
-document.addEventListener('DOMContentLoaded', ()=>{ buildSDGLegend(); autoLoad(); });
+/* ====== Utils ====== */
+function esc(s){return String(s).replace(/[&<>"']/g,m=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m]));}
+function q(s){return `"${String(s).replace(/"/g,'""')}"`;}
+function downloadBlob(name,content,type){const blob=new Blob([content],{type}); const a=document.createElement('a'); a.href=URL.createObjectURL(blob); a.download=name; a.click(); URL.revokeObjectURL(a.href);}
+function num(n){return (n||0).toLocaleString();}
+function normTitle(t){return String(t||'').toLowerCase().replace(/\s+/g,' ').trim();}
+function normIssn(s){const x=String(s||'').replace(/[^0-9xX]/g,'').toUpperCase(); return x.length===8?x.slice(0,4)+'-'+x.slice(4):(x.length===7?x.slice(0,3)+'-'+x.slice(3):'');}
+function normQuartile(q){const s=String(q||'').toUpperCase().trim(); return /^Q[1-4]$/.test(s)?s:'';}
+function extractSubjects(p){if(Array.isArray(p.subjects)&&p.subjects.length) return p.subjects.slice(0,3).join(', '); if(Array.isArray(p.concepts)&&p.concepts.length){const arr=p.concepts.map(c=>c.display_name||c.name||'').filter(Boolean).slice(0,3); return arr.join(', ');} return '';}
+function stripHtml(html){const d=document.createElement('div'); d.innerHTML=html; return d.textContent||d.innerText||'';}
+document.addEventListener('click',(e)=>{const panel=document.getElementById('columnsPanel'); const btn=document.getElementById('colBtn'); if(!panel||panel.classList.contains('hidden')) return; if(!panel.contains(e.target)&&!btn.contains(e.target)) panel.classList.add('hidden');});
+document.addEventListener('DOMContentLoaded',()=>{buildSDGLegend(); autoLoad();});
 </script>
 </body>
 </html>
