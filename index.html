@@ -78,14 +78,28 @@
           </div>
           <div class="mt-2 h-[280px]"><canvas id="chartByYear"></canvas></div>
         </div>
+
+        <!-- NEW combined chart -->
         <div class="card p-4">
-          <h3 class="font-semibold">Top Journals (view)</h3>
-          <div class="mt-2 h-[280px]"><canvas id="chartTopJournals"></canvas></div>
+          <h3 class="font-semibold">Top Journals — Quartiles & Citations (view)</h3>
+          <div class="mt-2 h-[320px]"><canvas id="chartTopJournalsQC"></canvas></div>
+          <div class="text-xs text-slate-500 mt-2">
+            Bars: counts split by Q1–Q4 · Line: total citations per journal · Items without quartile are ignored in split.
+          </div>
+        </div>
+      </div>
+
+      <!-- NEW Journal metric chart -->
+      <div class="card p-4">
+        <h3 class="font-semibold">Journal Impact (IF or SJR)</h3>
+        <div class="mt-2 h-[320px]"><canvas id="chartJournalMetric"></canvas></div>
+        <div class="text-xs text-slate-500 mt-2">
+          Uses <strong>Impact Factor (JIF)</strong> from your upload when present; otherwise falls back to <strong>SJR</strong>.
         </div>
       </div>
     </section>
 
-    <!-- PUBLICATIONS -->
+    <!-- PUBLICATIONS (unchanged layout, but keep features) -->
     <section id="view-publications" class="hidden space-y-4">
       <div class="card p-4">
         <div class="flex flex-wrap items-end gap-3">
@@ -95,7 +109,6 @@
                    placeholder="Title / author / journal / DOI" oninput="applyFilters(1)"/>
           </div>
 
-          <!-- Year range -->
           <div>
             <label class="block text-xs font-medium text-slate-600">Year (from)</label>
             <select id="yearFrom" class="px-3 py-2 rounded-xl border border-slate-300 text-sm" onchange="applyFilters(1)">
@@ -119,7 +132,6 @@
             </select>
           </div>
 
-          <!-- SDG -->
           <div>
             <label class="block text-xs font-medium text-slate-600">SDG</label>
             <select id="sdgFilter" class="px-3 py-2 rounded-xl border border-slate-300 text-sm" onchange="applyFilters(1)">
@@ -212,7 +224,7 @@
           <div>
             <h3 class="font-semibold">Quartile Mapping</h3>
             <p class="text-xs text-slate-500">
-              Upload SJR quartiles as <code>.csv</code> (Title/ISSN/Quartile) or <code>.json</code>.
+              Upload SJR quartiles as <code>.csv</code> (Title/ISSN/Quartile [+ SJR/IF optional]) or <code>.json</code>.
             </p>
           </div>
           <div class="flex items-center gap-2">
@@ -295,25 +307,27 @@
   let currentPage = 1;
   let pageSize = 50;
 
-  // Home institution recognizer (used for "Home authors" only; not shown)
+  // Home institution (for "Home authors" column only; not displayed)
   const HOME_ROR = "04q2jes40";
   const HOME_KEYWORDS = ['university of petroleum','energy studies','upes'];
 
   // Types
-  const selectedTypes = new Set(); // normalized keys
-  let knownTypes = [];             // [{key,label,count}, …]
+  const selectedTypes = new Set();
+  let knownTypes = [];
 
-  // Quartiles
-  const sjrByIssn = new Map();
-  const sjrByTitle = new Map();
+  // Quartiles & metrics
+  const sjrByIssn = new Map();      // issn -> 'Q1'..'Q4'
+  const sjrByTitle = new Map();     // norm title -> 'Q1'..'Q4'
+  const sjrMetaByIssn = new Map();  // issn -> {q,sjr,if}
+  const sjrMetaByTitle = new Map(); // norm title -> {q,sjr,if}
   let haveSJR = false;
 
-  // Columns (default)
+  // Columns
   const ALL_COLUMNS = [
     { key:'year',          label:'Year',           default:true },
     { key:'title',         label:'Title',          default:true },
     { key:'journal',       label:'Journal',        default:true },
-    { key:'home_authors',  label:'Home authors',   default:true },   // NEW
+    { key:'home_authors',  label:'Home authors',   default:true },
     { key:'authors',       label:'Authors',        default:false },
     { key:'citations',     label:'Citations',      default:true },
     { key:'quartile',      label:'Quartile',       default:true },
@@ -329,27 +343,27 @@
   let selectedColumns = loadSelectedColumns();
 
   // Charts
-  let chartByYear=null, chartTopJournals=null, chartSDG=null;
+  let chartByYear=null, chartTopJournalsQC=null, chartJournalMetric=null, chartSDG=null;
 
   // SDGs
   const SDG_LIST = [
-    { id:1,  name:'No Poverty',                   kw:['poverty','low-income','income inequality'] },
-    { id:2,  name:'Zero Hunger',                  kw:['hunger','food security','malnutrition','agriculture','crop','farm'] },
-    { id:3,  name:'Good Health & Well-being',     kw:['health','disease','medicine','mental','epidemic','pandemic','hospital','clinical'] },
-    { id:4,  name:'Quality Education',            kw:['education','school','teaching','learning','curriculum','literacy','students'] },
-    { id:5,  name:'Gender Equality',              kw:['gender','women','female','girls','violence against women','equality'] },
-    { id:6,  name:'Clean Water & Sanitation',     kw:['water','sanitation','wastewater','drinking water','hygiene'] },
-    { id:7,  name:'Affordable & Clean Energy',    kw:['energy','renewable','solar','wind','battery','hydrogen'] },
-    { id:8,  name:'Decent Work & Economic Growth',kw:['employment','workforce','productivity','economy','growth','entrepreneur'] },
+    { id:1,  name:'No Poverty', kw:['poverty','low-income','income inequality'] },
+    { id:2,  name:'Zero Hunger', kw:['hunger','food security','malnutrition','agriculture','crop','farm'] },
+    { id:3,  name:'Good Health & Well-being', kw:['health','disease','medicine','mental','epidemic','pandemic','hospital','clinical'] },
+    { id:4,  name:'Quality Education', kw:['education','school','teaching','learning','curriculum','literacy','students'] },
+    { id:5,  name:'Gender Equality', kw:['gender','women','female','girls','violence against women','equality'] },
+    { id:6,  name:'Clean Water & Sanitation', kw:['water','sanitation','wastewater','drinking water','hygiene'] },
+    { id:7,  name:'Affordable & Clean Energy', kw:['energy','renewable','solar','wind','battery','hydrogen'] },
+    { id:8,  name:'Decent Work & Economic Growth', kw:['employment','workforce','productivity','economy','growth','entrepreneur'] },
     { id:9,  name:'Industry, Innovation & Infrastructure', kw:['industry','manufacturing','infrastructure','innovation','iot','robotics','blockchain'] },
-    { id:10, name:'Reduced Inequalities',         kw:['inequality','social justice','marginalized','inclusion'] },
+    { id:10, name:'Reduced Inequalities', kw:['inequality','social justice','marginalized','inclusion'] },
     { id:11, name:'Sustainable Cities & Communities', kw:['urban','smart city','transport','housing','resilience','disaster'] },
     { id:12, name:'Responsible Consumption & Production', kw:['circular economy','sustainability','recycling','waste','lifecycle','supply chain'] },
-    { id:13, name:'Climate Action',               kw:['climate','carbon','ghg','emission','adaptation','mitigation','global warming'] },
-    { id:14, name:'Life Below Water',             kw:['marine','ocean','sea','fisheries','aquatic','coral'] },
-    { id:15, name:'Life on Land',                 kw:['biodiversity','forest','wildlife','ecosystem','soil','land use'] },
+    { id:13, name:'Climate Action', kw:['climate','carbon','ghg','emission','adaptation','mitigation','global warming'] },
+    { id:14, name:'Life Below Water', kw:['marine','ocean','sea','fisheries','aquatic','coral'] },
+    { id:15, name:'Life on Land', kw:['biodiversity','forest','wildlife','ecosystem','soil','land use'] },
     { id:16, name:'Peace, Justice & Strong Institutions', kw:['governance','policy','corruption','crime','justice','conflict'] },
-    { id:17, name:'Partnerships for the Goals',   kw:['partnership','collaboration','sdg','stakeholder','international'] },
+    { id:17, name:'Partnerships for the Goals', kw:['partnership','collaboration','sdg','stakeholder','international'] },
   ];
   const SDG_COLORS = {1:'#E5243B',2:'#DDA63A',3:'#4C9F38',4:'#C5192D',5:'#FF3A21',6:'#26BDE2',7:'#FCC30B',8:'#A21942',9:'#FD6925',10:'#DD1367',11:'#FD9D24',12:'#BF8B2E',13:'#3F7E44',14:'#0A97D9',15:'#56C02B',16:'#00689D',17:'#19486A'};
 
@@ -382,7 +396,6 @@
 
       all = Array.isArray(j.items) ? j.items : [];
 
-      // Derive authors & home authors
       for (const p of all){
         if (!Array.isArray(p.authors)) p.authors = deriveAuthors(p);
         p.home_authors = deriveHomeAuthors(p);
@@ -399,10 +412,10 @@
       document.getElementById('yearFrom').innerHTML = opts(years);
       document.getElementById('yearTo').innerHTML   = opts(years);
 
-      // SDG options (fix)
+      // SDG options
       buildSDGOptions();
 
-      // Types (for multi-select)
+      // Types
       computeKnownTypes();
       buildTypePanel();
 
@@ -483,7 +496,6 @@
   /* --------------- Type multi-select --------------- */
   function normalizeType(t){
     const s=String(t||'').toLowerCase();
-    // map a few common aliases to tidy keys
     if (s==='journal-article') return 'article';
     if (s.includes('proceed')) return 'proceedings-article';
     if (s.startsWith('book'))  return 'book';
@@ -583,7 +595,7 @@
 
     if (goToPage===1) currentPage = 1;
     renderTable();
-    renderOverviewCharts();
+    renderOverviewCharts();   // <- updates new charts too
     renderSDGChart();
     updateCoverage();
   }
@@ -695,28 +707,136 @@
       plugins:[{id:'shadowPlugin'}]
     });
 
-    // Top Journals
-    const ctxJ = document.getElementById('chartTopJournals').getContext('2d');
-    const counts={}; for (const p of filtered){ const j=(p.journal||'').trim(); if (j) counts[j]=(counts[j]||0)+1; }
-    const top = Object.entries(counts).sort((a,b)=>b[1]-a[1]).slice(0,10);
-    const labelsJ = top.map(x=>x[0]);
-    const dataJ   = top.map(x=>x[1]);
-    if (chartTopJournals) chartTopJournals.destroy();
-    const gradJ = gradientHorizontal(ctxJ, '#14b8a6', '#06b6d4');
+    // NEW: Top journals — quartile split + citations
+    renderTopJournalsQC();
 
-    chartTopJournals = new Chart(ctxJ, {
+    // NEW: Journal metric (IF/SJR)
+    renderJournalMetric();
+  }
+
+  function renderTopJournalsQC(){
+    const ctx = document.getElementById('chartTopJournalsQC').getContext('2d');
+
+    // aggregate
+    const byJournal = new Map();
+    for (const p of filtered){
+      const j=(p.journal||'').trim(); if (!j) continue;
+      const o = byJournal.get(j) || {total:0, q1:0,q2:0,q3:0,q4:0, cites:0, issns:new Set()};
+      o.total++;
+      const q = quartileOf(p);
+      if (q==='Q1') o.q1++;
+      else if (q==='Q2') o.q2++;
+      else if (q==='Q3') o.q3++;
+      else if (q==='Q4') o.q4++;
+      o.cites += Number(p.citations||0);
+      (p.issns||[]).forEach(x=>o.issns.add(normIssn(x)));
+      byJournal.set(j,o);
+    }
+    const top = [...byJournal.entries()].sort((a,b)=>b[1].total-a[1].total).slice(0,12);
+    const labels = top.map(([j])=>j);
+    const q1 = top.map(([,o])=>o.q1);
+    const q2 = top.map(([,o])=>o.q2);
+    const q3 = top.map(([,o])=>o.q3);
+    const q4 = top.map(([,o])=>o.q4);
+    const cites = top.map(([,o])=>o.cites);
+
+    if (chartTopJournalsQC) chartTopJournalsQC.destroy();
+
+    chartTopJournalsQC = new Chart(ctx, {
       type:'bar',
-      data:{ labels:labelsJ, datasets:[{ label:'Count', data:dataJ, borderRadius:12, borderSkipped:false, backgroundColor:gradJ }] },
-      options:{
-        indexAxis:'y', responsive:true, maintainAspectRatio:false,
-        plugins:{ legend:{display:false}, shadowPlugin:{}, tooltip:{mode:'nearest', intersect:false} },
-        scales:{ x:{ grid:{ color:'#e2e8f0' }, ticks:{ color:'#334155' }, beginAtZero:true },
-                 y:{ grid:{ display:false }, ticks:{ color:'#334155' } } }
+      data:{
+        labels,
+        datasets:[
+          { label:'Q1', data:q1, backgroundColor:'#16a34a', stack:'q' },
+          { label:'Q2', data:q2, backgroundColor:'#3b82f6', stack:'q' },
+          { label:'Q3', data:q3, backgroundColor:'#f59e0b', stack:'q' },
+          { label:'Q4', data:q4, backgroundColor:'#ef4444', stack:'q' },
+          { label:'Citations', type:'line', data:cites, yAxisID:'y1',
+            borderColor:'#334155', pointBackgroundColor:'#334155', borderWidth:2, tension:.25 }
+        ]
       },
-      plugins:[{id:'shadowPlugin'}]
+      options:{
+        responsive:true, maintainAspectRatio:false,
+        plugins:{
+          legend:{ position:'top' },
+          tooltip:{ callbacks:{
+            afterLabel:(ctx)=>{
+              const j = labels[ctx.dataIndex];
+              const meta = metricForJournal(j, top[ctx.dataIndex][1].issns);
+              return meta ? `Metric: ${meta.kind} ${meta.value}` : '';
+            }
+          }},
+          shadowPlugin:{}
+        },
+        scales:{
+          x:{ stacked:true, ticks:{ color:'#334155' }, grid:{ display:false } },
+          y:{ stacked:true, beginAtZero:true, ticks:{ color:'#334155' }, grid:{ color:'#e2e8f0' } },
+          y1:{ position:'right', beginAtZero:true, ticks:{ color:'#334155' }, grid:{ drawOnChartArea:false } }
+        }
+      }
     });
   }
 
+  function renderJournalMetric(){
+    const ctx = document.getElementById('chartJournalMetric').getContext('2d');
+
+    // Build metrics per journal (prefer IF, otherwise SJR)
+    const byJournal = new Map();
+    for (const p of filtered){
+      const j=(p.journal||'').trim(); if (!j) continue;
+      const o = byJournal.get(j) || {issns:new Set(), metric:null};
+      (p.issns||[]).forEach(x=>o.issns.add(normIssn(x)));
+      byJournal.set(j,o);
+    }
+
+    const rows=[];
+    for (const [j,o] of byJournal.entries()){
+      const meta = metricForJournal(j, o.issns);
+      if (meta && meta.value>0) rows.push({journal:j, value:meta.value, kind:meta.kind});
+    }
+    rows.sort((a,b)=>b.value-a.value);
+    const top = rows.slice(0,12);
+
+    if (chartJournalMetric) chartJournalMetric.destroy();
+
+    const labels = top.map(r=>r.journal);
+    const data   = top.map(r=>r.value);
+    const kinds  = top.map(r=>r.kind);
+
+    const grad = gradientHorizontal(ctx, '#14b8a6', '#06b6d4');
+    chartJournalMetric = new Chart(ctx, {
+      type:'bar',
+      data:{ labels, datasets:[{ label:'IF/SJR', data, borderRadius:12, borderSkipped:false, backgroundColor:grad }] },
+      options:{
+        indexAxis:'y', responsive:true, maintainAspectRatio:false,
+        plugins:{ legend:{display:false}, shadowPlugin:{}, tooltip:{ callbacks:{
+          label: (ctx)=> `${kinds[ctx.dataIndex]}: ${ctx.parsed.x}`
+        }}},
+        scales:{ x:{ beginAtZero:true, grid:{ color:'#e2e8f0' }, ticks:{ color:'#334155' } },
+                 y:{ grid:{ display:false }, ticks:{ color:'#334155' } } }
+      }
+    });
+  }
+
+  function quartileOf(p){ return p.quartile || resolveQuartile(p) || ''; }
+
+  function metricForJournal(journal, issnSet){
+    // Prefer IF; else SJR. Try ISSNs first, then title.
+    let best=null;
+    const add = (rec)=>{
+      if (!rec) return;
+      const value = parseNum(rec.if) || parseNum(rec.sjr);
+      const kind  = parseNum(rec.if) ? 'IF' : (parseNum(rec.sjr) ? 'SJR' : '');
+      if (value && (!best || value>best.value)) best={value,kind};
+    };
+    if (issnSet){
+      for (const id of issnSet){ add(sjrMetaByIssn.get(id)); }
+    }
+    add(sjrMetaByTitle.get(normTitle(journal)));
+    return best;
+  }
+
+  /* --------------- SDG chart --------------- */
   function renderSDGChart(){
     const ctx = document.getElementById('chartSDG').getContext('2d');
     const counts = new Array(18).fill(0);
@@ -734,8 +854,7 @@
         plugins:{ legend:{display:false}, shadowPlugin:{}, tooltip:{mode:'index', intersect:false} },
         scales:{ x:{ grid:{ display:false }, ticks:{ color:'#334155' } },
                  y:{ grid:{ color:'#e2e8f0' }, ticks:{ color:'#334155' }, beginAtZero:true } }
-      },
-      plugins:[{id:'shadowPlugin'}]
+      }
     });
   }
 
@@ -756,11 +875,11 @@
     }
   }
 
-  /* --------------- Quartiles (upload & map) --------------- */
+  /* --------------- Quartile & metric upload --------------- */
   document.getElementById('sjrFile').addEventListener('change', async (e)=>{
     const file=e.target.files[0]; if(!file) return;
     const name=file.name.toLowerCase(); const text=await file.text();
-    sjrByIssn.clear(); sjrByTitle.clear(); haveSJR=false;
+    sjrByIssn.clear(); sjrByTitle.clear(); sjrMetaByIssn.clear(); sjrMetaByTitle.clear(); haveSJR=false;
     try{
       if (name.endsWith('.json')) {
         const arr=JSON.parse(text); for (const row of arr) addQuartileRow(row);
@@ -782,11 +901,16 @@
     const title = normTitle(row.title || row.Title || row['Source title'] || row.Journal || '');
     const issnCell = row.issn || row.ISSN || row['ISSN / e-ISSN'] || row['ISSN print'] || row['ISSN (print)'] || row['ISSN/eISSN'] || '';
     const issns = extractIssns(issnCell);
-    if (q){
-      if (issns.length){ for (const id of issns) sjrByIssn.set(id, q); }
-      if (title) sjrByTitle.set(title, q);
-    }
+    const sjr = parseNum(row.SJR || row['SJR indicator'] || row['SJR (2024)'] || row['SJR (2023)'] || '');
+    const jif = parseNum(row['Impact Factor'] || row['JIF'] || row['Journal Impact Factor'] || '');
+
+    const meta = { q, sjr: sjr || null, if: jif || null };
+
+    if (q){ if (issns.length){ for (const id of issns) sjrByIssn.set(id, q); } if (title) sjrByTitle.set(title, q); }
+    if (issns.length){ for (const id of issns) sjrMetaByIssn.set(id, meta); }
+    if (title) sjrMetaByTitle.set(title, meta);
   }
+
   function parseCSV(text, onRow){
     const lines=text.split(/\r?\n/).filter(l=>l.trim().length>0);
     if (!lines.length) throw new Error('Empty CSV');
@@ -796,14 +920,21 @@
     const idxTitle = findIndex(header, h => /^(title|journal|source\s*title)$/i.test(h));
     const idxIssn  = findIndex(header, h => /issn/i.test(h));
     const idxQuart = findIndex(header, h => /(quartile|best\s*quartile|sjr\s*best\s*quartile|^q$)/i.test(h));
-    if (idxQuart<0 || (idxTitle<0 && idxIssn<0)) throw new Error('Could not find Title/ISSN and Quartile columns');
+    // we don't require metric columns; optional
+    if (idxQuart<0 && idxTitle<0 && idxIssn<0) throw new Error('Could not find basic columns');
     for (const line of lines){
       const cols = smartSplit(line, delim);
-      onRow({ title: idxTitle>=0?cols[idxTitle]:'', issn: idxIssn>=0?cols[idxIssn]:'', quartile: idxQuart>=0?cols[idxQuart]:'' });
+      onRow({
+        title: idxTitle>=0?cols[idxTitle]:'', issn: idxIssn>=0?cols[idxIssn]:'', quartile: idxQuart>=0?cols[idxQuart]:'',
+        // pass whole row for metric sniffing
+        SJR: grab(header, cols, /^(sjr|sjr indicator|\bsjr \(\d{4}\))/i),
+        'Impact Factor': grab(header, cols, /^(impact\s*factor|jif|journal impact factor)$/i)
+      });
     }
   }
   function smartSplit(line, delim){ const out=[]; let cur=''; let inQ=false; for (let i=0;i<line.length;i++){ const ch=line[i]; if (ch==='\"'){ inQ=!inQ; continue; } if (ch===delim && !inQ){ out.push(cur.trim()); cur=''; continue; } cur+=ch; } out.push(cur.trim()); return out; }
   function findIndex(arr, pred){ for (let i=0;i<arr.length;i++){ if (pred(arr[i])) return i; } return -1; }
+  function grab(header, cols, rx){ const i=header.findIndex(h=>rx.test(h)); return i>=0?cols[i]:''; }
   function extractIssns(cell){ const parts=String(cell||'').split(/[\/,;|\s]+/).map(normIssn).filter(Boolean); return [...new Set(parts)]; }
   function resolveQuartile(p){
     const issns=(p.issns||[]).map(normIssn).filter(Boolean);
@@ -812,7 +943,7 @@
     return '';
   }
   function updateCoverage(){
-    let mapped=0,total=filtered.length; for (const p of filtered) if (p.quartile || resolveQuartile(p)) mapped++;
+    let mapped=0,total=filtered.length; for (const p of filtered) if (quartileOf(p)) mapped++;
     const pct= total? Math.round(mapped*100/total):0;
     const el=document.getElementById('mapCoverage'); if (el) el.textContent = `${mapped} / ${total} in current view mapped (${pct}%)`;
   }
@@ -903,6 +1034,7 @@
     return '';
   }
   function stripHtml(html){ const d=document.createElement('div'); d.innerHTML=html; return d.textContent||d.innerText||''; }
+  function parseNum(v){ const m=String(v||'').replace(/,/g,'').match(/-?\d+(\.\d+)?/); return m?parseFloat(m[0]):null; }
 
   // Close dropdowns on outside click
   document.addEventListener('click', (e)=>{
