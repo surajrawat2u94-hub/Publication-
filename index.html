@@ -95,7 +95,7 @@
                    placeholder="Title / author / journal / DOI" oninput="applyFilters(1)"/>
           </div>
 
-          <!-- NEW: Year range (From / To). Leave blank for All years -->
+          <!-- Year range -->
           <div>
             <label class="block text-xs font-medium text-slate-600">Year (from)</label>
             <select id="yearFrom" class="px-3 py-2 rounded-xl border border-slate-300 text-sm" onchange="applyFilters(1)">
@@ -190,8 +190,8 @@
           <div>
             <h3 class="font-semibold">Quartile Mapping</h3>
             <p class="text-xs text-slate-500">
-              Upload SJR quartiles as <code>.csv</code> (columns: Title, ISSN, Quartile) or <code>.json</code>
-              (array with <code>title</code>/<code>issn</code>/<code>quartile</code>).
+              Upload SJR quartiles as <code>.csv</code> (Title/ISSN/Quartile) or <code>.json</code> (array of objects with <code>title</code>/<code>issn</code>/<code>quartile</code>).
+              Real SCImago headers like <em>SJR Best Quartile</em> and <em>ISSN / e-ISSN</em> are supported.
             </p>
           </div>
           <div class="flex items-center gap-2">
@@ -247,7 +247,7 @@
 <script>
   lucide.createIcons();
 
-  /* ---------------- Chart.js style helpers ---------------- */
+  /* -------- Chart.js style helpers -------- */
   Chart.defaults.font.family = "'Inter', system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial";
   Chart.defaults.plugins.tooltip.backgroundColor = '#0f172a';
   Chart.defaults.plugins.tooltip.borderColor = '#334155';
@@ -333,7 +333,17 @@
   ];
   const SDG_COLORS = {1:'#E5243B',2:'#DDA63A',3:'#4C9F38',4:'#C5192D',5:'#FF3A21',6:'#26BDE2',7:'#FCC30B',8:'#A21942',9:'#FD6925',10:'#DD1367',11:'#FD9D24',12:'#BF8B2E',13:'#3F7E44',14:'#0A97D9',15:'#56C02B',16:'#00689D',17:'#19486A'};
 
-  const RETRACT_PREFIXES = [/^retraction\s*note\s*:/i,/^retraction\s*of\s*:/i,/^retraction\s*:/i,/^notice\s+of\s+retraction\s*:/i,/^withdrawn\s*:/i];
+  // Retraction: expanded prefix list (start-of-title)
+  const RETRACT_PREFIXES = [
+    /^retraction\s*note\s*:/i,
+    /^retraction\s*of\s*:/i,
+    /^retraction\s*:/i,
+    /^notice\s+of\s+retraction\s*:/i,
+    /^withdrawn\s*:/i,
+    /^retracted\s+paper\s*:/i,
+    /^retracted\s+article\s*:/i,
+    /^article\s+retracted\s*:/i
+  ];
   const DOI_REGEX = /\b(10\.\d{4,9}\/\S+)\b/i;
 
   /* ---------------- Tabs ---------------- */
@@ -361,6 +371,11 @@
 
       all = Array.isArray(j.items) ? j.items : [];
 
+      // in case some JSON already contains authors array, keep it; otherwise derive on the fly
+      for (const p of all){
+        if (!Array.isArray(p.authors)) p.authors = deriveAuthors(p);
+      }
+
       // retraction links + SDGs
       buildRetractionIndex(all);
       for (const p of all) p.sdg_tags = guessSDGs(p);
@@ -375,16 +390,35 @@
       fromSel.innerHTML = opts(years);
       toSel.innerHTML   = opts(years);
 
-      // default page size
       pageSize = parseInt(document.getElementById('pageSize').value,10) || 50;
 
       buildColumnsPanel();
       buildSDGLegend();
-      applyFilters(1); // default: all years (both blank)
+      applyFilters(1); // default: all years
     }catch(e){
       document.getElementById('lastSynced').textContent = 'Error: '+e.message;
       console.error(e);
     }
+  }
+
+  /* --------- Authors (derived) --------- */
+  function deriveAuthors(p){
+    const out=[];
+    if (Array.isArray(p.authorships)){
+      for (const a of p.authorships){
+        const name =
+          (a && a.author && a.author.display_name) ||
+          (a && a.author && a.author.display_name_normalized) ||
+          a?.display_name ||
+          null;
+        if (name) out.push(String(name));
+      }
+    }
+    // Fallback if some data ships a plain "authors" string
+    if (!out.length && typeof p.authors === 'string' && p.authors.trim()){
+      return p.authors.split(/[,;]\s*/).filter(Boolean);
+    }
+    return out;
   }
 
   function buildRetractionIndex(items){
@@ -439,7 +473,7 @@
       else if (retractMode === 'only_retracted'){ if (!p.is_retracted) return false; }
       else if (retractMode === 'only_notices'){ if (!p.retraction_notice) return false; }
       if (q){
-        const hay = [p.title||'',p.journal||'',p.doi||'',...(p.authors||[])].join(' ').toLowerCase();
+        const hay = [p.title||'',p.journal||'',p.doi||'',...(Array.isArray(p.authors)?p.authors:deriveAuthors(p))].join(' ').toLowerCase();
         if (!hay.includes(q)) return false;
       }
       return true;
@@ -476,6 +510,7 @@
 
     const body=document.getElementById('pubBody'); body.innerHTML='';
     for (const p of rows){
+      if (!Array.isArray(p.authors) || !p.authors.length) p.authors = deriveAuthors(p);
       const tds = selectedColumns.map(col=>`<td class="px-4 py-2">${renderCell(col.key,p)}</td>`).join('');
       const tr=document.createElement('tr'); tr.className='border-b border-slate-100 hover:bg-slate-50'; tr.innerHTML=tds; body.appendChild(tr);
     }
@@ -491,7 +526,7 @@
       case 'year': return p.year ?? '';
       case 'title': return p.url ? `<a class="text-indigo-600 hover:underline" href="${p.url}" target="_blank">${esc(p.title||'')}</a>` : esc(p.title||'');
       case 'journal': return esc(p.journal||'');
-      case 'authors': return esc((p.authors||[]).join(', '));
+      case 'authors': return esc((Array.isArray(p.authors)?p.authors:deriveAuthors(p)).join(', '));
       case 'citations': return p.citations ?? 0;
       case 'quartile': return esc(p.quartile || '');
       case 'retraction_info': return renderRetractionInfo(p);
@@ -627,44 +662,79 @@
     const name=file.name.toLowerCase(); const text=await file.text();
     sjrByIssn.clear(); sjrByTitle.clear(); haveSJR=false;
     try{
-      if (name.endsWith('.json')) { const arr=JSON.parse(text); for (const row of arr) addQuartileRow(row); }
-      else if (name.endsWith('.csv')){ parseCSV(text, addQuartileRow); }
-      else { throw new Error('Unsupported file type'); }
+      if (name.endsWith('.json')) {
+        const arr=JSON.parse(text); for (const row of arr) addQuartileRow(row);
+      } else if (name.endsWith('.csv')){
+        parseCSV(text, addQuartileRow);
+      } else { throw new Error('Unsupported file type'); }
       haveSJR = (sjrByIssn.size + sjrByTitle.size) > 0;
-      document.getElementById('sjrStatus').textContent = `Loaded ${sjrByIssn.size} ISSN entries and ${sjrByTitle.size} title entries`;
+      document.getElementById('sjrStatus').textContent =
+        `Loaded ${sjrByIssn.size} ISSN entries and ${sjrByTitle.size} title entries`;
       applyFilters();
       updateCoverage();
-    }catch(err){ document.getElementById('sjrStatus').textContent = 'Failed: ' + err.message; }
+    }catch(err){
+      document.getElementById('sjrStatus').textContent = 'Failed: ' + err.message;
+    }
   });
 
   function addQuartileRow(row){
-    const q = normQuartile(row.quartile || row.Quarter || row.Q || row.q || '');
-    const title = normTitle(row.title || row.Title || row.Journal || '');
-    const issn  = normIssn (row.issn  || row.ISSN  || row.issn_print || row.ISSN_print || '');
-    if (issn && q)  sjrByIssn.set(issn, q);
-    if (title && q) sjrByTitle.set(title, q);
-  }
-  function parseCSV(text, onRow){
-    const lines=text.split(/\r?\n/).filter(Boolean);
-    const header=lines.shift().split(',').map(h=>h.trim().toLowerCase());
-    const idxTitle=header.findIndex(h=>/title|journal/.test(h));
-    const idxIssn =header.findIndex(h=>/issn/.test(h));
-    const idxQuart=header.findIndex(h=>/quartile|q$/.test(h));
-    if (idxQuart<0 || (idxTitle<0 && idxIssn<0)) throw new Error('CSV must include Title/ISSN and Quartile columns');
-    for (const line of lines){
-      const cols=splitCsv(line);
-      onRow({ title: idxTitle>=0?cols[idxTitle]:'', issn: idxIssn>=0?cols[idxIssn]:'', quartile: idxQuart>=0?cols[idxQuart]:'' });
+    const q = normQuartile(row.quartile || row['SJR Best Quartile'] || row['Best Quartile'] || row.Quarter || row.Q || row.q || '');
+    const title = normTitle(row.title || row.Title || row['Source title'] || row.Journal || '');
+    const issnCell = row.issn || row.ISSN || row['ISSN / e-ISSN'] || row['ISSN print'] || row['ISSN (print)'] || row['ISSN/eISSN'] || '';
+    const issns = extractIssns(issnCell);
+    if (q){
+      if (issns.length){ for (const id of issns) sjrByIssn.set(id, q); }
+      if (title) sjrByTitle.set(title, q);
     }
   }
-  function splitCsv(line){
+
+  // auto delimiter + tolerant header matching
+  function parseCSV(text, onRow){
+    const lines=text.split(/\r?\n/).filter(l=>l.trim().length>0);
+    if (!lines.length) throw new Error('Empty CSV');
+    const hdrRaw = lines.shift();
+    const delim = chooseDelimiter(hdrRaw);
+    const header = smartSplit(hdrRaw, delim).map(h=>h.trim());
+
+    const idxTitle = findIndex(header, h => /^(title|journal|source\s*title)$/i.test(h));
+    const idxIssn  = findIndex(header, h => /issn/i.test(h));
+    const idxQuart = findIndex(header, h => /(quartile|best\s*quartile|sjr\s*best\s*quartile|^q$)/i.test(h));
+
+    if (idxQuart<0 || (idxTitle<0 && idxIssn<0))
+      throw new Error('Could not find Title/ISSN and Quartile columns');
+
+    for (const line of lines){
+      const cols = smartSplit(line, delim);
+      onRow({
+        title:    idxTitle>=0? cols[idxTitle] : '',
+        issn:     idxIssn >=0? cols[idxIssn]  : '',
+        quartile: idxQuart>=0? cols[idxQuart] : ''
+      });
+    }
+  }
+  function chooseDelimiter(headerLine){
+    const c = (headerLine.match(/,/g)||[]).length;
+    const s = (headerLine.match(/;/g)||[]).length;
+    return s>c ? ';' : ',';
+  }
+  function smartSplit(line, delim){
     const out=[]; let cur=''; let inQ=false;
     for (let i=0;i<line.length;i++){
       const ch=line[i];
       if (ch==='\"'){ inQ=!inQ; continue; }
-      if (ch===',' && !inQ){ out.push(cur.trim()); cur=''; continue; }
+      if (ch===delim && !inQ){ out.push(cur.trim()); cur=''; continue; }
       cur+=ch;
     }
     out.push(cur.trim()); return out;
+  }
+  function findIndex(arr, pred){
+    for (let i=0;i<arr.length;i++){ if (pred(arr[i])) return i; }
+    return -1;
+  }
+  function extractIssns(cell){
+    const raw = String(cell||'');
+    const parts = raw.split(/[\/,;|\s]+/).map(x=>normIssn(x)).filter(Boolean);
+    return [...new Set(parts)];
   }
   function resolveQuartile(p){
     const issns=(p.issns||[]).map(normIssn).filter(Boolean);
@@ -673,7 +743,7 @@
     return '';
   }
   function updateCoverage(){
-    let mapped=0,total=filtered.length; for (const p of filtered) if (p.quartile) mapped++;
+    let mapped=0,total=filtered.length; for (const p of filtered){ if (p.quartile || resolveQuartile(p)) mapped++; }
     const pct= total? Math.round(mapped*100/total):0;
     const el=document.getElementById('mapCoverage'); if (el) el.textContent = `${mapped} / ${total} in current view mapped (${pct}%)`;
   }
@@ -700,7 +770,7 @@
     return parts.join(' ') || '';
   }
 
-  /* --------------- Export (NOW exports ALL rows in the filtered range) --------------- */
+  /* --------------- Export (ALL filtered rows) --------------- */
   function exportCSV(){
     if (!filtered.length) return;
     const fileSuffix = buildRangeSuffix();
@@ -728,7 +798,7 @@
   }
   function textForExport(key,p){
     switch(key){
-      case 'authors': return (p.authors||[]).join('; ');
+      case 'authors': return (Array.isArray(p.authors)?p.authors:deriveAuthors(p)).join('; ');
       case 'issns':   return (p.issns||[]).join('; ');
       case 'subjects':return extractSubjects(p);
       case 'sdg_tags':return (p.sdg_tags||[]).join('; ');
@@ -740,6 +810,7 @@
   function rawForExport(key,p){
     if (key==='subjects') return extractSubjects(p);
     if (key==='retraction_info') return stripHtml(renderRetractionInfo(p));
+    if (key==='authors') return Array.isArray(p.authors)?p.authors:deriveAuthors(p);
     return p[key];
   }
 
@@ -749,8 +820,16 @@
   function downloadBlob(name, content, type){ const blob=new Blob([content],{type}); const a=document.createElement('a'); a.href=URL.createObjectURL(blob); a.download=name; a.click(); URL.revokeObjectURL(a.href); }
   function num(n){ return (n||0).toLocaleString(); }
   function normTitle(t){ return String(t||'').toLowerCase().replace(/\s+/g,' ').trim(); }
-  function normIssn(s){ const x=String(s||'').replace(/[^0-9xX]/g,'').toUpperCase(); return x.length===8? x.slice(0,4)+'-'+x.slice(4): (x.length===7? x.slice(0,3)+'-'+x.slice(3): ''); }
-  function normQuartile(q){ const s=String(q||'').toUpperCase().trim(); return /^Q[1-4]$/.test(s)? s : ''; }
+  function normIssn(s){
+    const x=String(s||'').replace(/[^0-9xX]/g,'').toUpperCase();
+    const eight = x.length===8 ? x : (x.length===7 ? '0'+x : '');
+    return eight ? (eight.slice(0,4)+'-'+eight.slice(4)) : '';
+  }
+  function normQuartile(q){
+    const s=String(q||'').toUpperCase();
+    const m = s.match(/Q([1-4])/);
+    return m ? `Q${m[1]}` : '';
+  }
   function extractSubjects(p){
     if (Array.isArray(p.subjects) && p.subjects.length) return p.subjects.slice(0,3).join(', ');
     if (Array.isArray(p.concepts) && p.concepts.length){
@@ -760,6 +839,7 @@
   }
   function stripHtml(html){ const d=document.createElement('div'); d.innerHTML=html; return d.textContent||d.innerText||''; }
 
+  // Close dropdown on outside click
   document.addEventListener('click', (e)=>{
     const panel=document.getElementById('columnsPanel'); const btn=document.getElementById('colBtn');
     if (!panel || panel.classList.contains('hidden')) return;
