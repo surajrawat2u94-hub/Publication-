@@ -798,6 +798,7 @@
     });
   }
 
+  /* ---------- DECLUTTERED IF CHARTS (Top bar + Sampled bubble) ---------- */
   function renderIFCharts(){
     // Build IF per journal
     const byJournal = new Map();
@@ -834,25 +835,64 @@
       });
     }
 
-    // Bubble (IF vs count, bubble ~ citations)
+    // Bubble (IF vs pubs) — decluttered
     const ctxB = document.getElementById('chartIFBubble').getContext('2d');
     if (chartIFBubble) chartIFBubble.destroy();
     document.getElementById('ifBubNote').textContent = rows.length ? '' : 'No IF data found in your uploaded file.';
+    if (!rows.length) return;
 
-    if (rows.length){
-      const pts = rows.sort((a,b)=>b.cites-a.cites).slice(0,50).map(r=>({x:r.ifv,y:r.count,r:Math.max(4,Math.sqrt(r.cites)||4), label:r.journal}));
-      chartIFBubble = new Chart(ctxB, {
-        type:'bubble',
-        data:{ datasets:[{ label:'Journals', data:pts, backgroundColor:'rgba(20,184,166,.25)', borderColor:clr.teal }] },
-        options:{
-          responsive:true, maintainAspectRatio:false, plugins:{ legend:{display:false}, shadowPlugin:{}, tooltip:{ callbacks:{
-            label:(ctx)=> `${ctx.raw.label} — IF ${ctx.raw.x}, pubs ${ctx.raw.y}, cites ${Math.round(ctx.raw.r*ctx.raw.r)}`
-          }}},
-          scales:{ x:{ title:{display:true, text:'Impact Factor (IF)'}, grid:{ color:'#e2e8f0' }, ticks:{ color:'#334155' } },
-                   y:{ title:{display:true, text:'Publications (view)'}, grid:{ color:'#e2e8f0' }, ticks:{ color:'#334155' }, beginAtZero:true } }
+    // Smart sampling: keep top by pubs, IF, cites (dedup, ~<=36)
+    const pick = (arr, key, n)=>[...arr].sort((a,b)=>b[key]-a[key]).slice(0,n);
+    const bag = new Map();
+    for (const r of [...pick(rows,'count',16), ...pick(rows,'ifv',10), ...pick(rows,'cites',10)]) bag.set(r.journal, r);
+    const kept = [...bag.values()];
+
+    // Axis suggestions (95th percentile to trim long tails)
+    const q = (arr, p)=>{
+      if (!arr.length) return 0;
+      const s=[...arr].sort((a,b)=>a-b);
+      const i=Math.min(s.length-1, Math.max(0, Math.floor(p*(s.length-1))));
+      return s[i];
+    };
+    const ifs = kept.map(r=>r.ifv);
+    const pubs = kept.map(r=>r.count);
+    const q95x = q(ifs,.95);
+    const q95y = q(pubs,.95);
+
+    // Bubble radius scaling 6–26 px by citations
+    const cites = kept.map(r=>r.cites);
+    const cMin = Math.min(...cites), cMax = Math.max(...cites);
+    const rMin=6, rMax=26, span=Math.max(1, cMax-cMin);
+    const R = c => rMin + ((c - cMin)/span)*(rMax - rMin);
+
+    const pts = kept.map(r=>({x:r.ifv, y:r.count, r:R(r.cites), label:r.journal, cites:r.cites}));
+
+    chartIFBubble = new Chart(ctxB, {
+      type:'bubble',
+      data:{ datasets:[{
+        label:'Journals',
+        data:pts,
+        backgroundColor:'rgba(20,184,166,.18)',
+        borderColor:clr.teal,
+        borderWidth:1,
+        hoverBackgroundColor:'rgba(20,184,166,.28)'
+      }]},
+      options:{
+        responsive:true, maintainAspectRatio:false,
+        plugins:{
+          legend:{display:false}, shadowPlugin:{},
+          tooltip:{ callbacks:{ label:(c)=>`${c.raw.label} — IF ${c.raw.x}, pubs ${c.raw.y}, cites ${c.raw.cites}` } }
+        },
+        scales:{
+          x:{ title:{display:true, text:'Impact Factor (IF)'},
+              grid:{ color:'#e2e8f0' }, ticks:{ color:'#334155' },
+              min:0, suggestedMax:Math.max(q95x,5) },
+          y:{ title:{display:true, text:'Publications (view)'},
+              grid:{ color:'#e2e8f0' }, ticks:{ color:'#334155' },
+              beginAtZero:true, suggestedMax:Math.max(q95y,5) }
         }
-      });
-    }
+      }
+    });
   }
 
   function renderTypesYear(){
@@ -1025,7 +1065,7 @@
     const issnCell = row.issn || row.ISSN || row['ISSN / e-ISSN'] || row['ISSN print'] || row['ISSN (print)'] || row['ISSN/eISSN'] || '';
     const issns = extractIssns(issnCell);
 
-    // IF — accept lots of labels (parseCSV already maps the detected column to "Impact Factor", but we add backups)
+    // IF — accept lots of labels
     const IFval = row['Impact Factor'] ||
                   row['Impact factor'] ||
                   row['ImpactFactor'] ||
@@ -1048,7 +1088,7 @@
 
   /* ====== PATCHED: parseCSV (more forgiving IF header detection) ====== */
   function parseCSV(text, onRow){
-    const lines = text.split(/\r?\n/).filter(l => l.trim().length > 0);
+    const lines = text split(/\r?\n/).filter(l => l.trim().length > 0);
     if (!lines.length) throw new Error('Empty CSV');
 
     const hdrRaw = lines.shift();
@@ -1059,7 +1099,7 @@
     const idxIssn  = findIndex(header, h => /issn/i.test(h));
     const idxQuart = findIndex(header, h => /(quartile|best\s*quartile|sjr\s*best\s*quartile|^q$|jif\s*quartile)/i.test(h));
 
-    // IF column detection: Impact Factor, JCR Impact Factor, JIF (any year), IF
+    // IF column detection
     let idxIF = -1;
     for (let i = 0; i < header.length; i++){
       const hl = header[i].toLowerCase();
@@ -1124,7 +1164,7 @@
     const fileSuffix = buildRangeSuffix();
     const header = selectedColumns.map(c=>c.label);
     const csv = [header.join(',')].concat(
-      filtered.map(r => selectedColumns.map(c => q(textForExport(c.key, r))).join(','))  // export ALL filtered rows
+      filtered.map(r => selectedColumns.map(c => q(textForExport(c.key, r))).join(','))
     ).join('\n');
     downloadBlob(`publications_${fileSuffix}.csv`, csv, 'text/csv');
   }
