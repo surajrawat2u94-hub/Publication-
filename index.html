@@ -79,7 +79,7 @@
           <div class="mt-2 h-[280px]"><canvas id="chartByYear"></canvas></div>
         </div>
 
-        <!-- NEW combined chart -->
+        <!-- Combined chart -->
         <div class="card p-4">
           <h3 class="font-semibold">Top Journals — Quartiles & Citations (view)</h3>
           <div class="mt-2 h-[320px]"><canvas id="chartTopJournalsQC"></canvas></div>
@@ -89,17 +89,17 @@
         </div>
       </div>
 
-      <!-- NEW Journal metric chart -->
+      <!-- Impact Factor only -->
       <div class="card p-4">
-        <h3 class="font-semibold">Journal Impact (IF or SJR)</h3>
+        <h3 class="font-semibold">Journal Impact (Impact Factor only)</h3>
         <div class="mt-2 h-[320px]"><canvas id="chartJournalMetric"></canvas></div>
         <div class="text-xs text-slate-500 mt-2">
-          Uses <strong>Impact Factor (JIF)</strong> from your upload when present; otherwise falls back to <strong>SJR</strong>.
+          Uses <strong>Impact Factor (JIF)</strong> from your upload only. Journals with no IF in the file are omitted.
         </div>
       </div>
     </section>
 
-    <!-- PUBLICATIONS (unchanged layout, but keep features) -->
+    <!-- PUBLICATIONS -->
     <section id="view-publications" class="hidden space-y-4">
       <div class="card p-4">
         <div class="flex flex-wrap items-end gap-3">
@@ -224,7 +224,7 @@
           <div>
             <h3 class="font-semibold">Quartile Mapping</h3>
             <p class="text-xs text-slate-500">
-              Upload SJR quartiles as <code>.csv</code> (Title/ISSN/Quartile [+ SJR/IF optional]) or <code>.json</code>.
+              Upload SJR quartiles as <code>.csv</code> (Title/ISSN/Quartile [+ Impact Factor optional]) or <code>.json</code>.
             </p>
           </div>
           <div class="flex items-center gap-2">
@@ -307,7 +307,7 @@
   let currentPage = 1;
   let pageSize = 50;
 
-  // Home institution (for "Home authors" column only; not displayed)
+  // Home institution (for "Home authors")
   const HOME_ROR = "04q2jes40";
   const HOME_KEYWORDS = ['university of petroleum','energy studies','upes'];
 
@@ -315,11 +315,11 @@
   const selectedTypes = new Set();
   let knownTypes = [];
 
-  // Quartiles & metrics
+  // Quartiles & IF meta
   const sjrByIssn = new Map();      // issn -> 'Q1'..'Q4'
   const sjrByTitle = new Map();     // norm title -> 'Q1'..'Q4'
-  const sjrMetaByIssn = new Map();  // issn -> {q,sjr,if}
-  const sjrMetaByTitle = new Map(); // norm title -> {q,sjr,if}
+  const sjrMetaByIssn = new Map();  // issn -> {q, if}
+  const sjrMetaByTitle = new Map(); // norm title -> {q, if}
   let haveSJR = false;
 
   // Columns
@@ -595,7 +595,7 @@
 
     if (goToPage===1) currentPage = 1;
     renderTable();
-    renderOverviewCharts();   // <- updates new charts too
+    renderOverviewCharts();
     renderSDGChart();
     updateCoverage();
   }
@@ -707,10 +707,10 @@
       plugins:[{id:'shadowPlugin'}]
     });
 
-    // NEW: Top journals — quartile split + citations
+    // Top journals — quartile split + citations
     renderTopJournalsQC();
 
-    // NEW: Journal metric (IF/SJR)
+    // Journal Impact (IF only)
     renderJournalMetric();
   }
 
@@ -762,8 +762,8 @@
           tooltip:{ callbacks:{
             afterLabel:(ctx)=>{
               const j = labels[ctx.dataIndex];
-              const meta = metricForJournal(j, top[ctx.dataIndex][1].issns);
-              return meta ? `Metric: ${meta.kind} ${meta.value}` : '';
+              const meta = metricIFForJournal(j, top[ctx.dataIndex][1].issns);
+              return meta ? `IF: ${meta.value}` : '';
             }
           }},
           shadowPlugin:{}
@@ -780,19 +780,19 @@
   function renderJournalMetric(){
     const ctx = document.getElementById('chartJournalMetric').getContext('2d');
 
-    // Build metrics per journal (prefer IF, otherwise SJR)
+    // Build IF per journal (ISSN first, then title)
     const byJournal = new Map();
     for (const p of filtered){
       const j=(p.journal||'').trim(); if (!j) continue;
-      const o = byJournal.get(j) || {issns:new Set(), metric:null};
+      const o = byJournal.get(j) || {issns:new Set()};
       (p.issns||[]).forEach(x=>o.issns.add(normIssn(x)));
       byJournal.set(j,o);
     }
 
     const rows=[];
     for (const [j,o] of byJournal.entries()){
-      const meta = metricForJournal(j, o.issns);
-      if (meta && meta.value>0) rows.push({journal:j, value:meta.value, kind:meta.kind});
+      const meta = metricIFForJournal(j, o.issns);
+      if (meta && meta.value>0) rows.push({journal:j, value:meta.value});
     }
     rows.sort((a,b)=>b.value-a.value);
     const top = rows.slice(0,12);
@@ -801,16 +801,15 @@
 
     const labels = top.map(r=>r.journal);
     const data   = top.map(r=>r.value);
-    const kinds  = top.map(r=>r.kind);
 
     const grad = gradientHorizontal(ctx, '#14b8a6', '#06b6d4');
     chartJournalMetric = new Chart(ctx, {
       type:'bar',
-      data:{ labels, datasets:[{ label:'IF/SJR', data, borderRadius:12, borderSkipped:false, backgroundColor:grad }] },
+      data:{ labels, datasets:[{ label:'Impact Factor (IF)', data, borderRadius:12, borderSkipped:false, backgroundColor:grad }] },
       options:{
         indexAxis:'y', responsive:true, maintainAspectRatio:false,
         plugins:{ legend:{display:false}, shadowPlugin:{}, tooltip:{ callbacks:{
-          label: (ctx)=> `${kinds[ctx.dataIndex]}: ${ctx.parsed.x}`
+          label: (ctx)=> `IF: ${ctx.parsed.x}`
         }}},
         scales:{ x:{ beginAtZero:true, grid:{ color:'#e2e8f0' }, ticks:{ color:'#334155' } },
                  y:{ grid:{ display:false }, ticks:{ color:'#334155' } } }
@@ -820,18 +819,15 @@
 
   function quartileOf(p){ return p.quartile || resolveQuartile(p) || ''; }
 
-  function metricForJournal(journal, issnSet){
-    // Prefer IF; else SJR. Try ISSNs first, then title.
+  // IF-only helper (ignore SJR completely)
+  function metricIFForJournal(journal, issnSet){
     let best=null;
     const add = (rec)=>{
       if (!rec) return;
-      const value = parseNum(rec.if) || parseNum(rec.sjr);
-      const kind  = parseNum(rec.if) ? 'IF' : (parseNum(rec.sjr) ? 'SJR' : '');
-      if (value && (!best || value>best.value)) best={value,kind};
+      const value = parseNum(rec.if);
+      if (value && (!best || value>best.value)) best={value};
     };
-    if (issnSet){
-      for (const id of issnSet){ add(sjrMetaByIssn.get(id)); }
-    }
+    if (issnSet){ for (const id of issnSet){ add(sjrMetaByIssn.get(id)); } }
     add(sjrMetaByTitle.get(normTitle(journal)));
     return best;
   }
@@ -875,7 +871,7 @@
     }
   }
 
-  /* --------------- Quartile & metric upload --------------- */
+  /* --------------- Quartile & IF upload --------------- */
   document.getElementById('sjrFile').addEventListener('change', async (e)=>{
     const file=e.target.files[0]; if(!file) return;
     const name=file.name.toLowerCase(); const text=await file.text();
@@ -901,10 +897,9 @@
     const title = normTitle(row.title || row.Title || row['Source title'] || row.Journal || '');
     const issnCell = row.issn || row.ISSN || row['ISSN / e-ISSN'] || row['ISSN print'] || row['ISSN (print)'] || row['ISSN/eISSN'] || '';
     const issns = extractIssns(issnCell);
-    const sjr = parseNum(row.SJR || row['SJR indicator'] || row['SJR (2024)'] || row['SJR (2023)'] || '');
     const jif = parseNum(row['Impact Factor'] || row['JIF'] || row['Journal Impact Factor'] || '');
 
-    const meta = { q, sjr: sjr || null, if: jif || null };
+    const meta = { q, if: jif || null };
 
     if (q){ if (issns.length){ for (const id of issns) sjrByIssn.set(id, q); } if (title) sjrByTitle.set(title, q); }
     if (issns.length){ for (const id of issns) sjrMetaByIssn.set(id, meta); }
@@ -920,14 +915,11 @@
     const idxTitle = findIndex(header, h => /^(title|journal|source\s*title)$/i.test(h));
     const idxIssn  = findIndex(header, h => /issn/i.test(h));
     const idxQuart = findIndex(header, h => /(quartile|best\s*quartile|sjr\s*best\s*quartile|^q$)/i.test(h));
-    // we don't require metric columns; optional
     if (idxQuart<0 && idxTitle<0 && idxIssn<0) throw new Error('Could not find basic columns');
     for (const line of lines){
       const cols = smartSplit(line, delim);
       onRow({
         title: idxTitle>=0?cols[idxTitle]:'', issn: idxIssn>=0?cols[idxIssn]:'', quartile: idxQuart>=0?cols[idxQuart]:'',
-        // pass whole row for metric sniffing
-        SJR: grab(header, cols, /^(sjr|sjr indicator|\bsjr \(\d{4}\))/i),
         'Impact Factor': grab(header, cols, /^(impact\s*factor|jif|journal impact factor)$/i)
       });
     }
