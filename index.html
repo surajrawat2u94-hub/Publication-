@@ -14,8 +14,8 @@
   <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
 
   <style>
-    .card{ background:rgba(255,255,255,.92); border:1px solid rgba(226,232,240,.92);
-           border-radius:16px; box-shadow:0 12px 24px rgba(15,23,42,.08) }
+    .card{ background: rgba(255,255,255,.92); border:1px solid rgba(226,232,240,.9);
+           border-radius:16px; box-shadow:0 12px 24px rgba(15,23,42,.06); }
     .thin-scrollbar::-webkit-scrollbar{height:8px;width:8px}
     .thin-scrollbar::-webkit-scrollbar-thumb{background:#CBD5E1;border-radius:6px}
     .thin-scrollbar::-webkit-scrollbar-track{background:#F8FAFC}
@@ -24,7 +24,6 @@
     .dropdown{position:relative}
     .dropdown-panel{position:absolute;right:0;top:100%;z-index:40}
     .badge{display:inline-flex;align-items:center;gap:.35rem;padding:.2rem .5rem;border-radius:999px;font-size:.72rem;border:1px solid #e2e8f0;background:#f8fafc}
-    .muted{ color:#64748b }
   </style>
 </head>
 <body class="bg-gradient-to-b from-slate-50 to-slate-100 text-slate-900">
@@ -34,7 +33,7 @@
     <div class="max-w-7xl mx-auto px-4 py-4 flex items-center justify-between">
       <div class="flex items-center gap-3">
         <div class="h-10 w-10 rounded-2xl bg-white/15 grid place-content-center shadow-inner">
-          <i data-lucide="panel-top" class="text-white"></i>
+          <i data-lucide="brain" class="text-white"></i>
         </div>
         <div>
           <h1 class="text-lg font-semibold tracking-tight">AI Publications Portal</h1>
@@ -64,65 +63,52 @@
 
     <!-- OVERVIEW -->
     <section id="view-overview" class="space-y-6">
-      <div class="grid grid-cols-2 md:grid-cols-6 gap-4">
+      <div class="grid grid-cols-2 md:grid-cols-4 gap-4">
         <div class="card p-4"><div class="text-xs text-slate-500">Total items</div><div id="kpiTotal" class="mt-1 text-2xl font-semibold">—</div></div>
         <div class="card p-4"><div class="text-xs text-slate-500">Current view</div><div id="kpiView" class="mt-1 text-2xl font-semibold">—</div></div>
         <div class="card p-4"><div class="text-xs text-slate-500">Retracted (view)</div><div id="kpiRetr" class="mt-1 text-2xl font-semibold">—</div></div>
         <div class="card p-4"><div class="text-xs text-slate-500">Distinct journals (view)</div><div id="kpiJournals" class="mt-1 text-2xl font-semibold">—</div></div>
-        <div class="card p-4"><div class="text-xs text-slate-500">IF records loaded</div><div id="kpiIF" class="mt-1 text-2xl font-semibold">—</div></div>
-        <div class="card p-4"><div class="text-xs text-slate-500">Quartile-mapped (view)</div><div id="kpiQMap" class="mt-1 text-2xl font-semibold">—</div></div>
       </div>
 
       <div class="grid grid-cols-1 lg:grid-cols-2 gap-4">
         <div class="card p-4">
           <div class="flex items-center justify-between">
-            <h3 class="font-semibold">Publications by Year (with cumulative)</h3>
+            <h3 class="font-semibold">Publications by Year</h3>
             <span id="rangeText" class="text-xs text-slate-500"></span>
           </div>
           <div class="mt-2 h-[280px]"><canvas id="chartByYear"></canvas></div>
         </div>
-
         <div class="card p-4">
-          <h3 class="font-semibold">Top Journals — Quartiles & Citations (view)</h3>
-          <div class="mt-2 h-[320px]"><canvas id="chartTopJournalsQC"></canvas></div>
-          <div class="text-xs text-slate-500 mt-2">
-            Bars: Q1–Q4 split · Line: total citations per journal · IF shown in tooltip if available.
-          </div>
+          <h3 class="font-semibold">Top Journals — by Volume (Quartiles)</h3>
+          <div class="mt-2 h-[280px]"><canvas id="chartTopJournalsQ"></canvas></div>
         </div>
       </div>
 
+      <!-- IF charts -->
       <div class="grid grid-cols-1 lg:grid-cols-2 gap-4">
         <div class="card p-4">
           <h3 class="font-semibold">Journal Impact — Top by IF (from upload)</h3>
-          <div class="mt-2 h-[320px]"><canvas id="chartIFTop"></canvas></div>
+          <div class="mt-2 h-[300px]"><canvas id="chartIFTop"></canvas></div>
           <div id="ifTopNote" class="text-xs text-slate-500 mt-2"></div>
         </div>
         <div class="card p-4">
           <h3 class="font-semibold">Journal Impact — IF vs Publications (bubble)</h3>
-          <div class="mt-2 h-[320px]"><canvas id="chartIFBubble"></canvas></div>
-          <div id="ifBubNote" class="text-xs text-slate-500 mt-2"></div>
+          <div class="mt-2 h-[300px]"><canvas id="chartIFBubble"></canvas></div>
+          <div id="ifBubbleNote" class="text-xs text-slate-500 mt-2"></div>
         </div>
       </div>
 
       <div class="grid grid-cols-1 lg:grid-cols-2 gap-4">
         <div class="card p-4">
-          <h3 class="font-semibold">Types by Year (view)</h3>
-          <div class="mt-2 h-[300px]"><canvas id="chartTypesYear"></canvas></div>
+          <h3 class="font-semibold">Top Journals — by Citations</h3>
+          <div class="mt-2 h-[280px]"><canvas id="chartTopJournalsCites"></canvas></div>
         </div>
         <div class="card p-4">
-          <h3 class="font-semibold">Top Subjects / Concepts (view)</h3>
-          <div class="mt-2 h-[300px]"><canvas id="chartSubjects"></canvas></div>
-        </div>
-      </div>
-
-      <div class="grid grid-cols-1 lg:grid-cols-2 gap-4">
-        <div class="card p-4">
-          <h3 class="font-semibold">Top Home Authors (institution authors)</h3>
-          <div class="mt-2 h-[300px]"><canvas id="chartHomeAuthors"></canvas></div>
-        </div>
-        <div class="card p-4">
-          <h3 class="font-semibold">Retractions by Year (OpenAlex flag + notices)</h3>
-          <div class="mt-2 h-[300px]"><canvas id="chartRetract"></canvas></div>
+          <h3 class="font-semibold">Notes</h3>
+          <p class="text-sm text-slate-600 mt-2">
+            • Upload a JCR CSV (Impact Factor / JIF) in the Quartiles tab to enable the IF charts.
+            • Matching prioritises ISSN/e-ISSN, then journal title.
+          </p>
         </div>
       </div>
     </section>
@@ -133,16 +119,21 @@
         <div class="flex flex-wrap items-end gap-3">
           <div>
             <label class="block text-xs font-medium text-slate-600">Search</label>
-            <input id="searchBox" class="px-3 py-2 rounded-xl border border-slate-300 text-sm" placeholder="Title / author / journal / DOI" oninput="applyFilters(1)"/>
+            <input id="searchBox" class="px-3 py-2 rounded-xl border border-slate-300 text-sm"
+                   placeholder="Title / author / journal / DOI" oninput="applyFilters(1)"/>
           </div>
 
           <div>
             <label class="block text-xs font-medium text-slate-600">Year (from)</label>
-            <select id="yearFrom" class="px-3 py-2 rounded-xl border border-slate-300 text-sm" onchange="applyFilters(1)"><option value="">All</option></select>
+            <select id="yearFrom" class="px-3 py-2 rounded-xl border border-slate-300 text-sm" onchange="applyFilters(1)">
+              <option value="">All</option>
+            </select>
           </div>
           <div>
             <label class="block text-xs font-medium text-slate-600">Year (to)</label>
-            <select id="yearTo" class="px-3 py-2 rounded-xl border border-slate-300 text-sm" onchange="applyFilters(1)"><option value="">All</option></select>
+            <select id="yearTo" class="px-3 py-2 rounded-xl border border-slate-300 text-sm" onchange="applyFilters(1)">
+              <option value="">All</option>
+            </select>
           </div>
 
           <div>
@@ -162,32 +153,24 @@
             </select>
           </div>
 
-          <!-- Type multi-select -->
-          <div class="dropdown">
-            <label class="block text-xs font-medium text-slate-600">Type</label>
-            <button id="typeBtn" class="px-3 py-2 rounded-xl bg-slate-100 border border-slate-300 text-sm min-w-[170px]" onclick="toggleTypePanel()">
-              <span id="typeBtnLabel">All types</span>
-            </button>
-            <div id="typePanel" class="dropdown-panel hidden mt-2 bg-white border border-slate-200 rounded-xl shadow-lg w-64 p-3">
-              <div class="text-xs text-slate-500 mb-2">Select one or more</div>
-              <div id="typeList" class="grid grid-cols-1 gap-y-1 text-sm max-h-64 overflow-auto pr-1"></div>
-              <div class="flex justify-between gap-2 mt-3">
-                <button class="px-3 py-1.5 rounded-lg border border-slate-300" onclick="clearTypeSelection()">Clear</button>
-                <button class="px-3 py-1.5 rounded-lg bg-indigo-600 text-white" onclick="applyTypeSelection()">Apply</button>
-              </div>
-            </div>
+          <div>
+            <label class="block text-xs font-medium text-slate-600">Type (multi-select)</label>
+            <select id="typeFilter" multiple size="3" class="px-3 py-2 rounded-xl border border-slate-300 text-sm min-w-[160px]" onchange="applyFilters(1)">
+            </select>
           </div>
 
           <div>
             <label class="block text-xs font-medium text-slate-600">Rows per page</label>
             <select id="pageSize" class="px-3 py-2 rounded-xl border border-slate-300 text-sm" onchange="changePageSize()">
-              <option value="25">25</option><option value="50" selected>50</option><option value="100">100</option><option value="200">200</option>
+              <option value="25">25</option>
+              <option value="50" selected>50</option>
+              <option value="100">100</option>
+              <option value="200">200</option>
             </select>
           </div>
 
           <!-- Column chooser -->
           <div class="ml-auto dropdown">
-            <label class="block text-xs font-medium text-slate-600">&nbsp;</label>
             <button id="colBtn" class="px-3 py-2 rounded-xl bg-slate-100 border border-slate-300 text-sm flex items-center gap-2" onclick="toggleColumnsPanel()">
               <i data-lucide="columns-3"></i> Columns
             </button>
@@ -202,7 +185,6 @@
           </div>
 
           <div class="flex items-center gap-2">
-            <label class="block text-xs font-medium text-slate-600">&nbsp;</label>
             <button class="px-3 py-2 rounded-xl bg-indigo-600 text-white text-sm" onclick="exportCSV()">Export CSV</button>
             <button class="px-3 py-2 rounded-xl bg-indigo-50 text-indigo-700 border border-indigo-200 text-sm" onclick="exportJSON()">Export JSON</button>
           </div>
@@ -235,21 +217,21 @@
       </div>
     </section>
 
-    <!-- QUARTILES -->
+    <!-- QUARTILES / UPLOAD -->
     <section id="view-quartiles" class="hidden space-y-4">
       <div class="card p-4">
         <div class="flex items-center justify-between">
           <div>
-            <h3 class="font-semibold">Quartile & IF Mapping</h3>
+            <h3 class="font-semibold">Quartile & Impact Factor Mapping (upload CSV / JSON)</h3>
             <p class="text-xs text-slate-500">
-              Upload SCImago/Clarivate data as <code>.csv</code> (must contain Title or ISSN; accept headers like
-              <em>SJR Best Quartile</em>, <em>Best Quartile</em>, <em>Impact Factor</em>/<em>JIF</em>), or <code>.json</code>.
+              Upload JCR/SCImago CSV (comma or semicolon). We auto-detect headers.  
+              Recognised: <em>Title / ISSN / e-ISSN / (JIF Quartile or Quartile)</em> and <em>Impact Factor / JIF</em>.
             </p>
           </div>
           <div class="flex items-center gap-2">
             <input id="sjrFile" type="file" accept=".csv,.json" class="hidden"/>
             <button class="px-3 py-2 rounded-xl bg-slate-100 border border-slate-300 text-sm" onclick="document.getElementById('sjrFile').click()">
-              <i data-lucide="upload"></i> Upload Quartiles
+              <i data-lucide="upload"></i> Upload Quartiles / IF
             </button>
           </div>
         </div>
@@ -298,7 +280,7 @@
 <script>
   lucide.createIcons();
 
-  /* -------- Chart.js helpers -------- */
+  /* ---------------- Chart.js helpers ---------------- */
   Chart.defaults.font.family = "'Inter', system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial";
   Chart.defaults.plugins.tooltip.backgroundColor = '#0f172a';
   Chart.defaults.plugins.tooltip.borderColor = '#334155';
@@ -308,59 +290,57 @@
 
   const shadowPlugin = {
     id: 'shadowPlugin',
-    beforeDatasetsDraw(chart){ const {ctx}=chart; ctx.save(); ctx.shadowColor='rgba(2,6,23,.12)'; ctx.shadowBlur=14; ctx.shadowOffsetY=6; },
-    afterDatasetsDraw(chart){ chart.ctx.restore(); }
+    beforeDatasetsDraw(chart, args, pluginOptions) {
+      const {ctx} = chart; ctx.save();
+      ctx.shadowColor = 'rgba(2,6,23,.15)'; ctx.shadowBlur = 16; ctx.shadowOffsetY = 8;
+    },
+    afterDatasetsDraw(chart) { chart.ctx.restore(); }
   };
   Chart.register(shadowPlugin);
 
-  const clr = {
-    indigo:'#6366f1', purple:'#a855f7', teal:'#14b8a6', cyan:'#06b6d4',
-    q1:'#16a34a', q2:'#3b82f6', q3:'#f59e0b', q4:'#ef4444', gray:'#334155'
-  };
-  const gradV = (ctx,a,b)=>{ const g=ctx.createLinearGradient(0,0,0,ctx.canvas.height); g.addColorStop(0,a); g.addColorStop(1,b); return g; };
-  const gradH = (ctx,a,b)=>{ const g=ctx.createLinearGradient(0,0,ctx.canvas.width,0); g.addColorStop(0,a); g.addColorStop(1,b); return g; };
+  function gradH(ctx, a='#14b8a6', b='#06b6d4'){ const g=ctx.createLinearGradient(0,0,ctx.canvas.width,0); g.addColorStop(0,a); g.addColorStop(1,b); return g; }
+  function gradV(ctx, a='#6366f1', b='#a855f7'){ const g=ctx.createLinearGradient(0,0,0,ctx.canvas.height); g.addColorStop(0,a); g.addColorStop(1,b); return g; }
 
   /* --------------------- STATE --------------------- */
-  let all=[], filtered=[], currentPage=1, pageSize=50;
+  let all = [];
+  let filtered = [];
+  let currentPage = 1;
+  let pageSize = 50;
 
-  // Home institution (for "Home authors")
-  const HOME_ROR = "04q2jes40";
-  const HOME_KEYWORDS = ['university of petroleum','energy studies','upes'];
+  // Quartiles
+  const sjrByIssn = new Map();
+  const sjrByTitle = new Map();
+  let haveSJR = false;
 
-  // Types
-  const selectedTypes = new Set();
-  let knownTypes = [];
+  // Impact Factor
+  const ifByIssn = new Map();
+  const ifByTitle = new Map();
+  let haveIF = false;
 
-  // Quartiles & IF meta
-  const sjrByIssn = new Map(), sjrByTitle = new Map();
-  const sjrMetaByIssn = new Map(), sjrMetaByTitle = new Map(); // {q, if}
-  let haveSJR=false; let IFcount=0;
-
-  // Columns (includes "Home authors")
+  // Columns
   const ALL_COLUMNS = [
-    { key:'year',          label:'Year',           default:true },
-    { key:'title',         label:'Title',          default:true },
-    { key:'journal',       label:'Journal',        default:true },
-    { key:'home_authors',  label:'Home authors',   default:true },
-    { key:'authors',       label:'Authors',        default:false },
-    { key:'citations',     label:'Citations',      default:true },
-    { key:'quartile',      label:'Quartile',       default:true },
+    { key:'year',         label:'Year',          default:true },
+    { key:'title',        label:'Title',         default:true },
+    { key:'journal',      label:'Journal',       default:true },
+    { key:'authors',      label:'Authors',       default:true },
+    { key:'citations',    label:'Citations',     default:true },
+    { key:'quartile',     label:'Quartile',      default:true },
     { key:'retraction_info', label:'Retraction Info', default:true },
-    { key:'is_retracted',  label:'Retracted (OpenAlex)', default:false },
-    { key:'type',          label:'Type',           default:false },
-    { key:'doi',           label:'DOI',            default:false },
-    { key:'url',           label:'URL',            default:false },
-    { key:'issns',         label:'ISSNs',          default:false },
-    { key:'subjects',      label:'Subject areas',  default:false },
-    { key:'sdg_tags',      label:'SDGs',           default:false },
+    { key:'is_retracted', label:'Retracted (OpenAlex)', default:false },
+    { key:'type',         label:'Type',          default:false },
+    { key:'doi',          label:'DOI',           default:false },
+    { key:'url',          label:'URL',           default:false },
+    { key:'issns',        label:'ISSNs',         default:false },
+    { key:'subjects',     label:'Subject areas', default:false },
+    { key:'sdg_tags',     label:'SDGs',          default:false },
   ];
   let selectedColumns = loadSelectedColumns();
 
   // Charts
-  let chartByYear=null, chartTopJournalsQC=null, chartIFTop=null, chartIFBubble=null,
-      chartTypesYear=null, chartSubjects=null, chartHomeAuthors=null, chartRetract=null, chartSDG=null;
+  let chartByYear=null, chartTopJournalsQ=null, chartTopJournalsCites=null,
+      chartIFTop=null, chartIFBubble=null, chartSDG=null;
 
-  // SDGs
+  // SDGs (same as before)
   const SDG_LIST = [
     { id:1,  name:'No Poverty', kw:['poverty','low-income','income inequality'] },
     { id:2,  name:'Zero Hunger', kw:['hunger','food security','malnutrition','agriculture','crop','farm'] },
@@ -369,7 +349,7 @@
     { id:5,  name:'Gender Equality', kw:['gender','women','female','girls','violence against women','equality'] },
     { id:6,  name:'Clean Water & Sanitation', kw:['water','sanitation','wastewater','drinking water','hygiene'] },
     { id:7,  name:'Affordable & Clean Energy', kw:['energy','renewable','solar','wind','battery','hydrogen'] },
-    { id:8,  name:'Decent Work & Economic Growth', kw:['employment','workforce','productivity','economy','growth','entrepreneur'] },
+    { id:8,  name:'Decent Work & Economic Growth', kw:['employment','workforce','productivity','economy','economic growth','entrepreneur'] },
     { id:9,  name:'Industry, Innovation & Infrastructure', kw:['industry','manufacturing','infrastructure','innovation','iot','robotics','blockchain'] },
     { id:10, name:'Reduced Inequalities', kw:['inequality','social justice','marginalized','inclusion'] },
     { id:11, name:'Sustainable Cities & Communities', kw:['urban','smart city','transport','housing','resilience','disaster'] },
@@ -380,15 +360,9 @@
     { id:16, name:'Peace, Justice & Strong Institutions', kw:['governance','policy','corruption','crime','justice','conflict'] },
     { id:17, name:'Partnerships for the Goals', kw:['partnership','collaboration','sdg','stakeholder','international'] },
   ];
-  const SDG_COLORS = {1:'#E5243B',2:'#DDA63A',3:'#4C9F38',4:'#C5192D',5:'#FF3A21',6:'#26BDE2',7:'#FCC30B',8:'#A21942',
-                      9:'#FD6925',10:'#DD1367',11:'#FD9D24',12:'#BF8B2E',13:'#3F7E44',14:'#0A97D9',15:'#56C02B',16:'#00689D',17:'#19486A'};
-
-  // Retraction prefixes (extended)
-  const RETRACT_PREFIXES = [
-    /^retraction\s*note\s*:/i,/^retraction\s*of\s*:/i,/^retraction\s*:/i,/^notice\s+of\s+retraction\s*:/i,/^withdrawn\s*:/i,
-    /^retracted\s+paper\s*:/i,/^retracted\s+article\s*:/i,/^article\s+retracted\s*:/i
-  ];
-  const DOI_REGEX = /\b(10\.\d{4,9}\/\S+)\b/i;
+  const SDG_COLORS = {1:'#E5243B',2:'#DDA63A',3:'#4C9F38',4:'#C5192D',5:'#FF3A21',6:'#26BDE2',7:'#FCC30B',8:'#A21942',9:'#FD6925',10:'#DD1367',11:'#FD9D24',12:'#BF8B2E',13:'#3F7E44',14:'#0A97D9',15:'#56C02B',16:'#00689D',17:'#19486A'};
+  const RETRACT_PREFIXES = [/^retraction\s*note\s*:/i,/^retraction\s*of\s*:/i,/^retraction\s*:/i,/^notice\s+of\s+retraction\s*:/i,/^withdrawn\s*:/i];
+  const DOI_REGEX = /\b10\.\d{4,9}\/\S+\b/i;
 
   /* ---------------- Tabs ---------------- */
   function switchTab(name){
@@ -415,30 +389,26 @@
 
       all = Array.isArray(j.items) ? j.items : [];
 
-      // Normalize authors + home authors
-      for (const p of all){
-        if (!Array.isArray(p.authors)) p.authors = deriveAuthors(p);
-        p.home_authors = deriveHomeAuthors(p);
-      }
-
-      // Retraction links + SDGs
+      // indexes
       buildRetractionIndex(all);
       for (const p of all) p.sdg_tags = guessSDGs(p);
 
       document.getElementById('kpiTotal').textContent = num(all.length);
 
-      // Year options
-      const years = [...new Set(all.map(x=>x.year).filter(y=>y!=null))].sort((a,b)=>a-b);
-      const opts = (arr) => ['<option value="">All</option>'].concat(arr.map(y=>`<option value="${y}">${y}</option>`)).join('');
-      document.getElementById('yearFrom').innerHTML = opts(years);
-      document.getElementById('yearTo').innerHTML   = opts(years);
+      // year options & type multi-select
+      const years = [...new Set(all.map(x=>x.year).filter(Boolean))].sort((a,b)=>a-b);
+      const yrFrom = document.getElementById('yearFrom');
+      const yrTo   = document.getElementById('yearTo');
+      yrFrom.innerHTML = '<option value="">All</option>' + years.map(y=>`<option>${y}</option>`).join('');
+      yrTo.innerHTML   = '<option value="">All</option>' + years.map(y=>`<option>${y}</option>`).join('');
+
+      const types = [...new Set(all.map(x=>x.type).filter(Boolean))].sort();
+      document.getElementById('typeFilter').innerHTML = types.map(t=>`<option>${esc(t)}</option>`).join('');
 
       // SDG options
-      buildSDGOptions();
-
-      // Types
-      computeKnownTypes();
-      buildTypePanel();
+      const opts = SDG_LIST.map(s=>`<option value="${s.id}">${s.id}. ${s.name}</option>`).join('');
+      document.getElementById('sdgFilter').innerHTML     = '<option value="">All SDGs</option>' + opts;
+      document.getElementById('sdgOnlyFilter').innerHTML = '<option value="">All SDGs</option>' + opts;
 
       pageSize = parseInt(document.getElementById('pageSize').value,10) || 50;
 
@@ -451,38 +421,13 @@
     }
   }
 
-  /* --------- Authors helpers --------- */
-  function deriveAuthors(p){
-    const out=[];
-    if (Array.isArray(p.authorships)){
-      for (const a of p.authorships){
-        const nm = a?.author?.display_name || a?.display_name;
-        if (nm) out.push(String(nm));
-      }
-    }
-    if (!out.length && typeof p.authors === 'string' && p.authors.trim()){
-      return p.authors.split(/[,;]\s*/).filter(Boolean);
-    }
-    return out;
-  }
-  function deriveHomeAuthors(p){
-    const out=[];
-    if (!Array.isArray(p.authorships)) return out;
-    for (const a of p.authorships){
-      const nm = a?.author?.display_name || a?.display_name;
-      const insts = Array.isArray(a?.institutions) ? a.institutions : [];
-      const matchROR = insts.some(i => (i?.ror||'').split('/').pop() === HOME_ROR);
-      const matchKW  = insts.some(i => HOME_KEYWORDS.some(k => (i?.display_name||'').toLowerCase().includes(k)));
-      if (nm && (matchROR || matchKW)) out.push(String(nm));
-    }
-    return [...new Set(out)];
-  }
-
   function buildRetractionIndex(items){
-    const byTitle = new Map(), byDOI = new Map();
+    const mapByTitle = new Map();
+    const mapByDOI   = new Map();
     for (const p of items){
-      if (p.doi) byDOI.set(String(p.doi).toLowerCase(), p);
-      const nt = normTitle(p.title||''); if (nt) byTitle.set(nt, p);
+      if (p.doi) mapByDOI.set((p.doi||'').toLowerCase(), p);
+      const nt = normTitle(p.title||'');
+      if (nt) mapByTitle.set(nt, p);
     }
     for (const p of items){
       const title = p.title || '';
@@ -491,72 +436,20 @@
       if (p.retraction_notice){
         const m = title.match(DOI_REGEX);
         if (m){
-          const target = byDOI.get(m[1].toLowerCase());
+          const target = mapByDOI.get(m[0].toLowerCase());
           if (target){ p.retraction_of = { doi: target.doi, title: target.title }; target.retracted_by = { doi: p.doi, title: p.title }; }
         } else {
           const stripped = stripRetractionPrefix(title);
-          const candidate = byTitle.get(normTitle(stripped));
+          const candidate = mapByTitle.get(normTitle(stripped));
           if (candidate){ p.retraction_of = { doi: candidate.doi, title: candidate.title }; candidate.retracted_by = { doi: p.doi, title: p.title }; }
         }
       }
     }
   }
-  const isRetractionNotice = title => RETRACT_PREFIXES.some(rx => rx.test(String(title||'')));
-  const stripRetractionPrefix = title => { let t=String(title||''); for (const rx of RETRACT_PREFIXES){ if (rx.test(t)) return t.replace(rx,'').trim(); } return t; };
-
-  /* --------------- SDG options --------------- */
-  function buildSDGOptions(){
-    const opts = SDG_LIST.map(s=>`<option value="${s.id}">${s.id}. ${s.name}</option>`).join('');
-    const sel1 = document.getElementById('sdgFilter');
-    const sel2 = document.getElementById('sdgOnlyFilter');
-    if (sel1) sel1.innerHTML = '<option value="">All SDGs</option>' + opts;
-    if (sel2) sel2.innerHTML = '<option value="">All SDGs</option>' + opts;
+  function isRetractionNotice(title){ return RETRACT_PREFIXES.some(rx => rx.test(String(title||''))); }
+  function stripRetractionPrefix(title){
+    let t=String(title||''); for (const rx of RETRACT_PREFIXES){ if (rx.test(t)) return t.replace(rx,'').trim(); } return t;
   }
-
-  /* --------------- Type multi-select --------------- */
-  const normalizeType = t => {
-    const s=String(t||'').toLowerCase();
-    if (s==='journal-article') return 'article';
-    if (s.includes('proceed')) return 'proceedings-article';
-    if (s.startsWith('book'))  return 'book';
-    return s || 'unknown';
-  };
-  const labelForType = key => ({
-    'article':'Article','proceedings-article':'Proceedings','book':'Book/Chapter','dataset':'Dataset','report':'Report',
-    'preprint':'Preprint','letter':'Letter','review':'Review','editorial':'Editorial','unknown':'Other'
-  }[key] || key.replace(/(^|\-)(\w)/g,(m,_,c)=>' '+c.toUpperCase()).trim());
-
-  function computeKnownTypes(){
-    const counts=new Map();
-    for (const p of all){ const k=normalizeType(p.type || p.type_crossref); counts.set(k,(counts.get(k)||0)+1); }
-    knownTypes = [...counts.entries()].sort((a,b)=>b[1]-a[1]).map(([key,count])=>({key,label:labelForType(key),count}));
-  }
-  function buildTypePanel(){
-    const list=document.getElementById('typeList'); if (!list) return;
-    list.innerHTML='';
-    for (const t of knownTypes){
-      const id='type_'+t.key.replace(/\W/g,'_');
-      const checked = selectedTypes.has(t.key) ? 'checked' : '';
-      list.insertAdjacentHTML('beforeend', `
-        <label class="flex items-center gap-2">
-          <input type="checkbox" id="${id}" ${checked}/>
-          <span>${t.label} <span class="text-xs text-slate-400">(${num(t.count)})</span></span>
-        </label>
-      `);
-    }
-    updateTypeBtnLabel();
-  }
-  function toggleTypePanel(){ document.getElementById('typePanel').classList.toggle('hidden'); }
-  function applyTypeSelection(){
-    selectedTypes.clear();
-    for (const t of knownTypes){
-      const id='type_'+t.key.replace(/\W/g,'_');
-      const el=document.getElementById(id); if (el && el.checked) selectedTypes.add(t.key);
-    }
-    updateTypeBtnLabel(); toggleTypePanel(); applyFilters(1);
-  }
-  function clearTypeSelection(){ selectedTypes.clear(); buildTypePanel(); applyFilters(1); }
-  const updateTypeBtnLabel = () => document.getElementById('typeBtnLabel').textContent = selectedTypes.size ? `${selectedTypes.size} selected` : 'All types';
 
   /* --------------- Filters / Search / Paging --------------- */
   function applyFilters(goToPage=1){
@@ -566,30 +459,19 @@
     const sdg = document.getElementById('sdgFilter')?.value || document.getElementById('sdgOnlyFilter')?.value || '';
     const retractMode = document.getElementById('retractionFilter')?.value || '';
 
-    let yFrom = yearFrom ? parseInt(yearFrom,10) : null;
-    let yTo   = yearTo   ? parseInt(yearTo,10)   : null;
-    if (yFrom && yTo && yFrom > yTo){ const t=yFrom; yFrom=yTo; yTo=t; document.getElementById('yearFrom').value=yFrom; document.getElementById('yearTo').value=yTo; }
+    const typeSel = document.getElementById('typeFilter');
+    const typesWanted = typeSel ? Array.from(typeSel.selectedOptions).map(o=>o.value) : [];
 
     filtered = all.filter(p=>{
-      const y = p.year ?? null;
-      if (yFrom && (y==null || y < yFrom)) return false;
-      if (yTo   && (y==null || y > yTo))   return false;
-
-      if (selectedTypes.size){
-        const k = normalizeType(p.type || p.type_crossref);
-        if (!selectedTypes.has(k)) return false;
-      }
-
+      if (yearFrom && Number(p.year) < Number(yearFrom)) return false;
+      if (yearTo   && Number(p.year) > Number(yearTo))   return false;
       if (sdg && !(p.sdg_tags||[]).includes(Number(sdg))) return false;
-
       if (retractMode === 'exclude'){ if (p.is_retracted || p.retraction_notice) return false; }
       else if (retractMode === 'only_retracted'){ if (!p.is_retracted) return false; }
       else if (retractMode === 'only_notices'){ if (!p.retraction_notice) return false; }
-
+      if (typesWanted.length && !typesWanted.includes(p.type||'')) return false;
       if (q){
-        const hay = [p.title||'',p.journal||'',p.doi||'',
-                     ...(Array.isArray(p.home_authors)?p.home_authors:deriveHomeAuthors(p)),
-                     ...(Array.isArray(p.authors)?p.authors:deriveAuthors(p))].join(' ').toLowerCase();
+        const hay = [p.title||'',p.journal||'',p.doi||'',...(p.authors||[])].join(' ').toLowerCase();
         if (!hay.includes(q)) return false;
       }
       return true;
@@ -599,9 +481,6 @@
 
     document.getElementById('kpiView').textContent = num(filtered.length);
     document.getElementById('kpiRetr').textContent = num(filtered.filter(x=>x.is_retracted || x.retraction_notice).length);
-    document.getElementById('kpiQMap').textContent = num(filtered.filter(x=>quartileOf(x)).length);
-    document.getElementById('kpiIF').textContent   = num(IFcount);
-
     const journals = new Set(filtered.map(x=>(x.journal||'').trim()).filter(Boolean));
     document.getElementById('kpiJournals').textContent = num(journals.size);
 
@@ -613,7 +492,7 @@
   }
 
   function changePageSize(){ pageSize = parseInt(document.getElementById('pageSize').value,10) || 50; currentPage=1; renderTable(); }
-  const totalPages = () => Math.max(1, Math.ceil(filtered.length/pageSize));
+  function totalPages(){ return Math.max(1, Math.ceil(filtered.length/pageSize)); }
   function goFirst(){ currentPage = 1; renderTable(); }
   function goPrev(){ if (currentPage>1) currentPage--; renderTable(); }
   function goNext(){ if (currentPage<totalPages()) currentPage++; renderTable(); }
@@ -629,9 +508,7 @@
 
     const body=document.getElementById('pubBody'); body.innerHTML='';
     for (const p of rows){
-      if (!Array.isArray(p.authors)) p.authors = deriveAuthors(p);
-      if (!Array.isArray(p.home_authors)) p.home_authors = deriveHomeAuthors(p);
-      const tds = selectedColumns.map(col=>`<td class="px-4 py-2 align-top">${renderCell(col.key,p)}</td>`).join('');
+      const tds = selectedColumns.map(col=>`<td class="px-4 py-2">${renderCell(col.key,p)}</td>`).join('');
       const tr=document.createElement('tr'); tr.className='border-b border-slate-100 hover:bg-slate-50'; tr.innerHTML=tds; body.appendChild(tr);
     }
 
@@ -646,16 +523,12 @@
       case 'year': return p.year ?? '';
       case 'title': return p.url ? `<a class="text-indigo-600 hover:underline" href="${p.url}" target="_blank">${esc(p.title||'')}</a>` : esc(p.title||'');
       case 'journal': return esc(p.journal||'');
-      case 'authors': return esc((Array.isArray(p.authors)?p.authors:deriveAuthors(p)).join(', '));
-      case 'home_authors': {
-        const a = Array.isArray(p.home_authors)?p.home_authors:deriveHomeAuthors(p);
-        return a.length ? `<span class="text-slate-800">${esc(a.join(', '))}</span>` : '<span class="text-slate-400">—</span>';
-      }
+      case 'authors': return esc((p.authors||[]).join(', '));
       case 'citations': return p.citations ?? 0;
       case 'quartile': return esc(p.quartile || '');
       case 'retraction_info': return renderRetractionInfo(p);
       case 'is_retracted': return p.is_retracted ? '<span class="badge" style="border-color:#ef4444;background:#fff;color:#b91c1c">Yes</span>' : 'No';
-      case 'type': return esc(labelForType(normalizeType(p.type || p.type_crossref)));
+      case 'type': return esc(p.type || '');
       case 'doi': return esc(p.doi || '');
       case 'url': return p.url ? `<a class="text-indigo-600" href="${p.url}" target="_blank">Open</a>` : '';
       case 'issns': return esc((p.issns||[]).join(', '));
@@ -670,13 +543,11 @@
     const container=document.getElementById('columnsList'); container.innerHTML='';
     const selectedKeys=new Set(selectedColumns.map(c=>c.key));
     for (const col of ALL_COLUMNS){
-      const id=`col_${col.key}`, checked=selectedKeys.has(col.key)?'checked':'';
-      container.insertAdjacentHTML('beforeend', `
-        <label class="flex items-center gap-2"><input type="checkbox" id="${id}" ${checked}/><span>${col.label}</span></label>
-      `);
+      const id=`col_${col.key}`, checked=selectedKeys.has(col.key)?'checked':''; 
+      container.insertAdjacentHTML('beforeend', `<label class="flex items-center gap-2"><input type="checkbox" id="${id}" ${checked}/><span>${col.label}</span></label>`);
     }
   }
-  const toggleColumnsPanel = () => document.getElementById('columnsPanel').classList.toggle('hidden');
+  function toggleColumnsPanel(){ document.getElementById('columnsPanel').classList.toggle('hidden'); }
   function applyColumnSelection(){
     const chosen=[]; for (const col of ALL_COLUMNS){ const box=document.getElementById(`col_${col.key}`); if (box && box.checked) chosen.push({key:col.key,label:col.label}); }
     selectedColumns = chosen.length ? chosen : ALL_COLUMNS.filter(c=>c.default).map(c=>({key:c.key,label:c.label}));
@@ -697,275 +568,138 @@
     return ALL_COLUMNS.filter(c=>c.default).map(c=>({key:c.key,label:c.label}));
   }
 
-  /* --------------- Charts --------------- */
+  /* --------------- Overview Charts --------------- */
   function renderOverviewCharts(){
-    // Publications by Year (bar + cumulative line)
+    // Publications by year
     const ctxY = document.getElementById('chartByYear').getContext('2d');
     const byYear={}; for (const p of filtered){ if (p.year) byYear[p.year]=(byYear[p.year]||0)+1; }
     const labelsY = Object.keys(byYear).sort((a,b)=>a-b);
     const dataY   = labelsY.map(y=>byYear[y]);
-    const cumY    = dataY.reduce((acc,v,i)=>{ acc.push((acc[i-1]||0)+v); return acc; },[]);
     if (chartByYear) chartByYear.destroy();
     chartByYear = new Chart(ctxY, {
       type:'bar',
-      data:{ labels:labelsY, datasets:[
-        { label:'Publications', data:dataY, borderRadius:12, borderSkipped:false, backgroundColor:gradV(ctxY, clr.indigo, clr.purple) },
-        { label:'Cumulative', type:'line', data:cumY, yAxisID:'y1', borderColor:clr.gray, tension:.25, pointRadius:2 }
-      ] },
-      options:{
-        responsive:true, maintainAspectRatio:false,
-        plugins:{ legend:{position:'top'}, shadowPlugin:{}, tooltip:{mode:'index', intersect:false} },
-        scales:{
-          x:{ grid:{ display:false }, ticks:{ color:'#334155' } },
-          y:{ grid:{ color:'#e2e8f0' }, ticks:{ color:'#334155' }, beginAtZero:true },
-          y1:{ position:'right', grid:{ drawOnChartArea:false }, ticks:{ color:'#334155' }, beginAtZero:true }
-        }
-      }
+      data:{ labels:labelsY, datasets:[{ label:'Publications', data:dataY, borderRadius:12, borderSkipped:false, backgroundColor:gradV(ctxY) }] },
+      options:{ responsive:true, maintainAspectRatio:false, plugins:{ legend:{display:false}, shadowPlugin:{} },
+        scales:{ x:{ grid:{ display:false }, ticks:{ color:'#334155' } }, y:{ grid:{ color:'#e2e8f0' }, ticks:{ color:'#334155' }, beginAtZero:true } } }
     });
 
-    // Top journals — quartile split + citations
-    renderTopJournalsQC();
-
-    // Journal Impact charts
-    renderIFCharts();
-
-    // Types by Year
-    renderTypesYear();
-
-    // Subjects / Concepts
-    renderSubjects();
-
-    // Home authors
-    renderHomeAuthors();
-
-    // Retractions over time
-    renderRetract();
+    // Top journals by volume (quartiles)
+    renderTopJournalsQ();
+    // Top journals by citations
+    renderTopJournalsCites();
+    // IF charts
+    renderIFTop();
+    renderIFBubble();
   }
 
-  function renderTopJournalsQC(){
-    const ctx = document.getElementById('chartTopJournalsQC').getContext('2d');
-
+  function renderTopJournalsQ(){
+    const ctx = document.getElementById('chartTopJournalsQ').getContext('2d');
     const byJournal = new Map();
     for (const p of filtered){
       const j=(p.journal||'').trim(); if (!j) continue;
-      const o = byJournal.get(j) || {total:0, q1:0,q2:0,q3:0,q4:0, cites:0, issns:new Set()};
+      const o = byJournal.get(j) || {total:0, q1:0,q2:0,q3:0,q4:0};
       o.total++;
       const q = quartileOf(p);
       if (q==='Q1') o.q1++; else if (q==='Q2') o.q2++; else if (q==='Q3') o.q3++; else if (q==='Q4') o.q4++;
-      o.cites += Number(p.citations||0);
-      (p.issns||[]).forEach(x=>o.issns.add(normIssn(x)));
       byJournal.set(j,o);
     }
-    const top = [...byJournal.entries()].sort((a,b)=>b[1].total-a[1].total).slice(0,12);
+    const top = [...byJournal.entries()].sort((a,b)=>b[1].total-a[1].total).slice(0,10);
     const labels = top.map(([j])=>j);
     const q1 = top.map(([,o])=>o.q1), q2 = top.map(([,o])=>o.q2), q3 = top.map(([,o])=>o.q3), q4 = top.map(([,o])=>o.q4);
-    const cites = top.map(([,o])=>o.cites);
-
-    if (chartTopJournalsQC) chartTopJournalsQC.destroy();
-
-    chartTopJournalsQC = new Chart(ctx, {
+    if (chartTopJournalsQ) chartTopJournalsQ.destroy();
+    chartTopJournalsQ = new Chart(ctx, {
       type:'bar',
-      data:{
-        labels,
-        datasets:[
-          { label:'Q1', data:q1, backgroundColor:clr.q1, stack:'q' },
-          { label:'Q2', data:q2, backgroundColor:clr.q2, stack:'q' },
-          { label:'Q3', data:q3, backgroundColor:clr.q3, stack:'q' },
-          { label:'Q4', data:q4, backgroundColor:clr.q4, stack:'q' },
-          { label:'Citations', type:'line', data:cites, yAxisID:'y1',
-            borderColor:clr.gray, pointBackgroundColor:clr.gray, borderWidth:2, tension:.25 }
-        ]
-      },
-      options:{
-        responsive:true, maintainAspectRatio:false,
-        plugins:{
-          legend:{ position:'top' },
-          tooltip:{ callbacks:{
-            afterLabel:(ctx)=>{
-              const j = labels[ctx.dataIndex];
-              const meta = metricIFForJournal(j, top[ctx.dataIndex][1].issns);
-              return meta ? `IF: ${meta.value}` : '';
-            }
-          }},
-          shadowPlugin:{}
-        },
-        scales:{
-          x:{ stacked:true, ticks:{ color:'#334155' }, grid:{ display:false } },
-          y:{ stacked:true, beginAtZero:true, ticks:{ color:'#334155' }, grid:{ color:'#e2e8f0' } },
-          y1:{ position:'right', beginAtZero:true, ticks:{ color:'#334155' }, grid:{ drawOnChartArea:false } }
-        }
-      }
+      data:{ labels, datasets:[
+        { label:'Q1', data:q1, backgroundColor:'#16a34a', stack:'q' },
+        { label:'Q2', data:q2, backgroundColor:'#3b82f6', stack:'q' },
+        { label:'Q3', data:q3, backgroundColor:'#f59e0b', stack:'q' },
+        { label:'Q4', data:q4, backgroundColor:'#ef4444', stack:'q' },
+      ]},
+      options:{ responsive:true, maintainAspectRatio:false, plugins:{ legend:{ position:'top' }, shadowPlugin:{} },
+        scales:{ x:{ stacked:true, ticks:{ color:'#334155' }, grid:{ display:false } },
+                 y:{ stacked:true, beginAtZero:true, ticks:{ color:'#334155' }, grid:{ color:'#e2e8f0' } } }
     });
   }
 
-  function renderIFCharts(){
-    // Build IF per journal
+  function renderTopJournalsCites(){
+    const el = document.getElementById('chartTopJournalsCites'); if (!el) return;
+    const ctx = el.getContext('2d');
     const byJournal = new Map();
     for (const p of filtered){
       const j=(p.journal||'').trim(); if (!j) continue;
-      const o = byJournal.get(j) || {issns:new Set(), count:0, cites:0};
-      (p.issns||[]).forEach(x=>o.issns.add(normIssn(x)));
-      o.count++; o.cites += Number(p.citations||0);
+      const o = byJournal.get(j) || {cites:0};
+      o.cites += Number(p.citations||0);
       byJournal.set(j,o);
     }
+    const top = [...byJournal.entries()].sort((a,b)=>b[1].cites-a[1].cites).slice(0,10);
+    const labels = top.map(([j])=>j);
+    const cites  = top.map(([,o])=>o.cites);
+    if (chartTopJournalsCites) chartTopJournalsCites.destroy();
+    chartTopJournalsCites = new Chart(ctx, {
+      type:'bar',
+      data:{ labels, datasets:[{ label:'Total citations', data:cites, borderRadius:12, borderSkipped:false, backgroundColor:gradH(ctx) }] },
+      options:{ indexAxis:'y', responsive:true, maintainAspectRatio:false, plugins:{ legend:{display:false}, shadowPlugin:{} },
+        scales:{ x:{ beginAtZero:true, grid:{ color:'#e2e8f0' }, ticks:{ color:'#334155' } },
+                 y:{ grid:{ display:false }, ticks:{ color:'#334155' } } }
+    });
+  }
 
-    const rows=[];
-    for (const [j,o] of byJournal.entries()){
-      const meta = metricIFForJournal(j, o.issns);
-      if (meta && meta.value>0) rows.push({journal:j, ifv:meta.value, count:o.count, cites:o.cites});
+  /* ----- IF charts ----- */
+  function resolveIF(p){
+    const issns=(p.issns||[]).map(normIssn).filter(Boolean);
+    for (const id of issns){ if (ifByIssn.has(id)) return ifByIssn.get(id); }
+    const t=normTitle(p.journal||''); if (t && ifByTitle.has(t)) return ifByTitle.get(t);
+    return null;
+  }
+  function renderIFTop(){
+    const ctx = document.getElementById('chartIFTop').getContext('2d');
+    const note = document.getElementById('ifTopNote');
+    const byJournal = new Map();
+    for (const p of filtered){
+      const j=(p.journal||'').trim(); if (!j) continue;
+      const cur = byJournal.get(j) || {if:null};
+      const jif = resolveIF(p);
+      cur.if = jif ?? cur.if;
+      byJournal.set(j,cur);
     }
-    IFcount = rows.length;
+    const withIF = [...byJournal.entries()].filter(([,o])=>o.if!=null);
+    if (!withIF.length){ if (chartIFTop) chartIFTop.destroy(); note.textContent='No IF data found in your uploaded file. (Add an “Impact Factor / JIF” column.)'; return; }
+    note.textContent = 'Uses Impact Factor (JIF) from your upload.';
 
-    // Top bar
-    const ctxTop = document.getElementById('chartIFTop').getContext('2d');
+    const top = withIF.sort((a,b)=>b[1].if - a[1].if).slice(0,10);
+    const labels = top.map(([j])=>j);
+    const vals   = top.map(([,o])=>o.if);
     if (chartIFTop) chartIFTop.destroy();
-    document.getElementById('ifTopNote').textContent = rows.length ? '' : 'No IF data found in your uploaded file (try including an “Impact Factor / JIF” column).';
-
-    if (rows.length){
-      const top = rows.sort((a,b)=>b.ifv-a.ifv).slice(0,12);
-      chartIFTop = new Chart(ctxTop, {
-        type:'bar',
-        data:{ labels:top.map(r=>r.journal), datasets:[{ label:'Impact Factor (IF)', data:top.map(r=>r.ifv), borderRadius:12, borderSkipped:false, backgroundColor:gradH(ctxTop, clr.teal, clr.cyan) }] },
-        options:{
-          indexAxis:'y', responsive:true, maintainAspectRatio:false,
-          plugins:{ legend:{display:false}, shadowPlugin:{}, tooltip:{ callbacks:{ label: (ctx)=> `IF: ${ctx.parsed.x}` } } },
-          scales:{ x:{ beginAtZero:true, grid:{ color:'#e2e8f0' }, ticks:{ color:'#334155' } }, y:{ grid:{ display:false }, ticks:{ color:'#334155' } } }
-        }
-      });
+    chartIFTop = new Chart(ctx, {
+      type:'bar',
+      data:{ labels, datasets:[{ label:'IF', data:vals, borderRadius:12, borderSkipped:false, backgroundColor:gradH(ctx,'#8b5cf6','#22d3ee') }] },
+      options:{ indexAxis:'y', responsive:true, maintainAspectRatio:false, plugins:{ legend:{display:false}, shadowPlugin:{} },
+        scales:{ x:{ beginAtZero:true, grid:{ color:'#e2e8f0' }, ticks:{ color:'#334155' } },
+                 y:{ grid:{ display:false }, ticks:{ color:'#334155' } } }
+    });
+  }
+  function renderIFBubble(){
+    const ctx = document.getElementById('chartIFBubble').getContext('2d');
+    const note = document.getElementById('ifBubbleNote');
+    const byJournal = new Map();
+    for (const p of filtered){
+      const j=(p.journal||'').trim(); if (!j) continue;
+      const jif = resolveIF(p);
+      const o = byJournal.get(j) || {count:0, if:null, cites:0};
+      o.count++; o.cites += Number(p.citations||0);
+      if (jif!=null) o.if = jif;
+      byJournal.set(j,o);
     }
-
-    // Bubble (IF vs count, bubble ~ citations)
-    const ctxB = document.getElementById('chartIFBubble').getContext('2d');
+    const points = [...byJournal.entries()].filter(([,o])=>o.if!=null).map(([j,o])=>({label:j, x:o.if, y:o.count, r: Math.max(6, Math.min(18, Math.sqrt(o.cites||0))) }));
+    if (!points.length){ if (chartIFBubble) chartIFBubble.destroy(); note.textContent='No IF data found in your uploaded file.'; return; }
+    note.textContent='';
     if (chartIFBubble) chartIFBubble.destroy();
-    document.getElementById('ifBubNote').textContent = rows.length ? '' : 'No IF data found in your uploaded file.';
-
-    if (rows.length){
-      const pts = rows.sort((a,b)=>b.cites-a.cites).slice(0,50).map(r=>({x:r.ifv,y:r.count,r:Math.max(4,Math.sqrt(r.cites)||4), label:r.journal}));
-      chartIFBubble = new Chart(ctxB, {
-        type:'bubble',
-        data:{ datasets:[{ label:'Journals', data:pts, backgroundColor:'rgba(20,184,166,.25)', borderColor:clr.teal }] },
-        options:{
-          responsive:true, maintainAspectRatio:false, plugins:{ legend:{display:false}, shadowPlugin:{}, tooltip:{ callbacks:{
-            label:(ctx)=> `${ctx.raw.label} — IF ${ctx.raw.x}, pubs ${ctx.raw.y}, cites ${Math.round(ctx.raw.r*ctx.raw.r)}`
-          }}},
-          scales:{ x:{ title:{display:true, text:'Impact Factor (IF)'}, grid:{ color:'#e2e8f0' }, ticks:{ color:'#334155' } },
-                   y:{ title:{display:true, text:'Publications (view)'}, grid:{ color:'#e2e8f0' }, ticks:{ color:'#334155' }, beginAtZero:true } }
-        }
-      });
-    }
-  }
-
-  function renderTypesYear(){
-    const ctx = document.getElementById('chartTypesYear').getContext('2d');
-    const map=new Map(); // year -> {type->count}
-    const setTypes=new Set();
-    for (const p of filtered){
-      const y=p.year; if (y==null) continue;
-      const t=normalizeType(p.type || p.type_crossref);
-      setTypes.add(t);
-      const row=map.get(y)||{}; row[t]=(row[t]||0)+1; map.set(y,row);
-    }
-    const years=[...map.keys()].sort((a,b)=>a-b);
-    const types=[...setTypes];
-    const datasets = types.map((t,i)=>({
-      label:labelForType(t),
-      data:years.map(y=> (map.get(y)||{})[t]||0 ),
-      stack:'types',
-      backgroundColor:`hsl(${(i*47)%360} 70% 55% / .85)`
-    }));
-    if (chartTypesYear) chartTypesYear.destroy();
-    chartTypesYear = new Chart(ctx, {
-      type:'bar',
-      data:{ labels:years, datasets },
-      options:{ responsive:true, maintainAspectRatio:false,
-        plugins:{ legend:{position:'top'}, shadowPlugin:{} },
-        scales:{ x:{ stacked:true, grid:{display:false}, ticks:{color:'#334155'} }, y:{ stacked:true, beginAtZero:true, grid:{ color:'#e2e8f0' }, ticks:{color:'#334155'} } }
-      }
-    });
-  }
-
-  function renderSubjects(){
-    const ctx = document.getElementById('chartSubjects').getContext('2d');
-    const counts=new Map();
-    for (const p of filtered){
-      const subjects = extractSubjectsList(p);
-      for (const s of subjects){ counts.set(s,(counts.get(s)||0)+1); }
-    }
-    const top=[...counts.entries()].sort((a,b)=>b[1]-a[1]).slice(0,12);
-    if (chartSubjects) chartSubjects.destroy();
-    chartSubjects = new Chart(ctx, {
-      type:'bar',
-      data:{ labels: top.map(x=>x[0]), datasets:[{label:'Count', data:top.map(x=>x[1]), borderRadius:12, borderSkipped:false, backgroundColor:gradH(ctx, clr.indigo, clr.purple)}]},
-      options:{ indexAxis:'y', responsive:true, maintainAspectRatio:false, plugins:{ legend:{display:false}, shadowPlugin:{} },
-        scales:{ x:{ grid:{ color:'#e2e8f0' }, ticks:{color:'#334155'}, beginAtZero:true }, y:{ grid:{ display:false }, ticks:{color:'#334155'} } }
-      }
-    });
-  }
-
-  function renderHomeAuthors(){
-    const ctx = document.getElementById('chartHomeAuthors').getContext('2d');
-    const counts=new Map();
-    for (const p of filtered){
-      const arr = Array.isArray(p.home_authors)?p.home_authors:deriveHomeAuthors(p);
-      for (const a of arr){ counts.set(a,(counts.get(a)||0)+1); }
-    }
-    const top=[...counts.entries()].sort((a,b)=>b[1]-a[1]).slice(0,15);
-    if (chartHomeAuthors) chartHomeAuthors.destroy();
-    chartHomeAuthors = new Chart(ctx, {
-      type:'bar',
-      data:{ labels: top.map(x=>x[0]), datasets:[{label:'Pubs', data:top.map(x=>x[1]), borderRadius:12, borderSkipped:false, backgroundColor:gradH(ctx, clr.teal, clr.cyan)}]},
-      options:{ indexAxis:'y', responsive:true, maintainAspectRatio:false, plugins:{ legend:{display:false}, shadowPlugin:{} },
-        scales:{ x:{ grid:{ color:'#e2e8f0' }, ticks:{color:'#334155'}, beginAtZero:true }, y:{ grid:{ display:false }, ticks:{color:'#334155'} } }
-      }
-    });
-  }
-
-  function renderRetract(){
-    const ctx = document.getElementById('chartRetract').getContext('2d');
-    const byYearFlag=new Map(), byYearNotice=new Map();
-    for (const p of filtered){
-      if (!p.year) continue;
-      if (p.is_retracted) byYearFlag.set(p.year,(byYearFlag.get(p.year)||0)+1);
-      if (p.retraction_notice) byYearNotice.set(p.year,(byYearNotice.get(p.year)||0)+1);
-    }
-    const years=[...new Set([...byYearFlag.keys(),...byYearNotice.keys()])].sort((a,b)=>a-b);
-    if (chartRetract) chartRetract.destroy();
-    chartRetract = new Chart(ctx, {
-      type:'line',
-      data:{ labels:years, datasets:[
-        { label:'OpenAlex retracted', data:years.map(y=>byYearFlag.get(y)||0), borderColor:clr.q4, tension:.25, pointRadius:2 },
-        { label:'Retraction notices (title)', data:years.map(y=>byYearNotice.get(y)||0), borderColor:clr.q3, tension:.25, pointRadius:2 }
-      ]},
-      options:{ responsive:true, maintainAspectRatio:false, plugins:{ legend:{position:'top'}, shadowPlugin:{} },
-        scales:{ x:{ grid:{ display:false }, ticks:{color:'#334155'} }, y:{ beginAtZero:true, grid:{ color:'#e2e8f0' }, ticks:{color:'#334155'} } }
-      }
-    });
-  }
-
-  function quartileOf(p){ return p.quartile || resolveQuartile(p) || ''; }
-
-  // IF-only helper (ignore SJR score)
-  function metricIFForJournal(journal, issnSet){
-    let best=null;
-    const add = (rec)=>{ if (!rec) return; const value = parseNum(rec.if); if (value && (!best || value>best.value)) best={value}; };
-    if (issnSet){ for (const id of issnSet){ add(sjrMetaByIssn.get(id)); } }
-    add(sjrMetaByTitle.get(normTitle(journal)));
-    return best;
-  }
-
-  /* --------------- SDG chart --------------- */
-  function renderSDGChart(){
-    const ctx = document.getElementById('chartSDG').getContext('2d');
-    const counts = new Array(18).fill(0);
-    for (const p of filtered){ for (const id of (p.sdg_tags||[])) counts[id]++; }
-    if (chartSDG) chartSDG.destroy();
-    const labels = SDG_LIST.map(s=>`${s.id}`), data = SDG_LIST.map(s=>counts[s.id]||0), colors = SDG_LIST.map(s=>SDG_COLORS[s.id]);
-    chartSDG = new Chart(ctx, {
-      type:'bar',
-      data:{ labels, datasets:[{ label:'Count', data, borderRadius:12, borderSkipped:false, backgroundColor:colors }] },
-      options:{ responsive:true, maintainAspectRatio:false, plugins:{ legend:{display:false}, shadowPlugin:{}, tooltip:{mode:'index', intersect:false} },
-        scales:{ x:{ grid:{ display:false }, ticks:{ color:'#334155' } }, y:{ grid:{ color:'#e2e8f0' }, ticks:{ color:'#334155' }, beginAtZero:true } }
-      }
+    chartIFBubble = new Chart(ctx, {
+      type:'bubble',
+      data:{ datasets:[{ label:'Journals', data:points, backgroundColor:'rgba(99,102,241,.35)', borderColor:'#6366f1' }] },
+      options:{ responsive:true, maintainAspectRatio:false, plugins:{ legend:{display:false}, shadowPlugin:{} },
+        scales:{ x:{ title:{display:true, text:'Impact Factor (IF)'}, grid:{ color:'#e2e8f0' }, ticks:{ color:'#334155' } },
+                 y:{ title:{display:true, text:'Publications (view)'}, grid:{ color:'#e2e8f0' }, ticks:{ color:'#334155' }, beginAtZero:true } } }
     });
   }
 
@@ -975,93 +709,85 @@
     const hits=[]; for (const s of SDG_LIST){ for (const kw of s.kw){ if (text.includes(kw.toLowerCase())){ hits.push(s.id); break; } } }
     return Array.from(new Set(hits)).slice(0,2);
   }
-  function renderSDGBadges(ids){
-    if (!ids.length) return '';
-    return ids.map(id=>`<span class="badge" style="border-color:${SDG_COLORS[id]};background:#fff">${id}</span>`).join(' ');
-  }
+  function renderSDGBadges(ids){ if (!ids.length) return ''; return ids.map(id=>`<span class="badge" style="border-color:${SDG_COLORS[id]};background:#fff">${id}</span>`).join(' '); }
   function buildSDGLegend(){
     const box=document.getElementById('sdgLegend'); box.innerHTML='';
-    for (const s of SDG_LIST){
-      box.insertAdjacentHTML('beforeend', `<span class="badge" title="${s.name}" style="border-color:${SDG_COLORS[s.id]};background:#fff">${s.id} — ${s.name}</span>`);
-    }
+    for (const s of SDG_LIST){ box.insertAdjacentHTML('beforeend', `<span class="badge" title="${s.name}" style="border-color:${SDG_COLORS[s.id]};background:#fff">${s.id} — ${s.name}</span>`); }
   }
 
-  /* --------------- Quartile & IF upload --------------- */
+  /* --------------- Quartiles / IF upload --------------- */
   document.getElementById('sjrFile').addEventListener('change', async (e)=>{
     const file=e.target.files[0]; if(!file) return;
     const name=file.name.toLowerCase(); const text=await file.text();
-    sjrByIssn.clear(); sjrByTitle.clear(); sjrMetaByIssn.clear(); sjrMetaByTitle.clear(); haveSJR=false; IFcount=0;
+    sjrByIssn.clear(); sjrByTitle.clear(); haveSJR=false;
+    ifByIssn.clear();  ifByTitle.clear();  haveIF=false;
     try{
-      if (name.endsWith('.json')) {
-        const arr=JSON.parse(text); for (const row of arr) addQuartileRow(row);
-      } else if (name.endsWith('.csv')){
-        parseCSV(text, addQuartileRow);
-      } else { throw new Error('Unsupported file type'); }
+      if (name.endsWith('.json')) { const arr=JSON.parse(text); for (const row of arr) addMetricsRow(row); }
+      else if (name.endsWith('.csv')){ parseCSVSmart(text, addMetricsRow); }
+      else { throw new Error('Unsupported file type'); }
       haveSJR = (sjrByIssn.size + sjrByTitle.size) > 0;
-      // Count IF entries
-      const setIF = new Set([...sjrMetaByIssn.values(), ...sjrMetaByTitle.values()].filter(v=>parseNum(v.if)));
-      IFcount = setIF.size || 0;
-      document.getElementById('sjrStatus').textContent = `Loaded ${sjrByIssn.size} ISSN entries and ${sjrByTitle.size} title entries · IF entries detected: ${num(IFcount)}`;
+      haveIF  = (ifByIssn.size  + ifByTitle.size ) > 0;
+      document.getElementById('sjrStatus').textContent =
+        `Loaded quartile rows: ${sjrByIssn.size+sjrByTitle.size} · IF rows: ${ifByIssn.size+ifByTitle.size}`;
       applyFilters();
       updateCoverage();
-    }catch(err){
-      document.getElementById('sjrStatus').textContent = 'Failed: ' + err.message;
-    }
+    }catch(err){ document.getElementById('sjrStatus').textContent = 'Failed: ' + err.message; console.error(err); }
   });
 
-  function addQuartileRow(row){
-    // Broad header support
-    const q = normQuartile(row.quartile || row['SJR Best Quartile'] || row['Best Quartile'] || row.Quarter || row.Q || row.q || '');
-    const title = normTitle(row.title || row.Title || row['Source title'] || row.Journal || '');
-    const issnCell = row.issn || row.ISSN || row['ISSN / e-ISSN'] || row['ISSN print'] || row['ISSN (print)'] || row['ISSN/eISSN'] || '';
-    const issns = extractIssns(issnCell);
+  const IF_HEADERS = ['impact factor','journal impact factor','jif','if'];
+  const QUART_HEADERS = ['jif quartile','jcr quartile','quartile','q'];
+  const TITLE_HEADERS = ['title','journal title','full journal title','abbreviated journal','jcr abbreviated title'];
+  const ISSN_HEADERS  = ['issn','issn (print)','print issn','issn print'];
+  const EISSN_HEADERS = ['e-issn','issn (online)','electronic issn','issn electronic'];
 
-    // Impact Factor: accept many variants
-    const IFval = row['Impact Factor'] || row['Impact factor'] || row['ImpactFactor'] || row['IF'] || row['JIF'] ||
-                  row['Journal Impact'] || row['Journal Impact Factor'] || row['2-year Impact Factor'] ||
-                  row['Impact Factor (2023)'] || row['Impact Factor (2024)'] || row['Impact Factor (latest)'] || row.IF || '';
-    const jif = parseNum(IFval);
+  function addMetricsRow(row){
+    const q = normQuartile(firstKey(row, QUART_HEADERS) || '');
+    const title = normTitle(firstKey(row, TITLE_HEADERS) || row.title || '');
+    const issn  = normIssn (firstKey(row, ISSN_HEADERS)  || '');
+    const eissn = normIssn (firstKey(row, EISSN_HEADERS) || '');
 
-    const meta = { q, if: jif || null };
+    const ifRaw = firstKey(row, IF_HEADERS) || '';
+    const jif = numParse(ifRaw);
 
-    if (q){ if (issns.length){ for (const id of issns) sjrByIssn.set(id, q); } if (title) sjrByTitle.set(title, q); }
-    if (issns.length){ for (const id of issns) sjrMetaByIssn.set(id, meta); }
-    if (title) sjrMetaByTitle.set(title, meta);
+    if (q){ if (issn) sjrByIssn.set(issn, q); if (eissn) sjrByIssn.set(eissn, q); if (title) sjrByTitle.set(title, q); }
+    if (!isNaN(jif) && jif>0){ if (issn) ifByIssn.set(issn, jif); if (eissn) ifByIssn.set(eissn, jif); if (title) ifByTitle.set(title, jif); }
+  }
+  function firstKey(obj, keys){
+    const low = {}; for (const k in obj){ low[k.toLowerCase().trim()] = obj[k]; }
+    for (const k of keys){ if (k in low) return low[k]; }
+    return '';
   }
 
-  function parseCSV(text, onRow){
-    const lines=text.split(/\r?\n/).filter(l=>l.trim().length>0);
-    if (!lines.length) throw new Error('Empty CSV');
-    const hdrRaw = lines.shift();
-    const delim = (hdrRaw.match(/;/g)||[]).length>(hdrRaw.match(/,/g)||[]).length?';':',';
-    const header = smartSplit(hdrRaw, delim).map(h=>h.trim());
-
-    const idxTitle = findIndex(header, h => /^(title|journal|source\s*title)$/i.test(h));
-    const idxIssn  = findIndex(header, h => /issn/i.test(h));
-    const idxQuart = findIndex(header, h => /(quartile|best\s*quartile|sjr\s*best\s*quartile|^q$)/i.test(h));
-    const idxIF    = findIndex(header, h => /(impact\s*factor|journal.*impact|^jif$|^if$|\(20\d{2}\)\s*impact)/i.test(h));
-
-    if (idxQuart<0 && idxTitle<0 && idxIssn<0 && idxIF<0) throw new Error('Cannot find Title/ISSN/Quartile/IF columns');
-
-    for (const line of lines){
-      const cols = smartSplit(line, delim);
-      onRow({
-        title: idxTitle>=0?cols[idxTitle]:'', issn: idxIssn>=0?cols[idxIssn]:'', quartile: idxQuart>=0?cols[idxQuart]:'',
-        'Impact Factor': idxIF>=0?cols[idxIF]:''
-      });
+  // CSV with comma OR semicolon; quoted cells; trims thousands separators
+  function parseCSVSmart(text, onRow){
+    const lines=text.replace(/\r\n/g,'\n').replace(/\r/g,'\n').split('\n').filter(l=>l.trim().length);
+    let sep = (lines[0].split(';').length > lines[0].split(',').length) ? ';' : ',';
+    const header = splitCsvLine(lines[0], sep).map(h=>h.trim());
+    for (let i=1;i<lines.length;i++){
+      const cols = splitCsvLine(lines[i], sep);
+      const row = {}; header.forEach((h,idx)=> row[h]=cols[idx] ?? '');
+      onRow(row);
     }
   }
-  const smartSplit=(line,delim)=>{ const out=[]; let cur=''; let inQ=false; for (let i=0;i<line.length;i++){ const ch=line[i]; if (ch==='\"'){ inQ=!inQ; continue; } if (ch===delim && !inQ){ out.push(cur.trim()); cur=''; continue; } cur+=ch; } out.push(cur.trim()); return out; };
-  const findIndex=(arr,pred)=>{ for (let i=0;i<arr.length;i++){ if (pred(arr[i])) return i; } return -1; };
-  const extractIssns = cell => [...new Set(String(cell||'').split(/[\/,;|\s]+/).map(normIssn).filter(Boolean))];
+  function splitCsvLine(line, sep){
+    const out=[]; let cur=''; let inQ=false; for (let i=0;i<line.length;i++){
+      const ch=line[i];
+      if (ch==='\"'){ inQ = !inQ; continue; }
+      if (ch===sep && !inQ){ out.push(cur.trim()); cur=''; continue; }
+      cur+=ch;
+    }
+    out.push(cur.trim()); return out;
+  }
+
   function resolveQuartile(p){
     const issns=(p.issns||[]).map(normIssn).filter(Boolean);
     for (const id of issns){ if (sjrByIssn.has(id)) return sjrByIssn.get(id); }
     const t=normTitle(p.journal||''); if (t && sjrByTitle.has(t)) return sjrByTitle.get(t);
     return '';
   }
+  function quartileOf(p){ return p.quartile || resolveQuartile(p) || ''; }
   function updateCoverage(){
-    let mapped=0,total=filtered.length; for (const p of filtered) if (quartileOf(p)) mapped++;
+    let mapped=0,total=filtered.length; for (const p of filtered) if (p.quartile) mapped++;
     const pct= total? Math.round(mapped*100/total):0;
     const el=document.getElementById('mapCoverage'); if (el) el.textContent = `${mapped} / ${total} in current view mapped (${pct}%)`;
   }
@@ -1088,88 +814,62 @@
     return parts.join(' ') || '';
   }
 
-  /* --------------- Export (ALL filtered rows) --------------- */
+  /* --------------- Export --------------- */
   function exportCSV(){
     if (!filtered.length) return;
-    const fileSuffix = buildRangeSuffix();
+    const start=(currentPage-1)*pageSize, end=Math.min(start+pageSize, filtered.length);
+    const rows = filtered.slice(start,end);
     const header = selectedColumns.map(c=>c.label);
     const csv = [header.join(',')].concat(
-      filtered.map(r => selectedColumns.map(c => q(textForExport(c.key, r))).join(','))
+      rows.map(r => selectedColumns.map(c => q(textForExport(c.key, r))).join(','))
     ).join('\n');
-    downloadBlob(`publications_${fileSuffix}.csv`, csv, 'text/csv');
+    downloadBlob('publications_view.csv', csv, 'text/csv');
   }
   function exportJSON(){
-    if (!filtered.length) return;
-    const fileSuffix = buildRangeSuffix();
-    const rows = filtered.map(r=>{
-      const obj={}; for (const c of selectedColumns){ obj[c.key] = rawForExport(c.key, r); } return obj;
-    });
-    downloadBlob(`publications_${fileSuffix}.json`, JSON.stringify(rows,null,2), 'application/json');
-  }
-  function buildRangeSuffix(){
-    const y1 = document.getElementById('yearFrom')?.value || '';
-    const y2 = document.getElementById('yearTo')?.value   || '';
-    if (y1 && y2) return `${y1}-${y2}`;
-    if (y1 && !y2) return `${y1}-and-newer`;
-    if (!y1 && y2) return `up-to-${y2}`;
-    return 'all-years';
+    const start=(currentPage-1)*pageSize, end=Math.min(start+pageSize, filtered.length);
+    const rows = filtered.slice(start,end).map(r=>{ const obj={}; for (const c of selectedColumns){ obj[c.key] = rawForExport(c.key, r); } return obj; });
+    downloadBlob('publications_view.json', JSON.stringify(rows,null,2), 'application/json');
   }
   function textForExport(key,p){
     switch(key){
-      case 'authors': return (Array.isArray(p.authors)?p.authors:deriveAuthors(p)).join('; ');
-      case 'home_authors': return (Array.isArray(p.home_authors)?p.home_authors:deriveHomeAuthors(p)).join('; ');
+      case 'authors': return (p.authors||[]).join('; ');
       case 'issns':   return (p.issns||[]).join('; ');
       case 'subjects':return extractSubjects(p);
       case 'sdg_tags':return (p.sdg_tags||[]).join('; ');
       case 'retraction_info': return stripHtml(renderRetractionInfo(p));
       case 'is_retracted': return p.is_retracted ? 'Yes' : 'No';
-      case 'type': return labelForType(normalizeType(p.type || p.type_crossref));
       default: return rawForExport(key, p) ?? '';
     }
   }
   function rawForExport(key,p){
     if (key==='subjects') return extractSubjects(p);
     if (key==='retraction_info') return stripHtml(renderRetractionInfo(p));
-    if (key==='authors') return Array.isArray(p.authors)?p.authors:deriveAuthors(p);
-    if (key==='home_authors') return Array.isArray(p.home_authors)?p.home_authors:deriveHomeAuthors(p);
-    if (key==='type') return labelForType(normalizeType(p.type || p.type_crossref));
     return p[key];
   }
 
   /* --------------- Utils --------------- */
-  const esc = s => String(s).replace(/[&<>"']/g, m=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m]));
-  const q = s => `"${String(s).replace(/"/g,'""')}"`;
-  const downloadBlob = (name, content, type) => { const blob=new Blob([content],{type}); const a=document.createElement('a'); a.href=URL.createObjectURL(blob); a.download=name; a.click(); URL.revokeObjectURL(a.href); };
-  const num = n => (n||0).toLocaleString();
-  const normTitle = t => String(t||'').toLowerCase().replace(/\s+/g,' ').trim();
-  const normIssn = s => { const x=String(s||'').replace(/[^0-9xX]/g,'').toUpperCase(); const eight = x.length===8 ? x : (x.length===7 ? '0'+x : ''); return eight ? (eight.slice(0,4)+'-'+eight.slice(4)) : ''; };
-  const normQuartile = q => { const s=String(q||'').toUpperCase(); const m = s.match(/Q([1-4])/); return m ? `Q${m[1]}` : ''; };
+  function esc(s){ return String(s).replace(/[&<>"']/g, m=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m])); }
+  function q(s){ return `"${String(s).replace(/"/g,'""')}"`; }
+  function downloadBlob(name, content, type){ const blob=new Blob([content],{type}); const a=document.createElement('a'); a.href=URL.createObjectURL(blob); a.download=name; a.click(); URL.revokeObjectURL(a.href); }
+  function num(n){ return (n||0).toLocaleString(); }
+  function normTitle(t){ return String(t||'').toLowerCase().replace(/\s+/g,' ').trim(); }
+  function normIssn(s){ const x=String(s||'').replace(/[^0-9xX]/g,'').toUpperCase(); return x.length===8? x.slice(0,4)+'-'+x.slice(4): (x.length===7? x.slice(0,3)+'-'+x.slice(3): ''); }
+  function normQuartile(q){ const s=String(q||'').toUpperCase().trim(); return /^Q[1-4]$/.test(s)? s : ''; }
   function extractSubjects(p){
     if (Array.isArray(p.subjects) && p.subjects.length) return p.subjects.slice(0,3).join(', ');
-    if (Array.isArray(p.concepts) && p.concepts.length){
-      const arr = p.concepts.map(c=>c.display_name||c.name||'').filter(Boolean).slice(0,3); return arr.join(', ');
-    }
+    if (Array.isArray(p.concepts) && p.concepts.length){ const arr = p.concepts.map(c=>c.display_name||c.name||'').filter(Boolean).slice(0,3); return arr.join(', '); }
     return '';
   }
-  function extractSubjectsList(p){
-    if (Array.isArray(p.subjects) && p.subjects.length) return p.subjects.slice(0,1);
-    if (Array.isArray(p.concepts) && p.concepts.length) return p.concepts.map(c=>c.display_name||c.name||'').filter(Boolean).slice(0,1);
-    return [];
-  }
-  const stripHtml = html => { const d=document.createElement('div'); d.innerHTML=html; return d.textContent||d.innerText||''; };
-  const parseNum = v => { const m=String(v||'').replace(/,/g,'').match(/-?\d+(\.\d+)?/); return m?parseFloat(m[0]):null; };
+  function stripHtml(html){ const d=document.createElement('div'); d.innerHTML=html; return d.textContent||d.innerText||''; }
+  function numParse(v){ if (v===null || v===undefined) return NaN; const s=String(v).replace(/,/g,'').trim(); const n=parseFloat(s); return isNaN(n)? NaN : n; }
 
-  // Close dropdowns on outside click
+  // Close dropdown on outside click
   document.addEventListener('click', (e)=>{
-    const panels=[['columnsPanel','colBtn'],['typePanel','typeBtn']];
-    for (const [pid,bid] of panels){
-      const panel=document.getElementById(pid); const btn=document.getElementById(bid);
-      if (!panel || panel.classList.contains('hidden')) continue;
-      if (!panel.contains(e.target) && !btn.contains(e.target)) panel.classList.add('hidden');
-    }
+    const panel=document.getElementById('columnsPanel'); const btn=document.getElementById('colBtn');
+    if (!panel || panel.classList.contains('hidden')) return;
+    if (!panel.contains(e.target) && !btn.contains(e.target)) panel.classList.add('hidden');
   });
 
-  // Init
   document.addEventListener('DOMContentLoaded', ()=>{ buildSDGLegend(); autoLoad(); });
 </script>
 </body>
