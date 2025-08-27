@@ -43,6 +43,11 @@
       </div>
       <div class="hidden md:flex items-center gap-2 text-xs">
         <span class="px-2 py-1 rounded-lg bg-white/10 border border-white/20">Static JSON · No live API</span>
+        <!-- NEW: manual JSON loader (fallback if fetch fails/cached HTML) -->
+        <button id="btnLoadJson" class="px-2 py-1 rounded-lg bg-white/10 border border-white/20 hover:bg-white/20">
+          Load JSON
+        </button>
+        <input id="jsonFile" type="file" accept="application/json" class="hidden"/>
       </div>
     </div>
 
@@ -407,48 +412,61 @@
   async function autoLoad(){
     try{
       const res = await fetch('institution_data.json', { cache:'no-store' });
-      if (!res.ok) throw new Error('institution_data.json not found');
+      if (!res.ok) throw new Error('institution_data.json not found (HTTP '+res.status+')');
+      const ct = res.headers.get('content-type') || '';
+      if (!ct.includes('application/json')) throw new Error('Non-JSON response (maybe 404 HTML). Use “Load JSON”.');
       const j = await res.json();
-
-      document.getElementById('lastSynced').textContent =
-        j.updated ? `Last synced: ${dayjs(j.updated).format('DD MMM YYYY, HH:mm')}` : '';
-
-      all = Array.isArray(j.items) ? j.items : [];
-
-      // Normalize authors + home authors
-      for (const p of all){
-        if (!Array.isArray(p.authors)) p.authors = deriveAuthors(p);
-        p.home_authors = deriveHomeAuthors(p);
-      }
-
-      // Retraction links + SDGs
-      buildRetractionIndex(all);
-      for (const p of all) p.sdg_tags = guessSDGs(p);
-
-      document.getElementById('kpiTotal').textContent = num(all.length);
-
-      // Year options
-      const years = [...new Set(all.map(x=>x.year).filter(y=>y!=null))].sort((a,b)=>a-b);
-      const opts = (arr) => ['<option value="">All</option>'].concat(arr.map(y=>`<option value="${y}">${y}</option>`)).join('');
-      document.getElementById('yearFrom').innerHTML = opts(years);
-      document.getElementById('yearTo').innerHTML   = opts(years);
-
-      // SDG options
-      buildSDGOptions();
-
-      // Types
-      computeKnownTypes();
-      buildTypePanel();
-
-      pageSize = parseInt(document.getElementById('pageSize').value,10) || 50;
-
-      buildColumnsPanel();
-      buildSDGLegend();
-      applyFilters(1);
+      initFromJSON(j);
     }catch(e){
-      document.getElementById('lastSynced').textContent = 'Error: '+e.message;
+      document.getElementById('lastSynced').textContent = 'Error: '+e.message+' — use “Load JSON” to select the file manually.';
       console.error(e);
     }
+  }
+
+  // Allow manual load (header button)
+  document.getElementById('btnLoadJson')?.addEventListener('click', ()=>document.getElementById('jsonFile').click());
+  document.getElementById('jsonFile')?.addEventListener('change', async (e)=>{
+    const f=e.target.files[0]; if(!f) return;
+    try{ const txt=await f.text(); const j=JSON.parse(txt); initFromJSON(j); }
+    catch(err){ document.getElementById('lastSynced').textContent='Error reading file: '+err.message; }
+  });
+
+  function initFromJSON(j){
+    document.getElementById('lastSynced').textContent =
+      j.updated ? `Last synced: ${dayjs(j.updated).format('DD MMM YYYY, HH:mm')}` : 'Data loaded';
+
+    all = Array.isArray(j.items) ? j.items : [];
+
+    // Normalize authors + home authors
+    for (const p of all){
+      if (!Array.isArray(p.authors)) p.authors = deriveAuthors(p);
+      p.home_authors = deriveHomeAuthors(p);
+    }
+
+    // Retraction links + SDGs
+    buildRetractionIndex(all);
+    for (const p of all) p.sdg_tags = guessSDGs(p);
+
+    document.getElementById('kpiTotal').textContent = num(all.length);
+
+    // Year options
+    const years = [...new Set(all.map(x=>x.year).filter(y=>y!=null))].sort((a,b)=>a-b);
+    const opts = (arr) => ['<option value="">All</option>'].concat(arr.map(y=>`<option value="${y}">${y}</option>`)).join('');
+    document.getElementById('yearFrom').innerHTML = opts(years);
+    document.getElementById('yearTo').innerHTML   = opts(years);
+
+    // SDG options
+    buildSDGOptions();
+
+    // Types
+    computeKnownTypes();
+    buildTypePanel();
+
+    pageSize = parseInt(document.getElementById('pageSize').value,10) || 50;
+
+    buildColumnsPanel();
+    buildSDGLegend();
+    applyFilters(1);
   }
 
   /* --------- Authors helpers --------- */
@@ -837,7 +855,7 @@
     // Bubble (IF vs count, bubble ~ citations)
     const ctxB = document.getElementById('chartIFBubble').getContext('2d');
     if (chartIFBubble) chartIFBubble.destroy();
-    document.getElementById('ifBubNote').textContent = rows.length ? '' : 'No IF data found in your uploaded file.';
+    document.getElementById('ifBubNote').textContent = rows.length ? '' : 'No IF data found in your uploaded file.'
 
     if (rows.length){
       const pts = rows.sort((a,b)=>b.cites-a.cites).slice(0,50).map(r=>({x:r.ifv,y:r.count,r:Math.max(4,Math.sqrt(r.cites)||4), label:r.journal}));
@@ -847,7 +865,7 @@
         options:{
           responsive:true, maintainAspectRatio:false, plugins:{ legend:{display:false}, shadowPlugin:{}, tooltip:{ callbacks:{
             label:(ctx)=> `${ctx.raw.label} — IF ${ctx.raw.x}, pubs ${ctx.raw.y}, cites ${Math.round(ctx.raw.r*ctx.raw.r)}`
-          }}},
+          }}} ,
           scales:{ x:{ title:{display:true, text:'Impact Factor (IF)'}, grid:{ color:'#e2e8f0' }, ticks:{ color:'#334155' } },
                    y:{ title:{display:true, text:'Publications (view)'}, grid:{ color:'#e2e8f0' }, ticks:{ color:'#334155' }, beginAtZero:true } }
         }
@@ -999,7 +1017,7 @@
       } else { throw new Error('Unsupported file type'); }
       haveSJR = (sjrByIssn.size + sjrByTitle.size) > 0;
       // Count IF entries
-      const setIF = new Set([...sjrMetaByIssn.values(), ...sjrMetaByTitle.values()].filter(v=>parseNum(v.if)));
+      const setIF = new Set([...sjrMetaByIssn.values(), ...sjrMetaByTitle.values()].map(v=>parseNum(v.if)).filter(Boolean));
       IFcount = setIF.size || 0;
       document.getElementById('sjrStatus').textContent = `Loaded ${sjrByIssn.size} ISSN entries and ${sjrByTitle.size} title entries · IF entries detected: ${num(IFcount)}`;
       applyFilters();
