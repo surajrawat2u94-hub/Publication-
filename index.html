@@ -12,6 +12,8 @@
   <!-- Day.js + Chart.js -->
   <script src="https://cdn.jsdelivr.net/npm/dayjs@1/dayjs.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+  <!-- Matrix chart plugin for Chart.js (for IF vs Publications heatmap) -->
+  <script src="https://cdn.jsdelivr.net/npm/chartjs-chart-matrix@2.0.1"></script>
 
   <style>
     .card{ background:rgba(255,255,255,.92); border:1px solid rgba(226,232,240,.92);
@@ -133,8 +135,8 @@
         </div>
         <div class="card p-4">
           <div class="flex items-center justify-between">
-            <h3 class="font-semibold">Journal Impact — IF vs Publications (bubble)</h3>
-            <button class="icon-btn" onclick="focusCanvas('chartIFBubble','Journal Impact — IF vs Publications (bubble)')">
+            <h3 class="font-semibold">Journal Impact — IF vs Publications (heatmap)</h3>
+            <button class="icon-btn" onclick="focusCanvas('chartIFBubble','Journal Impact — IF vs Publications (heatmap)')">
               <i data-lucide="maximize-2"></i><span class="hidden sm:inline">Focus</span>
             </button>
           </div>
@@ -924,22 +926,110 @@
       });
     }
 
-    // Bubble (IF vs count, bubble ~ citations)
+    // Heatmap (IF × publications bins; color = number of journals)
     const ctxB = document.getElementById('chartIFBubble').getContext('2d');
     if (chartIFBubble) chartIFBubble.destroy();
-    document.getElementById('ifBubNote').textContent = rows.length ? '' : 'No IF data found in your uploaded file.';
+    document.getElementById('ifBubNote').textContent = rows.length
+      ? 'Cells show # of journals per IF × publications bin (darker = more).'
+      : 'No IF data found in your uploaded file.';
 
     if (rows.length){
-      const pts = rows.sort((a,b)=>b.cites-a.cites).slice(0,50).map(r=>({x:r.ifv,y:r.count,r:Math.max(4,Math.sqrt(r.cites)||4), label:r.journal}));
+      // Bin edges
+      const IF_EDGES  = [0,2,4,6,8,10,12,14,16,18,20];
+      const PUB_EDGES = [0,5,10,15,20,30,40,50,75,100,200];
+
+      const nx = IF_EDGES.length - 1;
+      const ny = PUB_EDGES.length - 1;
+
+      // grid counts
+      const grid = Array.from({length: nx}, () => Array(ny).fill(0));
+      const bin = (v, edges) => {
+        for (let i = 0; i < edges.length - 1; i++){
+          if (v >= edges[i] && v < edges[i+1]) return i;
+        }
+        return edges.length - 2;
+      };
+      for (const r of rows){
+        const ix = bin(r.ifv, IF_EDGES);
+        const iy = bin(r.count, PUB_EDGES);
+        grid[ix][iy] += 1;
+      }
+
+      // matrix points
+      let vmax = 0;
+      const dataPoints = [];
+      for (let i = 0; i < nx; i++){
+        for (let j = 0; j < ny; j++){
+          const v = grid[i][j];
+          if (v > 0){
+            dataPoints.push({ x: i, y: j, v, ix: i, iy: j });
+            if (v > vmax) vmax = v;
+          }
+        }
+      }
+
+      const xLabels = IF_EDGES.slice(0, -1).map((_, i) => `${IF_EDGES[i]}–${IF_EDGES[i+1]}`);
+      const yLabels = PUB_EDGES.slice(0, -1).map((_, i) => `${PUB_EDGES[i]}–${PUB_EDGES[i+1]}`);
+
       chartIFBubble = new Chart(ctxB, {
-        type:'bubble',
-        data:{ datasets:[{ label:'Journals', data:pts, backgroundColor:'rgba(20,184,166,.25)', borderColor:clr.teal }] },
-        options:{
-          responsive:true, maintainAspectRatio:false, plugins:{ legend:{display:false}, shadowPlugin:{}, tooltip:{ callbacks:{
-            label:(ctx)=> `${ctx.raw.label} — IF ${ctx.raw.x}, pubs ${ctx.raw.y}`
-          }}} ,
-          scales:{ x:{ title:{display:true, text:'Impact Factor (IF)'}, grid:{ color:'#e2e8f0' }, ticks:{ color:'#334155' } },
-                   y:{ title:{display:true, text:'Publications (view)'}, grid:{ color:'#e2e8f0' }, ticks:{ color:'#334155' }, beginAtZero:true } }
+        type: 'matrix',
+        data: {
+          datasets: [{
+            label: 'Journals per bin',
+            data: dataPoints,
+            borderColor: '#14b8a6',
+            borderWidth: 1,
+            backgroundColor: (ctx) => {
+              const v = ctx.raw.v || 0;
+              const alpha = vmax ? (0.2 + 0.8 * (v / vmax)) : 0.2;
+              return `rgba(20,184,166,${alpha})`;
+            },
+            width: ({chart}) => {
+              const a = chart.chartArea;
+              return a ? ((a.right - a.left) / nx) - 3 : 0;
+            },
+            height: ({chart}) => {
+              const a = chart.chartArea;
+              return a ? ((a.bottom - a.top) / ny) - 3 : 0;
+            },
+          }]
+        },
+        options: {
+          responsive: true,
+          maintainAspectRatio: false,
+          plugins: {
+            legend: { display: false },
+            tooltip: {
+              callbacks: {
+                title: (items) => {
+                  const r = items[0].raw;
+                  return `IF ${IF_EDGES[r.ix]}–${IF_EDGES[r.ix+1]}, pubs ${PUB_EDGES[r.iy]}–${PUB_EDGES[r.iy+1]}`;
+                },
+                label: (ctx) => {
+                  const n = ctx.raw.v;
+                  return `${n} journal${n > 1 ? 's' : ''}`;
+                }
+              }
+            },
+            shadowPlugin: {}
+          },
+          scales: {
+            x: {
+              type: 'category',
+              labels: xLabels,
+              grid: { color: '#e2e8f0' },
+              ticks: { color: '#334155', maxRotation: 0, autoSkip: false },
+              title: { display: true, text: 'Impact Factor (IF)' }
+            },
+            y: {
+              type: 'category',
+              labels: yLabels,
+              reverse: true,
+              grid: { color: '#e2e8f0' },
+              ticks: { color: '#334155' },
+              title: { display: true, text: 'Publications (view)' }
+            }
+          }
         }
       });
     }
@@ -1120,7 +1210,7 @@
   }
 
   function parseCSV(text, onRow){
-    const lines = text.split(/\r?\n/).filter(l => l.trim().length > 0);
+    const lines = text split(/\r?\n/).filter(l => l.trim().length > 0);
     if (!lines.length) throw new Error('Empty CSV');
 
     const hdrRaw = lines.shift();
@@ -1288,7 +1378,7 @@
 
   // Close dropdowns on outside click
   document.addEventListener('click', (e)=>{
-    const panels=[['columnsPanel','colBtn'],['typePanel','typeBtn']];
+    const panels=[['columnsPanel','colBtn'],['typePanel','typeBtn']]; 
     for (const [pid,bid] of panels){
       const panel=document.getElementById(pid); const btn=document.getElementById(bid);
       if (!panel || panel.classList.contains('hidden')) continue;
