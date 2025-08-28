@@ -93,7 +93,20 @@
           </div>
           <div class="mt-2 h-[280px]"><canvas id="chartByYear"></canvas></div>
         </div>
-        <div class="card p-4">
+
+        <!-- Right column holds TWO small cards -->
+        <div class="space-y-4">
+          <div class="card p-4">
+            <div class="flex items-center justify-between">
+              <h3 class="font-semibold">Top Journals — Quartiles (view)</h3>
+              <button class="icon-btn" onclick="focusCanvas('chartTopJournalsQ','Top Journals — Quartiles (view)')">
+                <i data-lucide="maximize-2"></i><span class="hidden sm:inline">Focus</span>
+              </button>
+            </div>
+            <div class="mt-2 h-[240px]"><canvas id="chartTopJournalsQ"></canvas></div>
+          </div>
+
+          <div class="card p-4">
             <div class="flex items-center justify-between">
               <h3 class="font-semibold">Top Journals — Total Citations (view)</h3>
               <button class="icon-btn" onclick="focusCanvas('chartTopJournalsC','Top Journals — Publications vs Citations')">
@@ -434,7 +447,7 @@
   ];
   let selectedColumns = loadSelectedColumns();
 
-  let chartByYear=null,chartTopJournalsC=null,
+  let chartByYear=null, chartTopJournalsQ=null, chartTopJournalsC=null,
       chartIFTop=null, chartIFBubble=null, chartTypesYear=null,
       chartSubjects=null, chartHomeAuthors=null, chartRetract=null,
       chartSDG=null, chartPublishers=null;
@@ -850,35 +863,41 @@
   }
 
   function renderTopJournalsSplit(){
-  const { labels, pubs, cites } = computeTopJournalsAgg();
+    const {top, labels, pubs, q1, q2, q3, q4, cites} = computeTopJournalsAgg();
 
-  const el = document.getElementById('chartTopJournalsC');
-  if (!el) return;
-
-  const ctxC = el.getContext('2d');
-  if (chartTopJournalsC) chartTopJournalsC.destroy();
-
-  chartTopJournalsC = new Chart(ctxC, {
-    type:'bar',
-    data:{
-      labels,
-      datasets:[
-        { label:'Publications', data:pubs, backgroundColor:gradH(ctxC, clr.indigo, clr.purple), borderRadius:10, yAxisID:'y', order:1 },
-        { label:'Total citations', data:cites, backgroundColor:gradH(ctxC, clr.teal, clr.cyan), borderRadius:10, yAxisID:'y1', order:2 }
-      ]
-    },
-    options:{
-      responsive:true, maintainAspectRatio:false,
-      plugins:{ legend:{ position:'top' }, shadowPlugin:{} },
-      scales:{
-        x:{ grid:{ display:false }, ticks:{ color:'#334155', maxRotation:45, minRotation:45 } },
-        y:{ beginAtZero:true, grid:{ color:'#e2e8f0' }, ticks:{ color:'#334155' } },
-        y1:{ position:'right', beginAtZero:true, grid:{ drawOnChartArea:false }, ticks:{ color:'#334155' } }
+    // Quartiles (stacked)
+    const ctxQ = document.getElementById('chartTopJournalsQ').getContext('2d');
+    if (chartTopJournalsQ) chartTopJournalsQ.destroy();
+    chartTopJournalsQ = new Chart(ctxQ, {
+      type:'bar',
+      data:{
+        labels,
+        datasets:[
+          { label:'Q1', data:q1, backgroundColor:clr.q1, stack:'q' },
+          { label:'Q2', data:q2, backgroundColor:clr.q2, stack:'q' },
+          { label:'Q3', data:q3, backgroundColor:clr.q3, stack:'q' },
+          { label:'Q4', data:q4, backgroundColor:clr.q4, stack:'q' },
+        ]
+      },
+      options:{
+        responsive:true, maintainAspectRatio:false,
+        plugins:{
+          legend:{ position:'top' },
+          tooltip:{ callbacks:{
+            afterLabel:(ctx)=>{
+              const j = labels[ctx.dataIndex];
+              const meta = metricIFForJournal(j, top[ctx.dataIndex][1].issns);
+              return meta ? `IF: ${meta.value}` : '';
+            }
+          }},
+          shadowPlugin:{}
+        },
+        scales:{
+          x:{ stacked:true, ticks:{ color:'#334155' }, grid:{ display:false } },
+          y:{ stacked:true, beginAtZero:true, ticks:{ color:'#334155' }, grid:{ color:'#e2e8f0' } }
+        }
       }
-    }
-  });
-};
-
+    });
 
     // Publications vs Citations (clustered)
     const ctxC = document.getElementById('chartTopJournalsC').getContext('2d');
