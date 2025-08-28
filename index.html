@@ -1,4 +1,4 @@
-<!DOCTYPE html> 
+<!DOCTYPE html>
 <html lang="en">
 <head>
   <meta charset="UTF-8"/>
@@ -12,8 +12,6 @@
   <!-- Day.js + Chart.js -->
   <script src="https://cdn.jsdelivr.net/npm/dayjs@1/dayjs.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
-  <!-- Matrix/Heatmap for Chart.js -->
-  <script src="https://cdn.jsdelivr.net/npm/chartjs-chart-matrix@2.0.2/dist/chartjs-chart-matrix.min.js"></script>
 
   <style>
     .card{ background:rgba(255,255,255,.92); border:1px solid rgba(226,232,240,.92);
@@ -135,13 +133,13 @@
         </div>
         <div class="card p-4">
           <div class="flex items-center justify-between">
-            <h3 class="font-semibold">Journal Impact — IF vs Publications (heatmap)</h3>
-            <button class="icon-btn" onclick="focusCanvas('chartIFHeat','Journal Impact — IF vs Publications (heatmap)')">
+            <h3 class="font-semibold">Journal Impact — IF vs Publications (bubble)</h3>
+            <button class="icon-btn" onclick="focusCanvas('chartIFBubble','Journal Impact — IF vs Publications (bubble)')">
               <i data-lucide="maximize-2"></i><span class="hidden sm:inline">Focus</span>
             </button>
           </div>
-          <div class="mt-2 h-[320px]"><canvas id="chartIFHeat"></canvas></div>
-          <div id="ifHeatNote" class="text-xs text-slate-500 mt-2"></div>
+          <div class="mt-2 h-[320px]"><canvas id="chartIFBubble"></canvas></div>
+          <div id="ifBubNote" class="text-xs text-slate-500 mt-2"></div>
         </div>
       </div>
 
@@ -190,17 +188,171 @@
 
     <!-- PUBLICATIONS -->
     <section id="view-publications" class="hidden space-y-4">
-      <!-- … unchanged … -->
+      <div class="card p-4">
+        <div class="flex flex-wrap items-end gap-3">
+          <div>
+            <label class="block text-xs font-medium text-slate-600">Search</label>
+            <input id="searchBox" class="px-3 py-2 rounded-xl border border-slate-300 text-sm" placeholder="Title / author / journal / DOI" oninput="applyFilters(1)"/>
+          </div>
+
+          <div>
+            <label class="block text-xs font-medium text-slate-600">Year (from)</label>
+            <select id="yearFrom" class="px-3 py-2 rounded-xl border border-slate-300 text-sm" onchange="applyFilters(1)"><option value="">All</option></select>
+          </div>
+          <div>
+            <label class="block text-xs font-medium text-slate-600">Year (to)</label>
+            <select id="yearTo" class="px-3 py-2 rounded-xl border border-slate-300 text-sm" onchange="applyFilters(1)"><option value="">All</option></select>
+          </div>
+
+          <div>
+            <label class="block text-xs font-medium text-slate-600">Retraction mode</label>
+            <select id="retractionFilter" class="px-3 py-2 rounded-xl border border-slate-300 text-sm" onchange="applyFilters(1)">
+              <option value="">All</option>
+              <option value="exclude">Exclude retracted</option>
+              <option value="only_retracted">Only retracted (OpenAlex)</option>
+              <option value="only_notices">Only retraction notices (title-based)</option>
+            </select>
+          </div>
+
+          <div>
+            <label class="block text-xs font-medium text-slate-600">SDG</label>
+            <select id="sdgFilter" class="px-3 py-2 rounded-xl border border-slate-300 text-sm" onchange="applyFilters(1)">
+              <option value="">All SDGs</option>
+            </select>
+          </div>
+
+          <!-- Type multi-select -->
+          <div class="dropdown">
+            <label class="block text-xs font-medium text-slate-600">Type</label>
+            <button id="typeBtn" class="px-3 py-2 rounded-xl bg-slate-100 border border-slate-300 text-sm min-w-[170px]" onclick="toggleTypePanel()">
+              <span id="typeBtnLabel">All types</span>
+            </button>
+            <div id="typePanel" class="dropdown-panel hidden mt-2 bg-white border border-slate-200 rounded-xl shadow-lg w-64 p-3">
+              <div class="text-xs text-slate-500 mb-2">Select one or more</div>
+              <div id="typeList" class="grid grid-cols-1 gap-y-1 text-sm max-h-64 overflow-auto pr-1"></div>
+              <div class="flex justify-between gap-2 mt-3">
+                <button class="px-3 py-1.5 rounded-lg border border-slate-300" onclick="clearTypeSelection()">Clear</button>
+                <button class="px-3 py-1.5 rounded-lg bg-indigo-600 text-white" onclick="applyTypeSelection()">Apply</button>
+              </div>
+            </div>
+          </div>
+
+          <div>
+            <label class="block text-xs font-medium text-slate-600">Rows per page</label>
+            <select id="pageSize" class="px-3 py-2 rounded-xl border border-slate-300 text-sm" onchange="changePageSize()">
+              <option value="25">25</option><option value="50" selected>50</option><option value="100">100</option><option value="200">200</option>
+            </select>
+          </div>
+
+          <!-- Column chooser -->
+          <div class="ml-auto dropdown">
+            <label class="block text-xs font-medium text-slate-600">&nbsp;</label>
+            <button id="colBtn" class="px-3 py-2 rounded-xl bg-slate-100 border border-slate-300 text-sm flex items-center gap-2" onclick="toggleColumnsPanel()">
+              <i data-lucide="columns-3"></i> Columns
+            </button>
+            <div id="columnsPanel" class="dropdown-panel hidden mt-2 bg-white border border-slate-200 rounded-xl shadow-lg w-80 p-3">
+              <div class="text-xs text-slate-500 mb-2">Choose fields to display</div>
+              <div id="columnsList" class="grid grid-cols-2 gap-y-2 text-sm"></div>
+              <div class="flex justify-end gap-2 mt-3">
+                <button class="px-3 py-1.5 rounded-lg border border-slate-300" onclick="resetColumns()">Reset</button>
+                <button class="px-3 py-1.5 rounded-lg bg-indigo-600 text-white" onclick="applyColumnSelection()">Apply</button>
+              </div>
+            </div>
+          </div>
+
+          <div class="flex items-center gap-2">
+            <label class="block text-xs font-medium text-slate-600">&nbsp;</label>
+            <button class="px-3 py-2 rounded-xl bg-indigo-600 text-white text-sm" onclick="exportCSV()">Export CSV</button>
+            <button class="px-3 py-2 rounded-xl bg-indigo-50 text-indigo-700 border border-indigo-200 text-sm" onclick="exportJSON()">Export JSON</button>
+          </div>
+        </div>
+      </div>
+
+      <!-- Table -->
+      <div class="card">
+        <div class="px-4 py-3 border-b border-slate-200 flex items-center justify-between">
+          <div class="font-semibold">All Publications</div>
+          <div class="text-xs text-slate-500" id="countInfo"></div>
+        </div>
+        <div class="overflow-x-auto thin-scrollbar">
+          <table class="w-full text-sm" id="pubTable">
+            <thead class="bg-slate-50 text-slate-600">
+              <tr id="pubHeadRow"></tr>
+            </thead>
+            <tbody id="pubBody"></tbody>
+          </table>
+        </div>
+        <div class="px-4 py-3 flex items-center justify-between">
+          <div class="text-xs text-slate-500" id="pageInfo">Page 1 / 1</div>
+          <div class="flex gap-2">
+            <button class="px-3 py-1.5 rounded-lg border border-slate-300" onclick="goFirst()">« First</button>
+            <button class="px-3 py-1.5 rounded-lg border border-slate-300" onclick="goPrev()">‹ Prev</button>
+            <button class="px-3 py-1.5 rounded-lg border border-slate-300" onclick="goNext()">Next ›</button>
+            <button class="px-3 py-1.5 rounded-lg border border-slate-300" onclick="goLast()">Last »</button>
+          </div>
+        </div>
+      </div>
     </section>
 
     <!-- QUARTILES -->
     <section id="view-quartiles" class="hidden space-y-4">
-      <!-- … unchanged … -->
+      <div class="card p-4">
+        <div class="flex items-center justify-between">
+          <div>
+            <h3 class="font-semibold">Quartile & IF Mapping</h3>
+            <p class="text-xs text-slate-500">
+              Upload SCImago/Clarivate data as <code>.csv</code> (must contain Title or ISSN; accept headers like
+              <em>SJR Best Quartile</em>, <em>Best Quartile</em>, <em>JIF Quartile</em>, <em>Impact Factor</em>/<em>JIF</em>), or <code>.json</code>.
+            </p>
+          </div>
+          <div class="flex items-center gap-2">
+            <input id="sjrFile" type="file" accept=".csv,.json" class="hidden"/>
+            <button class="px-3 py-2 rounded-xl bg-slate-100 border border-slate-300 text-sm" onclick="document.getElementById('sjrFile').click()">
+              <i data-lucide="upload"></i> Upload Quartiles
+            </button>
+          </div>
+        </div>
+        <div id="sjrStatus" class="mt-2 text-xs text-slate-500"></div>
+      </div>
+
+      <div class="card p-4">
+        <h4 class="font-semibold mb-2">Coverage in current view</h4>
+        <div class="text-sm" id="mapCoverage">—</div>
+      </div>
     </section>
 
     <!-- SDG -->
     <section id="view-sdg" class="hidden space-y-4">
-      <!-- … unchanged … -->
+      <div class="card p-4">
+        <div class="flex items-center justify-between">
+          <div>
+            <h3 class="font-semibold">Sustainable Development Goals (auto-mapped)</h3>
+            <p class="text-xs text-slate-500">Titles (and subjects, if present) are heuristically mapped to SDGs.</p>
+          </div>
+          <div class="flex items-center gap-2">
+            <select id="sdgOnlyFilter" class="px-3 py-2 rounded-xl border border-slate-300 text-sm" onchange="applyFilters(1)">
+              <option value="">All SDGs</option>
+            </select>
+            <button class="icon-btn" onclick="focusCanvas('chartSDG','SDG Distribution (view)')">
+              <i data-lucide="maximize-2"></i><span class="hidden sm:inline">Focus</span>
+            </button>
+          </div>
+        </div>
+      </div>
+
+      <div class="grid grid-cols-1 lg:grid-cols-2 gap-4">
+        <div class="card p-4">
+          <h4 class="font-semibold flex items-center justify-between">
+            <span>SDG Distribution (view)</span>
+            <button class="icon-btn" onclick="focusCanvas('chartSDG','SDG Distribution (view)')"><i data-lucide="maximize-2"></i></button>
+          </h4>
+          <div class="mt-2 h-[280px]"><canvas id="chartSDG"></canvas></div>
+        </div>
+        <div class="card p-4">
+          <h4 class="font-semibold mb-2">Legend</h4>
+          <div id="sdgLegend" class="flex flex-wrap gap-2 text-sm"></div>
+        </div>
+      </div>
     </section>
   </main>
 
@@ -277,7 +429,7 @@
 
   // Charts
   let chartByYear=null, chartTopJournalsQ=null, chartTopJournalsC=null,
-      chartIFTop=null, chartIFHeat=null, chartTypesYear=null,
+      chartIFTop=null, chartIFBubble=null, chartTypesYear=null,
       chartSubjects=null, chartHomeAuthors=null, chartRetract=null, chartSDG=null;
 
   // SDGs
@@ -772,76 +924,22 @@
       });
     }
 
-    // HEATMAP (IF vs count, color = # of journals in bin)
-    const ctxH = document.getElementById('chartIFHeat').getContext('2d');
-    if (chartIFHeat) chartIFHeat.destroy();
-    document.getElementById('ifHeatNote').textContent = rows.length ? '' : 'No IF data found in your uploaded file.';
+    // Bubble (IF vs count, bubble ~ citations)
+    const ctxB = document.getElementById('chartIFBubble').getContext('2d');
+    if (chartIFBubble) chartIFBubble.destroy();
+    document.getElementById('ifBubNote').textContent = rows.length ? '' : 'No IF data found in your uploaded file.';
 
     if (rows.length){
-      const ifMin = Math.floor(Math.min(...rows.map(r=>r.ifv)));
-      const ifMax = Math.ceil(Math.max(...rows.map(r=>r.ifv)));
-      const xStep = 1; // 1 IF per column
-
-      const yMax = Math.max(...rows.map(r=>r.count));
-      const yStep = Math.max(1, Math.ceil(yMax/10)); // ~10 rows
-
-      const bins = new Map(); // "x|y" -> journals in bin
-      for (const r of rows){
-        const xb = Math.floor(r.ifv / xStep) * xStep;
-        const yb = Math.floor(r.count / yStep) * yStep;
-        const k = `${xb}|${yb}`;
-        bins.set(k, (bins.get(k)||0) + 1);
-      }
-
-      const data = [];
-      let maxV = 0;
-      for (let x = ifMin; x < ifMax; x += xStep){
-        for (let y = 0; y <= yMax; y += yStep){
-          const v = bins.get(`${x}|${y}`) || 0;
-          if (v > 0){
-            data.push({ x: x + xStep/2, y: y + yStep/2, v, width: xStep, height: yStep });
-            if (v > maxV) maxV = v;
-          }
-        }
-      }
-
-      const colorFor = (v) => {
-        // teal with alpha by density
-        const t = v / (maxV || 1);
-        const a = 0.20 + 0.80 * t;
-        return `rgba(20,184,166,${a})`;
-      };
-
-      chartIFHeat = new Chart(ctxH, {
-        type: 'matrix',
-        data: { datasets: [{
-          label: 'Journals per bin',
-          data,
-          backgroundColor: (c)=>colorFor(c.raw.v),
-          borderWidth: 1,
-          borderColor: '#0f766e',
-          hoverBackgroundColor: (c)=>colorFor(c.raw.v)
-        }]},
-        options: {
-          responsive:true, maintainAspectRatio:false,
-          plugins:{
-            legend:{display:false},
-            tooltip:{ callbacks:{
-              label:(ctx)=>{
-                const {x,y,width,height,v}=ctx.raw;
-                const loIF=(x-width/2).toFixed(1), hiIF=(x+width/2).toFixed(1);
-                const loC=Math.max(0, Math.round(y-height/2)), hiC=Math.round(y+height/2-1);
-                return `${v} journal(s) · IF ${loIF}–${hiIF}, pubs ${loC}–${hiC}`;
-              }
-            }},
-            shadowPlugin:{}
-          },
-          scales:{
-            x:{ type:'linear', min: ifMin, max: ifMax, title:{display:true, text:'Impact Factor (IF)'},
-                ticks:{ stepSize:xStep, color:'#334155' }, grid:{ color:'#e2e8f0' } },
-            y:{ type:'linear', min: 0, max: yMax, title:{display:true, text:'Publications (per journal)'},
-                ticks:{ stepSize:yStep, color:'#334155' }, grid:{ color:'#e2e8f0' } }
-          }
+      const pts = rows.sort((a,b)=>b.cites-a.cites).slice(0,50).map(r=>({x:r.ifv,y:r.count,r:Math.max(4,Math.sqrt(r.cites)||4), label:r.journal}));
+      chartIFBubble = new Chart(ctxB, {
+        type:'bubble',
+        data:{ datasets:[{ label:'Journals', data:pts, backgroundColor:'rgba(20,184,166,.25)', borderColor:clr.teal }] },
+        options:{
+          responsive:true, maintainAspectRatio:false, plugins:{ legend:{display:false}, shadowPlugin:{}, tooltip:{ callbacks:{
+            label:(ctx)=> `${ctx.raw.label} — IF ${ctx.raw.x}, pubs ${ctx.raw.y}`
+          }}} ,
+          scales:{ x:{ title:{display:true, text:'Impact Factor (IF)'}, grid:{ color:'#e2e8f0' }, ticks:{ color:'#334155' } },
+                   y:{ title:{display:true, text:'Publications (view)'}, grid:{ color:'#e2e8f0' }, ticks:{ color:'#334155' }, beginAtZero:true } }
         }
       });
     }
