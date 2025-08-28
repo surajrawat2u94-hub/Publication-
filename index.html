@@ -34,9 +34,34 @@
 </head>
 <body class="bg-gradient-to-b from-slate-50 to-slate-100 text-slate-900">
 
-  <!-- Header (unchanged) -->
+  <!-- Header -->
   <header class="sticky top-0 z-30 bg-gradient-to-r from-indigo-600/90 via-fuchsia-600/90 to-sky-600/90 text-white backdrop-blur">
-    <!-- header contents here -->
+    <div class="max-w-7xl mx-auto px-4 py-4 flex items-center justify-between">
+      <div class="flex items-center gap-3">
+        <div class="h-10 w-10 rounded-2xl bg-white/15 grid place-content-center shadow-inner">
+          <i data-lucide="panel-top" class="text-white"></i>
+        </div>
+        <div>
+          <h1 class="text-lg font-semibold tracking-tight">AI Publications Portal</h1>
+          <div id="lastSynced" class="text-xs text-white/80">Loading…</div>
+        </div>
+      </div>
+      <div class="hidden md:flex items-center gap-2 text-xs">
+        <span class="px-2 py-1 rounded-lg bg-white/10 border border-white/20">Static JSON · No live API</span>
+      </div>
+    </div>
+
+    <!-- Tabs -->
+    <div class="bg-white">
+      <div class="max-w-7xl mx-auto px-4">
+        <nav class="flex gap-2">
+          <button id="tabOverview"     class="px-4 py-3 text-sm border-b-2 tab-active"   onclick="switchTab('overview')">Overview</button>
+          <button id="tabPublications" class="px-4 py-3 text-sm border-b-2 tab-inactive" onclick="switchTab('publications')">Publications</button>
+          <button id="tabQuartiles"    class="px-4 py-3 text-sm border-b-2 tab-inactive" onclick="switchTab('quartiles')">Quartiles</button>
+          <button id="tabSDG"          class="px-4 py-3 text-sm border-b-2 tab-inactive" onclick="switchTab('sdg')">SDGs</button>
+        </nav>
+      </div>
+    </div>
   </header>
 
   <!-- CONTENT -->
@@ -44,19 +69,43 @@
 
     <!-- OVERVIEW -->
     <section id="view-overview" class="space-y-6">
-      <!-- KPI cards unchanged -->
       <div class="grid grid-cols-2 md:grid-cols-6 gap-4">
-        <!-- your KPI cards here -->
+        <div class="card p-4"><div class="text-xs text-slate-500">Total items</div><div id="kpiTotal" class="mt-1 text-2xl font-semibold">—</div></div>
+        <div class="card p-4"><div class="text-xs text-slate-500">Current view</div><div id="kpiView" class="mt-1 text-2xl font-semibold">—</div></div>
+        <div class="card p-4"><div class="text-xs text-slate-500">Retracted (view)</div><div id="kpiRetr" class="mt-1 text-2xl font-semibold">—</div></div>
+        <div class="card p-4"><div class="text-xs text-slate-500">Distinct journals (view)</div><div id="kpiJournals" class="mt-1 text-2xl font-semibold">—</div></div>
+        <div class="card p-4"><div class="text-xs text-slate-500">IF records loaded</div><div id="kpiIF" class="mt-1 text-2xl font-semibold">—</div></div>
+        <div class="card p-4"><div class="text-xs text-slate-500">Quartile-mapped (view)</div><div id="kpiQMap" class="mt-1 text-2xl font-semibold">—</div></div>
       </div>
 
-      <!-- Row: By year (left) + Top Journals (only Total Citations) -->
+      <!-- Row: By year (left) + split Top Journals (right) -->
       <div class="grid grid-cols-1 lg:grid-cols-2 gap-4">
         <div class="card p-4">
-          <!-- Publications by Year card contents -->
+          <div class="flex items-center justify-between">
+            <h3 class="font-semibold">Publications by Year (with cumulative)</h3>
+            <div class="flex items-center gap-2">
+              <span id="rangeText" class="text-xs text-slate-500"></span>
+              <button class="icon-btn" onclick="focusCanvas('chartByYear','Publications by Year (with cumulative)')">
+                <i data-lucide="maximize-2"></i><span class="hidden sm:inline">Focus</span>
+              </button>
+            </div>
+          </div>
+          <div class="mt-2 h-[280px]"><canvas id="chartByYear"></canvas></div>
         </div>
 
-        <!-- Right column now only holds one card: Total Citations -->
         <div class="space-y-4">
+          <!-- Quartile card hidden but still present to avoid JS errors -->
+          <div class="card p-4 hidden">
+            <div class="flex items-center justify-between">
+              <h3 class="font-semibold">Top Journals — Quartiles (view)</h3>
+              <button class="icon-btn" onclick="focusCanvas('chartTopJournalsQ','Top Journals — Quartiles (view)')">
+                <i data-lucide="maximize-2"></i><span class="hidden sm:inline">Focus</span>
+              </button>
+            </div>
+            <div class="mt-2 h-[240px]"><canvas id="chartTopJournalsQ"></canvas></div>
+          </div>
+
+          <!-- Visible card: Total Citations -->
           <div class="card p-4">
             <div class="flex items-center justify-between">
               <h3 class="font-semibold">Top Journals — Total Citations (view)</h3>
@@ -72,23 +121,21 @@
         </div>
       </div>
 
-      <!-- Other overview charts (IF, types, subjects, etc.) remain unchanged -->
+      <!-- Other cards (IF, types, subjects, authors, retractions, publishers) remain unchanged -->
     </section>
 
-    <!-- PUBLICATIONS, QUARTILES, SDG sections remain unchanged -->
+    <!-- PUBLICATIONS, QUARTILES, SDG sections unchanged -->
   </main>
 
   <!-- Footer and Focus modal unchanged -->
-  <!-- ... -->
 
 <script>
-  // Your other Chart.js helpers and functions remain unchanged.
-  // Only renderTopJournalsSplit is adjusted below.
+  // all your original JavaScript stays the same, except for renderTopJournalsSplit:
 
   function renderTopJournalsSplit(){
     const {top, labels, pubs, q1, q2, q3, q4, cites} = computeTopJournalsAgg();
 
-    // Only draw the quartile chart if the canvas exists
+    // Only draw the quartile chart if its canvas exists:
     const quartCanvas = document.getElementById('chartTopJournalsQ');
     if (quartCanvas) {
       const ctxQ = quartCanvas.getContext('2d');
@@ -125,7 +172,7 @@
       });
     }
 
-    // Always draw the citations chart
+    // Always draw Publications vs Citations
     const ctxC = document.getElementById('chartTopJournalsC').getContext('2d');
     if (chartTopJournalsC) chartTopJournalsC.destroy();
     chartTopJournalsC = new Chart(ctxC, {
@@ -149,8 +196,7 @@
     });
   }
 
-  // Rest of your JS code remains unchanged.
-  // ...
+  // All other functions (renderIFCharts, renderTypesYear, etc.) are unchanged.
 </script>
 </body>
 </html>
