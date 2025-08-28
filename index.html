@@ -186,7 +186,7 @@
         </div>
       </div>
 
-      <!-- NEW: Publishers -->
+      <!-- Publishers -->
       <div class="grid grid-cols-1 gap-4">
         <div class="card p-4">
           <div class="flex items-center justify-between">
@@ -426,14 +426,23 @@
   const sjrMetaByIssn = new Map(), sjrMetaByTitle = new Map();
   let haveSJR=false; let IFcount=0;
 
+  /* ----- COLUMNS (Publisher added here) ----- */
   const ALL_COLUMNS = [
-    { key:'year',label:'Year',default:true },{ key:'title',label:'Title',default:true },
-    { key:'journal',label:'Journal',default:true },{ key:'home_authors',label:'Home authors',default:true },
-    { key:'authors',label:'Authors',default:false },{ key:'citations',label:'Citations',default:true },
-    { key:'quartile',label:'Quartile',default:true },{ key:'retraction_info',label:'Retraction Info',default:true },
-    { key:'is_retracted',label:'Retracted (OpenAlex)',default:false },{ key:'type',label:'Type',default:false },
-    { key:'doi',label:'DOI',default:false },{ key:'url',label:'URL',default:false },
-    { key:'issns',label:'ISSNs',default:false },{ key:'subjects',label:'Subject areas',default:false },
+    { key:'year',label:'Year',default:true },
+    { key:'title',label:'Title',default:true },
+    { key:'journal',label:'Journal',default:true },
+    { key:'publisher',label:'Publisher',default:true },              /* ✅ NEW */
+    { key:'home_authors',label:'Home authors',default:true },
+    { key:'authors',label:'Authors',default:false },
+    { key:'citations',label:'Citations',default:true },
+    { key:'quartile',label:'Quartile',default:true },
+    { key:'retraction_info',label:'Retraction Info',default:true },
+    { key:'is_retracted',label:'Retracted (OpenAlex)',default:false },
+    { key:'type',label:'Type',default:false },
+    { key:'doi',label:'DOI',default:false },
+    { key:'url',label:'URL',default:false },
+    { key:'issns',label:'ISSNs',default:false },
+    { key:'subjects',label:'Subject areas',default:false },
     { key:'sdg_tags',label:'SDGs',default:false },
   ];
   let selectedColumns = loadSelectedColumns();
@@ -668,7 +677,7 @@
       else if (retractMode === 'only_notices'){ if (!p.retraction_notice) return false; }
 
       if (q){
-        const hay = [p.title||'',p.journal||'',p.doi||'',
+        const hay = [p.title||'',p.journal||'',p.doi||'', getPublisher(p),
                      ...(Array.isArray(p.home_authors)?p.home_authors:deriveHomeAuthors(p)),
                      ...(Array.isArray(p.authors)?p.authors:deriveAuthors(p))].join(' ').toLowerCase();
         if (!hay.includes(q)) return false;
@@ -722,11 +731,13 @@
     document.getElementById('rangeText').textContent = document.getElementById('countInfo').textContent;
   }
 
+  /* ----- renderCell updated with Publisher ----- */
   function renderCell(key,p){
     switch(key){
       case 'year': return p.year ?? '';
       case 'title': return p.url ? `<a class="text-indigo-600 hover:underline" href="${p.url}" target="_blank">${esc(p.title||'')}</a>` : esc(p.title||'');
       case 'journal': return esc(p.journal||'');
+      case 'publisher': return esc(getPublisher(p));                                /* ✅ NEW */
       case 'authors': return esc((Array.isArray(p.authors)?p.authors:deriveAuthors(p)).join(', '));
       case 'home_authors': {
         const a = Array.isArray(p.home_authors)?p.home_authors:deriveHomeAuthors(p);
@@ -751,7 +762,7 @@
     const container=document.getElementById('columnsList'); container.innerHTML='';
     const selectedKeys=new Set(selectedColumns.map(c=>c.key));
     for (const col of ALL_COLUMNS){
-      const id=`col_${col.key}`, checked=selectedKeys.has(col.key)?'checked':'';
+      const id=`col_${col.key}`, checked=selectedKeys.has(col.key)?'checked':'';      
       container.insertAdjacentHTML('beforeend', `
         <label class="flex items-center gap-2"><input type="checkbox" id="${id}" ${checked}/><span>${col.label}</span></label>
       `);
@@ -1153,7 +1164,7 @@
     return best;
   }
 
-  /* -------- Publishers chart -------- */
+  /* -------- Publisher helpers (used for table + chart + search) -------- */
   function unifyPublisherName(s){
     const t=(s||'').toString().trim();
     const x=t.toLowerCase();
@@ -1200,8 +1211,9 @@
     ];
     let pick = fields.find(v => typeof v === 'string' && v.trim());
     if (pick) return unifyPublisherName(pick);
-    return inferPublisherFromJournal(p.journal||'');
+    return unifyPublisherName(inferPublisherFromJournal(p.journal||'')); // normalize fallback too
   }
+
   function renderPublishers(){
     const ctx = document.getElementById('chartPublishers').getContext('2d');
     const map = new Map(); // publisher -> Set of journals
@@ -1377,7 +1389,7 @@
     const fileSuffix = buildRangeSuffix();
     const header = selectedColumns.map(c=>c.label);
     const csv = [header.join(',')].concat(
-      filtered.map(r => selectedColumns.map(c => q(textForExport(c.key, r))).join(','))
+      filtered.map(r => selectedColumns.map(c => q(textForExport(c.key, r))).join(',')),
     ).join('\n');
     downloadBlob(`publications_${fileSuffix}.csv`, csv, 'text/csv');
   }
@@ -1399,6 +1411,7 @@
   }
   function textForExport(key,p){
     switch(key){
+      case 'publisher': return getPublisher(p);                          /* ✅ ensure publisher in CSV text */
       case 'authors': return (Array.isArray(p.authors)?p.authors:deriveAuthors(p)).join('; ');
       case 'home_authors': return (Array.isArray(p.home_authors)?p.home_authors:deriveHomeAuthors(p)).join('; ');
       case 'issns':   return (p.issns||[]).join('; ');
@@ -1411,6 +1424,7 @@
     }
   }
   function rawForExport(key,p){
+    if (key==='publisher') return getPublisher(p);                       /* ✅ ensure publisher in JSON export */
     if (key==='subjects') return extractSubjects(p);
     if (key==='retraction_info') return stripHtml(renderRetractionInfo(p));
     if (key==='authors') return Array.isArray(p.authors)?p.authors:deriveAuthors(p);
