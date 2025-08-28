@@ -12,8 +12,6 @@
   <!-- Day.js + Chart.js -->
   <script src="https://cdn.jsdelivr.net/npm/dayjs@1/dayjs.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
-  <!-- Matrix (kept for IF heatmap) -->
-  <script src="https://cdn.jsdelivr.net/npm/chartjs-chart-matrix@2.0.1"></script>
 
   <style>
     .card{ background:rgba(255,255,255,.92); border:1px solid rgba(226,232,240,.92);
@@ -79,7 +77,7 @@
         <div class="card p-4"><div class="text-xs text-slate-500">Quartile-mapped (view)</div><div id="kpiQMap" class="mt-1 text-2xl font-semibold">—</div></div>
       </div>
 
-      <!-- Row: By year (left) + split Top Journals (right as two cards) -->
+      <!-- Row: By year + split charts -->
       <div class="grid grid-cols-1 lg:grid-cols-2 gap-4">
         <div class="card p-4">
           <div class="flex items-center justify-between">
@@ -94,7 +92,6 @@
           <div class="mt-2 h-[280px]"><canvas id="chartByYear"></canvas></div>
         </div>
 
-        <!-- Right column holds TWO small cards -->
         <div class="space-y-4">
           <div class="card p-4">
             <div class="flex items-center justify-between">
@@ -109,13 +106,13 @@
           <div class="card p-4">
             <div class="flex items-center justify-between">
               <h3 class="font-semibold">Top Journals — Total Citations (view)</h3>
-              <button class="icon-btn" onclick="focusCanvas('chartTopJournalsC','Top Journals — Publications vs Citations')">
+              <button class="icon-btn" onclick="focusCanvas('chartTopJournalsC','Top Journals — Total Citations (view)')">
                 <i data-lucide="maximize-2"></i><span class="hidden sm:inline">Focus</span>
               </button>
             </div>
             <div class="mt-2 h-[240px]"><canvas id="chartTopJournalsC"></canvas></div>
             <div class="text-xs text-slate-500 mt-2">
-              Clustered bars: Publications (left axis) vs Total Citations (right axis).
+              Quartiles chart shows Q1–Q4 split · This chart shows total citations only.
             </div>
           </div>
         </div>
@@ -134,8 +131,8 @@
         </div>
         <div class="card p-4">
           <div class="flex items-center justify-between">
-            <h3 class="font-semibold">Journal Impact — IF vs Publications (heatmap)</h3>
-            <button class="icon-btn" onclick="focusCanvas('chartIFBubble','Journal Impact — IF vs Publications')">
+            <h3 class="font-semibold">Journal Impact — IF vs Publications (bubble)</h3>
+            <button class="icon-btn" onclick="focusCanvas('chartIFBubble','Journal Impact — IF vs Publications (bubble)')">
               <i data-lucide="maximize-2"></i><span class="hidden sm:inline">Focus</span>
             </button>
           </div>
@@ -165,38 +162,17 @@
         </div>
       </div>
 
-      <div class="grid grid-cols-1 lg:grid-cols-2 gap-4">
-        <div class="card p-4">
-          <div class="flex items-center justify-between">
-            <h3 class="font-semibold">Top Home Authors (institution authors)</h3>
-            <button class="icon-btn" onclick="focusCanvas('chartHomeAuthors','Top Home Authors (institution authors)')">
-              <i data-lucide="maximize-2"></i><span class="hidden sm:inline">Focus</span>
-            </button>
-          </div>
-          <div class="mt-2 h-[300px]"><canvas id="chartHomeAuthors"></canvas></div>
+      <!-- NEW: Publishers chart -->
+      <div class="card p-4">
+        <div class="flex items-center justify-between">
+          <h3 class="font-semibold">Publishers — Distinct Journals (view)</h3>
+          <button class="icon-btn" onclick="focusCanvas('chartPublishers','Publishers — Distinct Journals (view)')">
+            <i data-lucide="maximize-2"></i><span class="hidden sm:inline">Focus</span>
+          </button>
         </div>
-        <div class="card p-4">
-          <div class="flex items-center justify-between">
-            <h3 class="font-semibold">Retractions by Year (OpenAlex flag + notices)</h3>
-            <button class="icon-btn" onclick="focusCanvas('chartRetract','Retractions by Year')">
-              <i data-lucide="maximize-2"></i><span class="hidden sm:inline">Focus</span>
-            </button>
-          </div>
-          <div class="mt-2 h-[300px]"><canvas id="chartRetract"></canvas></div>
-        </div>
-      </div>
-
-      <!-- NEW: Publishers -->
-      <div class="grid grid-cols-1 gap-4">
-        <div class="card p-4">
-          <div class="flex items-center justify-between">
-            <h3 class="font-semibold">Publishers — Distinct Journals (view)</h3>
-            <button class="icon-btn" onclick="focusCanvas('chartPublishers','Publishers — Distinct Journals (view)')">
-              <i data-lucide="maximize-2"></i><span class="hidden sm:inline">Focus</span>
-            </button>
-          </div>
-          <div class="mt-2 h-[300px]"><canvas id="chartPublishers"></canvas></div>
-          <div class="text-xs text-slate-500 mt-2">Counts unique journal titles per publishing house (heuristic mapping).</div>
+        <div class="mt-2 h-[320px]"><canvas id="chartPublishers"></canvas></div>
+        <div class="text-xs text-slate-500 mt-2">
+          Counts unique journal titles per publishing house (heuristic mapping).
         </div>
       </div>
     </section>
@@ -207,7 +183,7 @@
         <div class="flex flex-wrap items-end gap-3">
           <div>
             <label class="block text-xs font-medium text-slate-600">Search</label>
-            <input id="searchBox" class="px-3 py-2 rounded-xl border border-slate-300 text-sm" placeholder="Title / author / journal / DOI" oninput="applyFilters(1)"/>
+            <input id="searchBox" class="px-3 py-2 rounded-xl border border-slate-300 text-sm" placeholder="Title / author / journal / DOI / publisher" oninput="applyFilters(1)"/>
           </div>
 
           <div>
@@ -236,7 +212,7 @@
             </select>
           </div>
 
-          <!-- Type multi-select -->
+          <!-- Type multi-select (unchanged) -->
           <div class="dropdown">
             <label class="block text-xs font-medium text-slate-600">Type</label>
             <button id="typeBtn" class="px-3 py-2 rounded-xl bg-slate-100 border border-slate-300 text-sm min-w-[170px]" onclick="toggleTypePanel()">
@@ -423,26 +399,37 @@
   let knownTypes = [];
 
   const sjrByIssn = new Map(), sjrByTitle = new Map();
-  const sjrMetaByIssn = new Map(), sjrMetaByTitle = new Map();
+  const sjrMetaByIssn = new Map(), sjrMetaByTitle = new Map(); // {q, if}
   let haveSJR=false; let IFcount=0;
 
+  // Columns (Publisher added and ON by default)
   const ALL_COLUMNS = [
-    { key:'year',label:'Year',default:true },{ key:'title',label:'Title',default:true },
-    { key:'journal',label:'Journal',default:true },{ key:'home_authors',label:'Home authors',default:true },
-    { key:'authors',label:'Authors',default:false },{ key:'citations',label:'Citations',default:true },
-    { key:'quartile',label:'Quartile',default:true },{ key:'retraction_info',label:'Retraction Info',default:true },
-    { key:'is_retracted',label:'Retracted (OpenAlex)',default:false },{ key:'type',label:'Type',default:false },
-    { key:'doi',label:'DOI',default:false },{ key:'url',label:'URL',default:false },
-    { key:'issns',label:'ISSNs',default:false },{ key:'subjects',label:'Subject areas',default:false },
+    { key:'year',label:'Year',default:true },
+    { key:'title',label:'Title',default:true },
+    { key:'journal',label:'Journal',default:true },
+    { key:'publisher',label:'Publisher',default:true },     // <— NEW
+    { key:'home_authors',label:'Home authors',default:true },
+    { key:'authors',label:'Authors',default:false },
+    { key:'citations',label:'Citations',default:true },
+    { key:'quartile',label:'Quartile',default:true },
+    { key:'retraction_info',label:'Retraction Info',default:true },
+    { key:'is_retracted',label:'Retracted (OpenAlex)',default:false },
+    { key:'type',label:'Type',default:false },
+    { key:'doi',label:'DOI',default:false },
+    { key:'url',label:'URL',default:false },
+    { key:'issns',label:'ISSNs',default:false },
+    { key:'subjects',label:'Subject areas',default:false },
     { key:'sdg_tags',label:'SDGs',default:false },
   ];
   let selectedColumns = loadSelectedColumns();
 
+  // Charts
   let chartByYear=null, chartTopJournalsQ=null, chartTopJournalsC=null,
       chartIFTop=null, chartIFBubble=null, chartTypesYear=null,
-      chartSubjects=null, chartHomeAuthors=null, chartRetract=null,
-      chartSDG=null, chartPublishers=null;
+      chartSubjects=null, chartHomeAuthors=null, chartRetract=null, chartSDG=null,
+      chartPublishers=null;
 
+  // SDGs (unchanged list)
   const SDG_LIST = [
     { id:1,  name:'No Poverty', kw:['poverty','low-income','income inequality'] },
     { id:2,  name:'Zero Hunger', kw:['hunger','food security','malnutrition','agriculture','crop','farm'] },
@@ -496,13 +483,13 @@
 
       all = Array.isArray(j.items) ? j.items : [];
 
-      // Normalize authors + home authors
+      // Normalize authors + home authors + derived publisher
       for (const p of all){
         if (!Array.isArray(p.authors)) p.authors = deriveAuthors(p);
         p.home_authors = deriveHomeAuthors(p);
+        if (!p.publisher) p.publisher = derivePublisher(p);   // <— derive if missing
       }
 
-      // Retraction links + SDGs
       buildRetractionIndex(all);
       for (const p of all) p.sdg_tags = guessSDGs(p);
 
@@ -559,6 +546,81 @@
     return [...new Set(out)];
   }
 
+  /* --------- Publisher heuristic (reduces Other/Unknown) --------- */
+  const PUBLISHER_SYNONYMS = [
+    ['springer','springer nature','nature portfolio','bmc'],
+    ['taylor & francis','taylor and francis','taylors & francis','routledge'],
+    ['wiley','wiley-blackwell'],
+    ['ieee','institute of electrical and electronics engineers'],
+    ['acm','association for computing machinery'],
+    ['elsevier','sciencedirect','cell press','ssrn'],
+    ['mdpi'],
+    ['frontiers','frontiers media'],
+    ['sage','sage publications'],
+    ['igi global','igi-global'],
+    ['hindawi'],
+    ['plos','public library of science'],
+    ['oxford university press','oup'],
+    ['cambridge university press','cup'],
+    ['royal society of chemistry','rsc'],
+    ['american chemical society','acs'],
+    ['de gruyter','walter de gruyter'],
+    ['emerald','emerald publishing'],
+    ['research square'],
+    ['arxiv'],
+    ['ssrn'],
+    ['elsevier - ssrn','ssrn electronic journal'] // special joiner
+  ].map(arr => arr.map(s=>s.toLowerCase()));
+
+  function normalizePublisherName(s){
+    let t=(s||'').toString().trim().toLowerCase();
+    t=t.replace(/\s+/g,' ');
+    for (const group of PUBLISHER_SYNONYMS){
+      if (group.some(g => t.includes(g))) return group[0].replace(/\b\w/g,c=>c.toUpperCase());
+    }
+    // crude journal-based hints
+    if (t.includes('springer')) return 'Springer Nature';
+    if (t.includes('wiley')) return 'Wiley';
+    if (t.includes('taylor')) return 'Taylor & Francis';
+    if (t.includes('ieee')) return 'IEEE';
+    if (t.includes('acm')) return 'ACM';
+    if (t.includes('mdpi')) return 'MDPI';
+    if (t.includes('frontiers')) return 'Frontiers';
+    if (t.includes('sage')) return 'SAGE';
+    if (t.includes('hindawi')) return 'Hindawi';
+    if (t.includes('emerald')) return 'Emerald';
+    if (t.includes('elsevier') || t.includes('sciencedirect') || t.includes('cell press')) return 'Elsevier';
+    if (t.includes('oxford')) return 'Oxford University Press';
+    if (t.includes('cambridge')) return 'Cambridge University Press';
+    if (t.includes('royal society of chemistry') || t.includes('rsc')) return 'Royal Society of Chemistry';
+    if (t.includes('american chemical society') || t==='acs') return 'American Chemical Society';
+    if (t.includes('de gruyter')) return 'De Gruyter';
+    if (t.includes('igi')) return 'IGI Global';
+    if (t.includes('research square')) return 'Research Square';
+    if (t.includes('arxiv')) return 'arXiv';
+    if (t.includes('ssrn')) return 'Elsevier';
+    return '';
+  }
+
+  function derivePublisher(p){
+    // priority: provided field → journal name hints → URL host hints
+    if (p.publisher){
+      const n = normalizePublisherName(p.publisher);
+      if (n) return n;
+    }
+    const j = (p.journal||'').toString();
+    const n2 = normalizePublisherName(j);
+    if (n2) return n2;
+    const u = (p.url||'').toString();
+    try{
+      const host = new URL(u).host.toLowerCase();
+      const n3 = normalizePublisherName(host);
+      if (n3) return n3;
+    }catch{}
+    return 'Other/Unknown';
+  }
+
+  /* --------- Retraction linking etc. (unchanged) --------- */
   function buildRetractionIndex(items){
     const byTitle = new Map(), byDOI = new Map();
     for (const p of items){
@@ -594,7 +656,7 @@
     if (sel2) sel2.innerHTML = '<option value="">All SDGs</option>' + opts;
   }
 
-  /* --------------- Type multi-select --------------- */
+  /* Type helpers omitted for brevity (unchanged except placement)… */
   const normalizeType = t => {
     const s=String(t||'').toLowerCase();
     if (s==='journal-article') return 'article';
@@ -639,7 +701,7 @@
   function clearTypeSelection(){ selectedTypes.clear(); buildTypePanel(); applyFilters(1); }
   const updateTypeBtnLabel = () => document.getElementById('typeBtnLabel').textContent = selectedTypes.size ? `${selectedTypes.size} selected` : 'All types';
 
-  /* --------------- Filters / Search / Paging --------------- */
+  /* --------------- Filters / Paging --------------- */
   function applyFilters(goToPage=1){
     const q = (document.getElementById('searchBox')?.value || '').toLowerCase().trim();
     const yearFrom = document.getElementById('yearFrom')?.value || '';
@@ -668,7 +730,7 @@
       else if (retractMode === 'only_notices'){ if (!p.retraction_notice) return false; }
 
       if (q){
-        const hay = [p.title||'',p.journal||'',p.doi||'',
+        const hay = [p.title||'',p.journal||'',p.publisher||'',p.doi||'',
                      ...(Array.isArray(p.home_authors)?p.home_authors:deriveHomeAuthors(p)),
                      ...(Array.isArray(p.authors)?p.authors:deriveAuthors(p))].join(' ').toLowerCase();
         if (!hay.includes(q)) return false;
@@ -712,6 +774,7 @@
     for (const p of rows){
       if (!Array.isArray(p.authors)) p.authors = deriveAuthors(p);
       if (!Array.isArray(p.home_authors)) p.home_authors = deriveHomeAuthors(p);
+      if (!p.publisher) p.publisher = derivePublisher(p);
       const tds = selectedColumns.map(col=>`<td class="px-4 py-2 align-top">${renderCell(col.key,p)}</td>`).join('');
       const tr=document.createElement('tr'); tr.className='border-b border-slate-100 hover:bg-slate-50'; tr.innerHTML=tds; body.appendChild(tr);
     }
@@ -727,6 +790,7 @@
       case 'year': return p.year ?? '';
       case 'title': return p.url ? `<a class="text-indigo-600 hover:underline" href="${p.url}" target="_blank">${esc(p.title||'')}</a>` : esc(p.title||'');
       case 'journal': return esc(p.journal||'');
+      case 'publisher': return esc(p.publisher || derivePublisher(p) || '');     // <— NEW
       case 'authors': return esc((Array.isArray(p.authors)?p.authors:deriveAuthors(p)).join(', '));
       case 'home_authors': {
         const a = Array.isArray(p.home_authors)?p.home_authors:deriveHomeAuthors(p);
@@ -751,7 +815,7 @@
     const container=document.getElementById('columnsList'); container.innerHTML='';
     const selectedKeys=new Set(selectedColumns.map(c=>c.key));
     for (const col of ALL_COLUMNS){
-      const id=`col_${col.key}`, checked=selectedKeys.has(col.key)?'checked':'';
+      const id=`col_${col.key}`, checked=selectedKeys.has(col.key)?'checked':'';      
       container.insertAdjacentHTML('beforeend', `
         <label class="flex items-center gap-2"><input type="checkbox" id="${id}" ${checked}/><span>${col.label}</span></label>
       `);
@@ -780,7 +844,7 @@
 
   /* --------------- Charts --------------- */
   function renderOverviewCharts(){
-    // Publications by Year (bar + cumulative line)
+    // By Year
     const ctxY = document.getElementById('chartByYear').getContext('2d');
     const byYear={}; for (const p of filtered){ if (p.year) byYear[p.year]=(byYear[p.year]||0)+1; }
     const labelsY = Object.keys(byYear).sort((a,b)=>a-b);
@@ -796,34 +860,19 @@
       options:{
         responsive:true, maintainAspectRatio:false,
         plugins:{ legend:{position:'top'}, shadowPlugin:{}, tooltip:{mode:'index', intersect:false} },
-        scales:{
-          x:{ grid:{ display:false }, ticks:{ color:'#334155' } },
-          y:{ grid:{ color:'#e2e8f0' }, ticks:{ color:'#334155' }, beginAtZero:true },
-          y1:{ position:'right', grid:{ drawOnChartArea:false }, ticks:{ color:'#334155' }, beginAtZero:true }
-        }
+        scales:{ x:{ grid:{ display:false }, ticks:{ color:'#334155' } },
+                 y:{ grid:{ color:'#e2e8f0' }, ticks:{ color:'#334155' }, beginAtZero:true },
+                 y1:{ position:'right', grid:{ drawOnChartArea:false }, ticks:{ color:'#334155' }, beginAtZero:true } }
       }
     });
 
-    // Split Top Journals into two charts
     renderTopJournalsSplit();
-
-    // Journal Impact charts
     renderIFCharts();
-
-    // Types by Year
     renderTypesYear();
-
-    // Subjects / Concepts
     renderSubjects();
-
-    // Home authors
     renderHomeAuthors();
-
-    // Retractions over time
     renderRetract();
-
-    // Publishers (distinct journals)
-    renderPublishers();
+    renderPublishers();   // <— NEW
   }
 
   function computeTopJournalsAgg(){
@@ -842,7 +891,6 @@
     return {
       top,
       labels: top.map(([j])=>j),
-      pubs: top.map(([,o])=>o.total),
       q1: top.map(([,o])=>o.q1),
       q2: top.map(([,o])=>o.q2),
       q3: top.map(([,o])=>o.q3),
@@ -852,7 +900,7 @@
   }
 
   function renderTopJournalsSplit(){
-    const {top, labels, pubs, q1, q2, q3, q4, cites} = computeTopJournalsAgg();
+    const {top, labels, q1, q2, q3, q4, cites} = computeTopJournalsAgg();
 
     // Quartiles (stacked)
     const ctxQ = document.getElementById('chartTopJournalsQ').getContext('2d');
@@ -873,47 +921,28 @@
         plugins:{
           legend:{ position:'top' },
           tooltip:{ callbacks:{
-            afterLabel:(ctx)=>{
-              const j = labels[ctx.dataIndex];
-              const meta = metricIFForJournal(j, top[ctx.dataIndex][1].issns);
-              return meta ? `IF: ${meta.value}` : '';
-            }
+            afterLabel:(ctx)=>`Total: ${top[ctx.dataIndex][1].total}`
           }},
           shadowPlugin:{}
         },
-        scales:{
-          x:{ stacked:true, ticks:{ color:'#334155' }, grid:{ display:false } },
-          y:{ stacked:true, beginAtZero:true, ticks:{ color:'#334155' }, grid:{ color:'#e2e8f0' } }
-        }
-      }
+        scales:{ x:{ stacked:true, ticks:{ color:'#334155' }, grid:{ display:false } },
+                 y:{ stacked:true, beginAtZero:true, ticks:{ color:'#334155' }, grid:{ color:'#e2e8f0' } } }
     });
 
-    // Publications vs Citations (clustered)
+    // Citations only (bar)
     const ctxC = document.getElementById('chartTopJournalsC').getContext('2d');
     if (chartTopJournalsC) chartTopJournalsC.destroy();
     chartTopJournalsC = new Chart(ctxC, {
       type:'bar',
-      data:{
-        labels,
-        datasets:[
-          { label:'Publications', data:pubs, backgroundColor:gradH(ctxC, clr.indigo, clr.purple), borderRadius:10, yAxisID:'y', order:1 },
-          { label:'Total citations', data:cites, backgroundColor:gradH(ctxC, clr.teal, clr.cyan), borderRadius:10, yAxisID:'y1', order:2 }
-        ]
-      },
-      options:{
-        responsive:true, maintainAspectRatio:false,
-        plugins:{ legend:{ position:'top' }, shadowPlugin:{} },
-        scales:{
-          x:{ grid:{ display:false }, ticks:{ color:'#334155', maxRotation:45, minRotation:45 } },
-          y:{ beginAtZero:true, grid:{ color:'#e2e8f0' }, ticks:{ color:'#334155' } },
-          y1:{ position:'right', beginAtZero:true, grid:{ drawOnChartArea:false }, ticks:{ color:'#334155' } }
-        }
+      data:{ labels, datasets:[{ label:'Citations', data:cites, borderRadius:12, borderSkipped:false, backgroundColor:gradH(ctxC, clr.indigo, clr.purple) }]},
+      options:{ responsive:true, maintainAspectRatio:false,
+        plugins:{ legend:{display:false}, shadowPlugin:{} },
+        scales:{ x:{ grid:{ display:false }, ticks:{ color:'#334155' } }, y:{ beginAtZero:true, grid:{ color:'#e2e8f0' }, ticks:{ color:'#334155' } } }
       }
     });
   }
 
   function renderIFCharts(){
-    // Build IF per journal
     const byJournal = new Map();
     for (const p of filtered){
       const j=(p.journal||'').trim(); if (!j) continue;
@@ -930,7 +959,6 @@
     }
     IFcount = rows.length;
 
-    // Top bar
     const ctxTop = document.getElementById('chartIFTop').getContext('2d');
     if (chartIFTop) chartIFTop.destroy();
     document.getElementById('ifTopNote').textContent = rows.length ? '' : 'No IF data found in your uploaded file (try including an “Impact Factor / JIF” column).';
@@ -948,108 +976,21 @@
       });
     }
 
-    // IF vs Publications — matrix heatmap
     const ctxB = document.getElementById('chartIFBubble').getContext('2d');
     if (chartIFBubble) chartIFBubble.destroy();
     document.getElementById('ifBubNote').textContent = rows.length ? '' : 'No IF data found in your uploaded file.';
 
     if (rows.length){
-      const ifBins = [0,2,4,6,8,10,12,14,16,18,20,100];
-      const pubBins = [0,5,10,15,20,30,40,60,80,120,200,1e9];
-      const binLabel = (edges, i) => {
-        const a = edges[i], b = edges[i+1];
-        return b >= 100 || b >= 1e9 ? `${a}+` : `${a}–${b}`;
-      };
-      const grid = Array.from({length: ifBins.length-1}, () => Array(pubBins.length-1).fill(0));
-      const gridCites = Array.from({length: ifBins.length-1}, () => Array(pubBins.length-1).fill(0));
-      const idx = (v, edges) => {
-        for (let i=0;i<edges.length-1;i++) if (v>=edges[i] && v<edges[i+1]) return i;
-        return edges.length-2;
-      };
-      rows.forEach(r=>{
-        const xi = idx(r.ifv, ifBins);
-        const yi = idx(r.count, pubBins);
-        grid[xi][yi] += 1;
-        gridCites[xi][yi] += (r.cites||0);
-      });
-      const data = [];
-      let vmax = 0;
-      for (let x=0;x<ifBins.length-1;x++){
-        for (let y=0;y<pubBins.length-1;y++){
-          const v = grid[x][y];
-          if (v>0){ data.push({x, y, v, cites:gridCites[x][y]}); vmax=Math.max(vmax,v); }
-        }
-      }
+      const pts = rows.sort((a,b)=>b.cites-a.cites).slice(0,50).map(r=>({x:r.ifv,y:r.count,r:Math.max(4,Math.sqrt(r.cites)||4), label:r.journal}));
       chartIFBubble = new Chart(ctxB, {
-        type: 'matrix',
-        data: {
-          datasets: [{
-            label: 'Journals per bin',
-            data,
-            borderColor: '#14b8a6',
-            backgroundColor: (ctx)=>{
-              const v = ctx.raw.v || 0;
-              const alpha = 0.15 + 0.85 * (v / (vmax||1));
-              return `rgba(20,184,166,${alpha})`;
-            },
-            width: ({chart}) => {
-              const w = chart.chartArea ? chart.chartArea.width : 0;
-              return w ? (w / (ifBins.length-1)) - 2 : 18;
-            },
-            height: ({chart}) => {
-              const h = chart.chartArea ? chart.chartArea.height : 0;
-              return h ? (h / (pubBins.length-1)) - 2 : 18;
-            }
-          }]
-        },
-        options: {
-          responsive:true, maintainAspectRatio:false,
-          plugins:{
-            legend:{display:false},
-            tooltip:{
-              callbacks:{
-                title:(items)=>{
-                  const r = items[0].raw;
-                  return `IF ${binLabel(ifBins,r.x)} · Publications ${binLabel(pubBins,r.y)}`;
-                },
-                label:(ctx)=>{
-                  const {v,cites} = ctx.raw;
-                  const parts = [`Journals: ${v}`];
-                  if (cites) parts.push(`Citations: ${cites}`);
-                  return parts.join(' · ');
-                }
-              }
-            },
-            shadowPlugin:{}
-          },
-          scales:{
-            x:{
-              type:'linear', position:'bottom',
-              min:-0.5, max:(ifBins.length-1)-0.5,
-              grid:{ color:'#e2e8f0' },
-              ticks:{
-                color:'#334155',
-                callback:(value)=> {
-                  const i = Math.round(value);
-                  return (i>=0 && i<ifBins.length-1) ? binLabel(ifBins,i) : '';
-                },
-                maxRotation:0, autoSkip:false
-              }
-            },
-            y:{
-              type:'linear',
-              reverse:true,
-              min:-0.5, max:(pubBins.length-1)-0.5,
-              grid:{ color:'#e2e8f0' },
-              ticks:{
-                color:'#334155',
-                callback:(value)=>{
-                  const i = Math.round(value);
-                  return (i>=0 && i<pubBins.length-1) ? binLabel(pubBins,i) : '';
-                }
-              }
-            }
-          }
+        type:'bubble',
+        data:{ datasets:[{ label:'Journals', data:pts, backgroundColor:'rgba(20,184,166,.25)', borderColor:clr.teal }] },
+        options:{
+          responsive:true, maintainAspectRatio:false, plugins:{ legend:{display:false}, shadowPlugin:{}, tooltip:{ callbacks:{
+            label:(ctx)=> `${ctx.raw.label} — IF ${ctx.raw.x}, pubs ${ctx.raw.y}`
+          }}} ,
+          scales:{ x:{ title:{display:true, text:'Impact Factor (IF)'}, grid:{ color:'#e2e8f0' }, ticks:{ color:'#334155' } },
+                   y:{ title:{display:true, text:'Publications (view)'}, grid:{ color:'#e2e8f0' }, ticks:{ color:'#334155' }, beginAtZero:true } }
         }
       });
     }
@@ -1057,8 +998,7 @@
 
   function renderTypesYear(){
     const ctx = document.getElementById('chartTypesYear').getContext('2d');
-    const map=new Map(); // year -> {type->count}
-    const setTypes=new Set();
+    const map=new Map(); const setTypes=new Set();
     for (const p of filtered){
       const y=p.year; if (y==null) continue;
       const t=normalizeType(p.type || p.type_crossref);
@@ -1142,87 +1082,35 @@
     });
   }
 
-  function quartileOf(p){ return p.quartile || resolveQuartile(p) || ''; }
+  // NEW — Publishers chart
+  function renderPublishers(){
+    const ctx = document.getElementById('chartPublishers').getContext('2d');
+    const map = new Map();      // publisher -> Set(journal)
+    for (const p of filtered){
+      const pub = derivePublisher(p);
+      const j = (p.journal||'').trim();
+      if (!pub || !j) continue;
+      if (!map.has(pub)) map.set(pub, new Set());
+      map.get(pub).add(j);
+    }
+    const rows = [...map.entries()].map(([k,v])=>({publisher:k, journals:v.size}))
+                  .sort((a,b)=>b.journals-a.journals).slice(0,15);
+    if (chartPublishers) chartPublishers.destroy();
+    chartPublishers = new Chart(ctx, {
+      type:'bar',
+      data:{ labels:rows.map(r=>r.publisher), datasets:[{ label:'Distinct journals', data:rows.map(r=>r.journals), borderRadius:12, borderSkipped:false, backgroundColor:gradH(ctx, clr.purple, clr.indigo)}]},
+      options:{ indexAxis:'y', responsive:true, maintainAspectRatio:false, plugins:{ legend:{display:false}, shadowPlugin:{} },
+        scales:{ x:{ beginAtZero:true, grid:{ color:'#e2e8f0' }, ticks:{color:'#334155'} }, y:{ grid:{ display:false }, ticks:{color:'#334155'} } } }
+    });
+  }
 
-  // IF-only helper
+  function quartileOf(p){ return p.quartile || resolveQuartile(p) || ''; }
   function metricIFForJournal(journal, issnSet){
     let best=null;
     const add = (rec)=>{ if (!rec) return; const value = parseNum(rec.if); if (value && (!best || value>best.value)) best={value}; };
     if (issnSet){ for (const id of issnSet){ add(sjrMetaByIssn.get(id)); } }
     add(sjrMetaByTitle.get(normTitle(journal)));
     return best;
-  }
-
-  /* -------- Publishers chart -------- */
-  function unifyPublisherName(s){
-    const t=(s||'').toString().trim();
-    const x=t.toLowerCase();
-    if (!t) return 'Other/Unknown';
-    if (x.includes('elsevier')) return 'Elsevier';
-    if (x.includes('springer') || x.includes('nature')) return 'Springer Nature';
-    if (x.includes('wiley')) return 'Wiley';
-    if (x.includes('taylor') || x.includes('informa')) return 'Taylor & Francis';
-    if (x.includes('ieee')) return 'IEEE';
-    if (x.includes('mdpi')) return 'MDPI';
-    if (x.includes('acm')) return 'ACM';
-    if (x.includes('sage')) return 'SAGE';
-    if (x.includes('frontiers')) return 'Frontiers';
-    if (x.includes('hindawi')) return 'Hindawi';
-    if (x.includes('oxford')) return 'Oxford Univ Press';
-    if (x.includes('cambridge')) return 'Cambridge Univ Press';
-    if (x.includes('ssrn')) return 'SSRN';
-    if (x.includes('research square')) return 'Research Square';
-    return t;
-  }
-  function inferPublisherFromJournal(jname){
-    const j=(jname||'').toLowerCase();
-    if (j.includes('ieee')) return 'IEEE';
-    if (j.includes('springer')) return 'Springer Nature';
-    if (j.includes('wiley')) return 'Wiley';
-    if (j.includes('taylor') || j.includes('francis')) return 'Taylor & Francis';
-    if (j.includes('mdpi')) return 'MDPI';
-    if (j.includes('acm')) return 'ACM';
-    if (j.includes('elsevier') || j.includes('sciencedirect') || j.includes('cell press') || j.includes('lancet')) return 'Elsevier';
-    if (j.includes('frontiers')) return 'Frontiers';
-    if (j.includes('hindawi')) return 'Hindawi';
-    if (j.includes('ssrn')) return 'SSRN';
-    if (j.includes('research square')) return 'Research Square';
-    return 'Other/Unknown';
-  }
-  function getPublisher(p){
-    const fields = [
-      p.publisher,
-      p?.host_venue?.publisher,
-      p?.host_venue?.display_name,
-      p?.primary_location?.source?.publisher,
-      p?.primary_location?.source?.host_organization_name,
-      p?.primary_location?.source?.display_name
-    ];
-    let pick = fields.find(v => typeof v === 'string' && v.trim());
-    if (pick) return unifyPublisherName(pick);
-    return inferPublisherFromJournal(p.journal||'');
-  }
-  function renderPublishers(){
-    const ctx = document.getElementById('chartPublishers').getContext('2d');
-    const map = new Map(); // publisher -> Set of journals
-    for (const p of filtered){
-      const pub = getPublisher(p);
-      const j = (p.journal||'').trim();
-      if (!j) continue;
-      const set = map.get(pub) || new Set();
-      set.add(j);
-      map.set(pub,set);
-    }
-    const rows = [...map.entries()].map(([pub,set])=>({pub,count:set.size}))
-                  .sort((a,b)=>b.count-a.count).slice(0,12);
-    if (chartPublishers) chartPublishers.destroy();
-    chartPublishers = new Chart(ctx, {
-      type:'bar',
-      data:{ labels: rows.map(r=>r.pub), datasets:[{ label:'Distinct journals', data: rows.map(r=>r.count), borderRadius:12, borderSkipped:false, backgroundColor:gradH(ctx, clr.indigo, clr.purple)}] },
-      options:{ indexAxis:'y', responsive:true, maintainAspectRatio:false, plugins:{ legend:{display:false}, shadowPlugin:{} },
-        scales:{ x:{ beginAtZero:true, grid:{ color:'#e2e8f0' }, ticks:{ color:'#334155' } }, y:{ grid:{ display:false }, ticks:{ color:'#334155' } } }
-      }
-    });
   }
 
   /* --------------- SDG chart --------------- */
@@ -1241,24 +1129,19 @@
     });
   }
 
-  /* --------------- SDG mapping --------------- */
+  /* --------------- SDG mapping + misc utils --------------- */
   function guessSDGs(p){
-    const text = [(p.title||''),(p.journal||''),extractSubjects(p)].join(' ').toLowerCase();
+    const text = [(p.title||''),(p.journal||''),(p.publisher||''),extractSubjects(p)].join(' ').toLowerCase();
     const hits=[]; for (const s of SDG_LIST){ for (const kw of s.kw){ if (text.includes(kw.toLowerCase())){ hits.push(s.id); break; } } }
     return Array.from(new Set(hits)).slice(0,2);
   }
-  function renderSDGBadges(ids){
-    if (!ids.length) return '';
-    return ids.map(id=>`<span class="badge" style="border-color:${SDG_COLORS[id]};background:#fff">${id}</span>`).join(' ');
-  }
+  function renderSDGBadges(ids){ if (!ids.length) return ''; return ids.map(id=>`<span class="badge" style="border-color:${SDG_COLORS[id]};background:#fff">${id}</span>`).join(' '); }
   function buildSDGLegend(){
     const box=document.getElementById('sdgLegend'); box.innerHTML='';
-    for (const s of SDG_LIST){
-      box.insertAdjacentHTML('beforeend', `<span class="badge" title="${s.name}" style="border-color:${SDG_COLORS[s.id]};background:#fff">${s.id} — ${s.name}</span>`);
-    }
+    for (const s of SDG_LIST){ box.insertAdjacentHTML('beforeend', `<span class="badge" title="${s.name}" style="border-color:${SDG_COLORS[s.id]};background:#fff">${s.id} — ${s.name}</span>`); }
   }
 
-  /* --------------- Quartile & IF upload --------------- */
+  /* --------------- Quartile upload (unchanged core) --------------- */
   document.getElementById('sjrFile').addEventListener('change', async (e)=>{
     const file=e.target.files[0]; if(!file) return;
     const name=file.name.toLowerCase(); const text=await file.text();
@@ -1349,28 +1232,6 @@
     const el=document.getElementById('mapCoverage'); if (el) el.textContent = `${mapped} / ${total} in current view mapped (${pct}%)`;
   }
 
-  /* --------------- Retraction info rendering --------------- */
-  function renderRetractionInfo(p){
-    const parts=[];
-    if (p.retraction_notice){
-      parts.push('<span class="badge" style="border-color:#ef4444;background:#fff;color:#b91c1c">Retraction notice</span>');
-      if (p.retraction_of){
-        const t = esc(p.retraction_of.title || '');
-        const d = p.retraction_of.doi ? `<a href="https://doi.org/${p.retraction_of.doi}" target="_blank">${esc(p.retraction_of.doi)}</a>` : '';
-        parts.push(`<div class="text-xs text-slate-600 mt-1">of: ${t} ${d}</div>`);
-      }
-    }
-    if (p.is_retracted){
-      parts.push('<span class="badge" style="border-color:#ef4444;background:#fff;color:#b91c1c">Retracted (OpenAlex)</span>');
-      if (p.retracted_by){
-        const t = esc(p.retracted_by.title || '');
-        const d = p.retracted_by.doi ? `<a href="https://doi.org/${p.retracted_by.doi}" target="_blank">${esc(p.retracted_by.doi)}</a>` : '';
-        parts.push(`<div class="text-xs text-slate-600 mt-1">by: ${t} ${d}</div>`);
-      }
-    }
-    return parts.join(' ') || '';
-  }
-
   /* --------------- Export --------------- */
   function exportCSV(){
     if (!filtered.length) return;
@@ -1404,6 +1265,7 @@
       case 'issns':   return (p.issns||[]).join('; ');
       case 'subjects':return extractSubjects(p);
       case 'sdg_tags':return (p.sdg_tags||[]).join('; ');
+      case 'publisher': return p.publisher || derivePublisher(p) || '';
       case 'retraction_info': return stripHtml(renderRetractionInfo(p));
       case 'is_retracted': return p.is_retracted ? 'Yes' : 'No';
       case 'type': return labelForType(normalizeType(p.type || p.type_crossref));
@@ -1416,10 +1278,11 @@
     if (key==='authors') return Array.isArray(p.authors)?p.authors:deriveAuthors(p);
     if (key==='home_authors') return Array.isArray(p.home_authors)?p.home_authors:deriveHomeAuthors(p);
     if (key==='type') return labelForType(normalizeType(p.type || p.type_crossref));
+    if (key==='publisher') return p.publisher || derivePublisher(p) || '';
     return p[key];
   }
 
-  /* ====== parseNum ====== */
+  /* ====== parseNum & utils ====== */
   const parseNum = v => {
     let s = String(v ?? '').trim();
     if (!s) return null;
@@ -1430,8 +1293,6 @@
     const m = s.match(/-?\d+(\.\d+)?/);
     return m ? parseFloat(m[0]) : null;
   };
-
-  /* --------------- Utils --------------- */
   const esc = s => String(s).replace(/[&<>"']/g, m=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m]));
   const q = s => `"${String(s).replace(/"/g,'""')}"`;
   const downloadBlob = (name, content, type) => { const blob=new Blob([content],{type}); const a=document.createElement('a'); a.href=URL.createObjectURL(blob); a.download=name; a.click(); URL.revokeObjectURL(a.href); };
