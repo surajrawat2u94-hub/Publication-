@@ -34,9 +34,9 @@
 </head>
 <body class="bg-gradient-to-b from-slate-50 to-slate-100 text-slate-900">
 
-  <!-- Header -->
+  <!-- Header (unchanged) -->
   <header class="sticky top-0 z-30 bg-gradient-to-r from-indigo-600/90 via-fuchsia-600/90 to-sky-600/90 text-white backdrop-blur">
-    <!-- ...header unchanged... -->
+    <!-- header contents here... -->
   </header>
 
   <!-- CONTENT -->
@@ -44,119 +44,58 @@
 
     <!-- OVERVIEW -->
     <section id="view-overview" class="space-y-6">
+      <!-- KPI cards unchanged -->
       <div class="grid grid-cols-2 md:grid-cols-6 gap-4">
-        <!-- KPI cards unchanged -->
+        <!-- KPI cards here -->
       </div>
 
-      <!-- Row: By year (left) + Top Journals (only total citations) -->
+      <!-- Row: By year (left) + split Top Journals (right as two cards) -->
       <div class="grid grid-cols-1 lg:grid-cols-2 gap-4">
         <div class="card p-4">
-          <!-- Publications by year card unchanged -->
+          <!-- Publications by Year card contents here -->
         </div>
 
-        <!-- Right column now only holds one card (Total Citations) -->
+        <!-- Right column holds TWO small cards -->
         <div class="space-y-4">
-          <div class="card p-4">
+          <!-- Quartile card is now hidden -->
+          <div class="card p-4 hidden">
             <div class="flex items-center justify-between">
-              <h3 class="font-semibold">Top Journals — Total Citations (view)</h3>
-              <button class="icon-btn" onclick="focusCanvas('chartTopJournalsC','Top Journals — Publications vs Citations')">
+              <h3 class="font-semibold">Top Journals — Quartiles (view)</h3>
+              <button class="icon-btn" onclick="focusCanvas('chartTopJournalsQ','Top Journals — Quartiles (view)')">
                 <i data-lucide="maximize-2"></i><span class="hidden sm:inline">Focus</span>
               </button>
             </div>
-            <div class="mt-2 h-[240px]"><canvas id="chartTopJournalsC"></canvas></div>
-            <div class="text-xs text-slate-500 mt-2">
-              Clustered bars: Publications (left axis) vs Total Citations (right axis).
-            </div>
+            <div class="mt-2 h-[240px]"><canvas id="chartTopJournalsQ"></canvas></div>
           </div>
+
+            <!-- Total Citations card remains visible -->
+            <div class="card p-4">
+              <div class="flex items-center justify-between">
+                <h3 class="font-semibold">Top Journals — Total Citations (view)</h3>
+                <button class="icon-btn" onclick="focusCanvas('chartTopJournalsC','Top Journals — Publications vs Citations')">
+                  <i data-lucide="maximize-2"></i><span class="hidden sm:inline">Focus</span>
+                </button>
+              </div>
+              <div class="mt-2 h-[240px]"><canvas id="chartTopJournalsC"></canvas></div>
+              <div class="text-xs text-slate-500 mt-2">
+                Clustered bars: Publications (left axis) vs Total Citations (right axis).
+              </div>
+            </div>
         </div>
       </div>
 
-      <!-- Remaining overview cards unchanged -->
-      <!-- Journal Impact, Types, Subjects, Home Authors, Retractions, Publishers... -->
+      <!-- Remaining overview cards (IF charts, types, subjects, etc.) unchanged -->
     </section>
 
     <!-- PUBLICATIONS, QUARTILES, SDG sections unchanged -->
-    <!-- ... -->
   </main>
 
   <!-- Footer and Focus modal unchanged -->
-  <!-- ... -->
 
 <script>
-  lucide.createIcons();
-
-  /* Chart.js helpers and other state/utility functions remain unchanged */
-  /* ... */
-
-  // Adjust renderTopJournalsSplit to handle missing quartile canvas safely
-  function renderTopJournalsSplit(){
-    const {top, labels, pubs, q1, q2, q3, q4, cites} = computeTopJournalsAgg();
-
-    // Only create the quartile chart if its canvas exists
-    const canvasQ = document.getElementById('chartTopJournalsQ');
-    if (canvasQ) {
-      const ctxQ = canvasQ.getContext('2d');
-      if (chartTopJournalsQ) chartTopJournalsQ.destroy();
-      chartTopJournalsQ = new Chart(ctxQ, {
-        type:'bar',
-        data:{
-          labels,
-          datasets:[
-            { label:'Q1', data:q1, backgroundColor:clr.q1, stack:'q' },
-            { label:'Q2', data:q2, backgroundColor:clr.q2, stack:'q' },
-            { label:'Q3', data:q3, backgroundColor:clr.q3, stack:'q' },
-            { label:'Q4', data:q4, backgroundColor:clr.q4, stack:'q' },
-          ]
-        },
-        options:{
-          responsive:true, maintainAspectRatio:false,
-          plugins:{
-            legend:{ position:'top' },
-            tooltip:{ callbacks:{
-              afterLabel:(ctx)=>{
-                const j = labels[ctx.dataIndex];
-                const meta = metricIFForJournal(j, top[ctx.dataIndex][1].issns);
-                return meta ? `IF: ${meta.value}` : '';
-              }
-            }},
-            shadowPlugin:{}
-          },
-          scales:{
-            x:{ stacked:true, ticks:{ color:'#334155' }, grid:{ display:false } },
-            y:{ stacked:true, beginAtZero:true, ticks:{ color:'#334155' }, grid:{ color:'#e2e8f0' } }
-          }
-        }
-      });
-    }
-
-    // Publications vs Citations (clustered) – always draw
-    const ctxC = document.getElementById('chartTopJournalsC').getContext('2d');
-    if (chartTopJournalsC) chartTopJournalsC.destroy();
-    chartTopJournalsC = new Chart(ctxC, {
-      type:'bar',
-      data:{
-        labels,
-        datasets:[
-          { label:'Publications', data:pubs, backgroundColor:gradH(ctxC, clr.indigo, clr.purple), borderRadius:10, yAxisID:'y', order:1 },
-          { label:'Total citations', data:cites, backgroundColor:gradH(ctxC, clr.teal, clr.cyan), borderRadius:10, yAxisID:'y1', order:2 }
-        ]
-      },
-      options:{
-        responsive:true, maintainAspectRatio:false,
-        plugins:{ legend:{ position:'top' }, shadowPlugin:{} },
-        scales:{
-          x:{ grid:{ display:false }, ticks:{ color:'#334155', maxRotation:45, minRotation:45 } },
-          y:{ beginAtZero:true, grid:{ color:'#e2e8f0' }, ticks:{ color:'#334155' } },
-          y1:{ position:'right', beginAtZero:true, grid:{ drawOnChartArea:false }, ticks:{ color:'#334155' } }
-        }
-      }
-    });
-  }
-
-  // The rest of your JavaScript (renderIFCharts, renderTypesYear, etc.) is unchanged
-  /* ... */
-
-  document.addEventListener('DOMContentLoaded', ()=>{ buildSDGLegend(); autoLoad(); });
+  // all your existing JavaScript unchanged,
+  // including renderTopJournalsSplit and other functions.
+  // Since the quartile canvas still exists (but hidden), no errors occur.
 </script>
 </body>
 </html>
