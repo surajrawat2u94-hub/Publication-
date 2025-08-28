@@ -12,7 +12,7 @@
   <!-- Day.js + Chart.js -->
   <script src="https://cdn.jsdelivr.net/npm/dayjs@1/dayjs.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
-  <!-- Matrix chart plugin for Chart.js (for IF vs Publications heatmap) -->
+  <!-- Matrix / heatmap for Chart.js -->
   <script src="https://cdn.jsdelivr.net/npm/chartjs-chart-matrix@2.0.1"></script>
 
   <style>
@@ -135,8 +135,8 @@
         </div>
         <div class="card p-4">
           <div class="flex items-center justify-between">
-            <h3 class="font-semibold">Journal Impact — IF vs Publications (heatmap)</h3>
-            <button class="icon-btn" onclick="focusCanvas('chartIFBubble','Journal Impact — IF vs Publications (heatmap)')">
+            <h3 class="font-semibold">Journal Impact — IF vs Publications (bubble)</h3>
+            <button class="icon-btn" onclick="focusCanvas('chartIFBubble','Journal Impact — IF vs Publications')">
               <i data-lucide="maximize-2"></i><span class="hidden sm:inline">Focus</span>
             </button>
           </div>
@@ -926,108 +926,114 @@
       });
     }
 
-    // Heatmap (IF × publications bins; color = number of journals)
+    // ===== Matrix heatmap (IF vs publications) =====
     const ctxB = document.getElementById('chartIFBubble').getContext('2d');
     if (chartIFBubble) chartIFBubble.destroy();
-    document.getElementById('ifBubNote').textContent = rows.length
-      ? 'Cells show # of journals per IF × publications bin (darker = more).'
-      : 'No IF data found in your uploaded file.';
+    document.getElementById('ifBubNote').textContent = rows.length ? '' : 'No IF data found in your uploaded file.';
 
     if (rows.length){
-      // Bin edges
-      const IF_EDGES  = [0,2,4,6,8,10,12,14,16,18,20];
-      const PUB_EDGES = [0,5,10,15,20,30,40,50,75,100,200];
+      // Define bins
+      const ifBins = [0,2,4,6,8,10,12,14,16,18,20,100]; // last = 20+
+      const pubBins = [0,5,10,15,20,30,40,60,80,120,200,1e9]; // last = 200+
 
-      const nx = IF_EDGES.length - 1;
-      const ny = PUB_EDGES.length - 1;
-
-      // grid counts
-      const grid = Array.from({length: nx}, () => Array(ny).fill(0));
-      const bin = (v, edges) => {
-        for (let i = 0; i < edges.length - 1; i++){
-          if (v >= edges[i] && v < edges[i+1]) return i;
-        }
-        return edges.length - 2;
+      const binLabel = (edges, i) => {
+        const a = edges[i], b = edges[i+1];
+        return b >= 100 || b >= 1e9 ? `${a}+` : `${a}–${b}`;
       };
-      for (const r of rows){
-        const ix = bin(r.ifv, IF_EDGES);
-        const iy = bin(r.count, PUB_EDGES);
-        grid[ix][iy] += 1;
-      }
 
-      // matrix points
+      // Aggregate grid: journals per (IF bin, pubs bin), plus citations for tooltip
+      const grid = Array.from({length: ifBins.length-1}, () => Array(pubBins.length-1).fill(0));
+      const gridCites = Array.from({length: ifBins.length-1}, () => Array(pubBins.length-1).fill(0));
+
+      const idx = (v, edges) => {
+        for (let i=0;i<edges.length-1;i++) if (v>=edges[i] && v<edges[i+1]) return i;
+        return edges.length-2;
+      };
+
+      rows.forEach(r=>{
+        const xi = idx(r.ifv, ifBins);
+        const yi = idx(r.count, pubBins);
+        grid[xi][yi] += 1;
+        gridCites[xi][yi] += (r.cites||0);
+      });
+
+      const data = [];
       let vmax = 0;
-      const dataPoints = [];
-      for (let i = 0; i < nx; i++){
-        for (let j = 0; j < ny; j++){
-          const v = grid[i][j];
-          if (v > 0){
-            dataPoints.push({ x: i, y: j, v, ix: i, iy: j });
-            if (v > vmax) vmax = v;
-          }
+      for (let x=0;x<ifBins.length-1;x++){
+        for (let y=0;y<pubBins.length-1;y++){
+          const v = grid[x][y];
+          if (v>0){ data.push({x, y, v, cites:gridCites[x][y]}); vmax=Math.max(vmax,v); }
         }
       }
-
-      const xLabels = IF_EDGES.slice(0, -1).map((_, i) => `${IF_EDGES[i]}–${IF_EDGES[i+1]}`);
-      const yLabels = PUB_EDGES.slice(0, -1).map((_, i) => `${PUB_EDGES[i]}–${PUB_EDGES[i+1]}`);
 
       chartIFBubble = new Chart(ctxB, {
         type: 'matrix',
         data: {
           datasets: [{
             label: 'Journals per bin',
-            data: dataPoints,
+            data,
             borderColor: '#14b8a6',
-            borderWidth: 1,
-            backgroundColor: (ctx) => {
+            backgroundColor: (ctx)=>{
               const v = ctx.raw.v || 0;
-              const alpha = vmax ? (0.2 + 0.8 * (v / vmax)) : 0.2;
-              return `rgba(20,184,166,${alpha})`;
+              const alpha = 0.15 + 0.85 * (v / (vmax||1)); // 0.15..1.0
+              return `rgba(20,184,166,${alpha})`; // teal with varying opacity
             },
             width: ({chart}) => {
-              const a = chart.chartArea;
-              return a ? ((a.right - a.left) / nx) - 3 : 0;
+              const w = chart.chartArea ? chart.chartArea.width : 0;
+              return w ? (w / (ifBins.length-1)) - 2 : 18;
             },
             height: ({chart}) => {
-              const a = chart.chartArea;
-              return a ? ((a.bottom - a.top) / ny) - 3 : 0;
-            },
+              const h = chart.chartArea ? chart.chartArea.height : 0;
+              return h ? (h / (pubBins.length-1)) - 2 : 18;
+            }
           }]
         },
         options: {
-          responsive: true,
-          maintainAspectRatio: false,
-          plugins: {
-            legend: { display: false },
-            tooltip: {
-              callbacks: {
-                title: (items) => {
+          responsive:true, maintainAspectRatio:false,
+          plugins:{
+            legend:{display:false},
+            tooltip:{
+              callbacks:{
+                title:(items)=>{
                   const r = items[0].raw;
-                  return `IF ${IF_EDGES[r.ix]}–${IF_EDGES[r.ix+1]}, pubs ${PUB_EDGES[r.iy]}–${PUB_EDGES[r.iy+1]}`;
+                  return `IF ${binLabel(ifBins,r.x)} · Publications ${binLabel(pubBins,r.y)}`;
                 },
-                label: (ctx) => {
-                  const n = ctx.raw.v;
-                  return `${n} journal${n > 1 ? 's' : ''}`;
+                label:(ctx)=>{
+                  const {v,cites} = ctx.raw;
+                  const parts = [`Journals: ${v}`];
+                  if (cites) parts.push(`Citations: ${cites}`);
+                  return parts.join(' · ');
                 }
               }
             },
-            shadowPlugin: {}
+            shadowPlugin:{}
           },
-          scales: {
-            x: {
-              type: 'category',
-              labels: xLabels,
-              grid: { color: '#e2e8f0' },
-              ticks: { color: '#334155', maxRotation: 0, autoSkip: false },
-              title: { display: true, text: 'Impact Factor (IF)' }
+          scales:{
+            x:{
+              type:'linear', position:'bottom',
+              min:-0.5, max:(ifBins.length-1)-0.5,
+              grid:{ color:'#e2e8f0' },
+              ticks:{
+                color:'#334155',
+                callback:(value)=> {
+                  const i = Math.round(value);
+                  return (i>=0 && i<ifBins.length-1) ? binLabel(ifBins,i) : '';
+                },
+                maxRotation:0, autoSkip:false
+              }
             },
-            y: {
-              type: 'category',
-              labels: yLabels,
-              reverse: true,
-              grid: { color: '#e2e8f0' },
-              ticks: { color: '#334155' },
-              title: { display: true, text: 'Publications (view)' }
+            y:{
+              type:'linear',
+              reverse:true,
+              min:-0.5, max:(pubBins.length-1)-0.5,
+              grid:{ color:'#e2e8f0' },
+              ticks:{
+                color:'#334155',
+                callback:(value)=>{
+                  const i = Math.round(value);
+                  return (i>=0 && i<pubBins.length-1) ? binLabel(pubBins,i) : '';
+                }
+              }
             }
           }
         }
@@ -1210,7 +1216,7 @@
   }
 
   function parseCSV(text, onRow){
-    const lines = text split(/\r?\n/).filter(l => l.trim().length > 0);
+    const lines = text.split(/\r?\n/).filter(l => l.trim().length > 0);  // <- fixed
     if (!lines.length) throw new Error('Empty CSV');
 
     const hdrRaw = lines.shift();
@@ -1378,7 +1384,7 @@
 
   // Close dropdowns on outside click
   document.addEventListener('click', (e)=>{
-    const panels=[['columnsPanel','colBtn'],['typePanel','typeBtn']]; 
+    const panels=[['columnsPanel','colBtn'],['typePanel','typeBtn']];
     for (const [pid,bid] of panels){
       const panel=document.getElementById(pid); const btn=document.getElementById(bid);
       if (!panel || panel.classList.contains('hidden')) continue;
