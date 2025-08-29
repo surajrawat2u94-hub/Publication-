@@ -242,13 +242,24 @@ function renderFacultyList(){
 }
 
 /** Hook into your existing flow */
-const _oldSwitchTab = switchTab;
-switchTab = function(name){
-  _oldSwitchTab(name);
-  document.getElementById('view-faculty')?.classList.toggle('hidden', name!=='faculty');
-  // Update on tab show
-  if (name==='faculty'){ computeFacultyStats(); renderFacultySummary(); renderFacultyTop(); renderFacultyList(); }
-};
+<script>
+  function switchTab(name){
+    const tabs = ['overview','publications','quartiles','sdg','faculty']; // ← added 'faculty'
+    for (const t of tabs){
+      const view = document.getElementById(`view-${t}`);
+      if (view) view.classList.toggle('hidden', t!==name);
+      const tabBtn = document.getElementById(`tab${t[0].toUpperCase()+t.slice(1)}`);
+      if (tabBtn){
+        tabBtn.classList.toggle('tab-active', t===name);
+        tabBtn.classList.toggle('tab-inactive', t!==name);
+      }
+    }
+    if (name==='quartiles') updateCoverage?.();
+    if (name==='sdg') renderSDGChart?.();
+    if (name==='faculty') updateFacultyView?.(); // ← compute/render on open
+  }
+</script>
+
 
 // After filters/search/year change you already call applyFilters(...). Append this:
 const _oldApplyFilters = applyFilters;
