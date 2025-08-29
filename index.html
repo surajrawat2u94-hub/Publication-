@@ -1717,6 +1717,23 @@ document.addEventListener('DOMContentLoaded', () => {
     }
   });
 
+<script>
+function switchTab(tab){
+  // Hide all sections
+  document.querySelectorAll("main section").forEach(sec => sec.classList.add("hidden"));
+
+  // Deactivate all tab buttons
+  document.querySelectorAll("nav button").forEach(btn => btn.classList.replace("tab-active","tab-inactive"));
+
+  // Show the selected section
+  const view = document.getElementById("view-" + tab);
+  if(view) view.classList.remove("hidden");
+
+  // Activate the clicked tab
+  const tabBtn = document.getElementById("tab" + tab.charAt(0).toUpperCase() + tab.slice(1));
+  if(tabBtn) tabBtn.classList.replace("tab-inactive","tab-active");
+}
+</script>
 
   // Init
   document.addEventListener('DOMContentLoaded', ()=>{ buildSDGLegend(); autoLoad(); });
