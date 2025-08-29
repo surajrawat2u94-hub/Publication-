@@ -10,205 +10,260 @@
   
 <script>
 /* ============================================================
-   FACULTY MAPPING (namespaced; no global collisions)
+   FACULTY MAPPING (smart + fuzzy)
+   - Upload Excel/CSV with columns: EMP NO / FACULTY NAME / DEPARTMENT / SCHOOL / STATUS / TYPE (flexible headers)
+   - Matches authors against faculty via:
+       1) exact: full name, compact name, "last initial"
+       2) fuzzy: same-last-name candidate set with weighted score
+   - Manual aliases + threshold tuning + console tester
+   - Renders Summary, Top faculty, Full list
    ============================================================ */
-(function FacultyMapping(){
-  /* ---- local utils (scoped) ---- */
-  const facEsc = s => String(s||'').replace(/[&<>"']/g, m=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m]));
-  const facNum = n => (n||0).toLocaleString();
-  const setFacStatus = t => { const el=document.getElementById('facStatus'); if (el) el.textContent=t||''; };
-  const norm     = s => String(s||'').toLowerCase().normalize('NFKD').replace(/[\u0300-\u036f]/g,'');
-  const normName = s => norm(s).replace(/[^a-z\s,\.]/g,'').replace(/\s+/g,' ').trim();
 
-  function splitName(raw){
-    let s = normName(raw);
-    if (!s) return {first:'',middles:[],last:'',initial:''};
-    if (s.includes(',')){
-      const [a,b=''] = s.split(',').map(x=>x.trim());
-      const last = (a.split(' ').filter(Boolean).pop()) || a;
-      const firstToken = (b.split(' ').find(t=>/^[a-z]/.test(t)) || '').replace(/\./g,'');
-      return { first:firstToken, middles:[], last, initial:firstToken[0]||'' };
-    }
-    const parts = s.replace(/\./g,'').split(' ').filter(Boolean);
-    if (parts.length === 1){
-      const tok = parts[0];
-      if (tok.length===1) return { first:'', middles:[], last:'', initial:tok };
-      return { first:'', middles:[], last:tok, initial:'' };
-    }
-    const first = parts[0];
-    const last  = parts[parts.length-1];
-    const mids  = parts.slice(1,-1);
-    return { first, middles:mids, last, initial:first[0]||'' };
+(function FacultyMapping(){
+  /* ----------------- State ----------------- */
+  let facultyRows = [];
+  const facultyIndex = new Map();   // fast exact lookups
+  const facByLast = new Map();      // last -> rows[]
+  const facByLI = new Map();        // "last initial" -> rows[]
+  const facultyStats = new Map();   // emp/name key -> { fac, pubs, patents, dpatents }
+
+  // tuning (you can change this at runtime with window.setFacultyThreshold)
+  let FUZZY_THRESHOLD = 0.85;
+
+  // manual overrides (aliases)
+  const aliasMap = new Map();
+
+  /* ----------------- Utils ----------------- */
+  const facNum = n => (n||0).toLocaleString();
+  const facEsc = s => String(s||'').replace(/[&<>"']/g, m=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m]));
+  const norm = s => String(s||'').toLowerCase().normalize('NFKD').replace(/[\u0300-\u036f]/g,'');
+  const normName = s => norm(s).replace(/[^a-z\s]/g,'').replace(/\s+/g,' ').trim();
+
+  function splitName(name){
+    const n = normName(name);
+    if (!n) return {first:'', middles:[], last:'', initial:''};
+    const parts = n.split(' ').filter(Boolean);
+    if (!parts.length) return {first:'', middles:[], last:'', initial:''};
+    const first = parts[0] || '';
+    const last  = parts.length>1 ? parts[parts.length-1] : '';
+    const middles = parts.slice(1, -1);
+    const initial = first ? first[0] : '';
+    return { first, middles, last, initial };
   }
-  const lastNamePlusInitial = name => {
-    const {last, initial} = splitName(name);
-    return last && initial ? `${last} ${initial}` : '';
+  const lastNamePlusInitial = (name) => {
+    const n = splitName(name);
+    return (n.last && n.initial) ? `${n.last} ${n.initial}` : '';
   };
 
-  /* ---- fuzzy similarity ---- */
-  function levenshtein(a,b){
-    if (a===b) return 0;
-    const n=a.length, m=b.length;
-    if (!n) return m; if (!m) return n;
-    const dp = Array(m+1).fill(0);
-    for (let j=0;j<=m;j++) dp[j]=j;
-    for (let i=1;i<=n;i++){
-      let prev = dp[0]; dp[0]=i;
-      for (let j=1;j<=m;j++){
-        const tmp = dp[j];
-        dp[j] = (a[i-1]===b[j-1]) ? prev : 1 + Math.min(prev, dp[j], dp[j-1]);
-        prev = tmp;
-      }
-    }
-    return dp[m];
-  }
+  // Jaro–Winkler-ish similarity (cheap & robust). Range: [0..1]
   function simRatio(a,b){
-    a=norm(a); b=norm(b);
+    a = String(a||''); b = String(b||'');
     if (!a && !b) return 1;
-    const maxL = Math.max(a.length,b.length)||1;
-    const dist = levenshtein(a,b);
-    let r = 1 - dist/maxL;
-    let p=0; while (p<a.length && p<b.length && a[p]===b[p]) p++;
-    r += Math.min(p,4)*0.03;
-    return Math.max(0, Math.min(1, r));
+    if (!a || !b)  return 0;
+    a = a.toLowerCase(); b = b.toLowerCase();
+    if (a === b) return 1;
+    if (a.length===1 || b.length===1) return a===b ? 1 : 0;
+    // token overlap + prefix bonus
+    const la = new Set(a.split(''));
+    const lb = new Set(b.split(''));
+    let inter=0; for (const ch of la) if (lb.has(ch)) inter++;
+    const j = inter / Math.max(la.size, lb.size);
+    let prefix=0; for (let i=0;i<Math.min(4,a.length,b.length);i++){ if (a[i]===b[i]) prefix++; else break; }
+    return 0.85*j + 0.15*(prefix/4);
   }
 
-  /* ---- state ---- */
-  let facultyRows = [];
-  let facultyStats = new Map();
-  let facultyIndex = new Map();  // exact/alias -> row
-  let facByLast    = new Map();  // last -> rows
-  let facByLI      = new Map();  // "last initial" -> rows
-  const FUZZY_THRESHOLD = 0.85;
-
-  /* ---- index ---- */
-  function buildFacultyIndex(rows){
-    facultyIndex.clear(); facByLast.clear(); facByLI.clear();
-    const addKey = (k,row)=>{ if(k && !facultyIndex.has(k)) facultyIndex.set(k,row); };
-    for (const row of rows){
-      const nm = row.name || '';
-      const full = normName(nm);
-      const compact = full.replace(/\s+/g,'');
-      const { last, initial } = splitName(nm);
-      addKey(full,row);
-      addKey(compact,row);
-      addKey(lastNamePlusInitial(nm),row);
-      addKey(`${initial}${last}`,row);
-      addKey(`${last}${initial}`,row);
-      if (last){
-        (facByLast.get(last) || facByLast.set(last,[]).get(last)).push(row);
-        if (initial){
-          const li = `${last} ${initial}`;
-          (facByLI.get(li) || facByLI.set(li,[]).get(li)).push(row);
-        }
-      }
-    }
+  /* --------------- File reading --------------- */
+  function readWorkbook(file){
+    return new Promise((resolve, reject)=>{
+      const fr = new FileReader();
+      fr.onload = ev=>{
+        try{
+          const data = new Uint8Array(ev.target.result);
+          const wb = XLSX.read(data, {type:'array'});
+          resolve(wb);
+        }catch(e){ reject(e); }
+      };
+      fr.onerror = reject;
+      fr.readAsArrayBuffer(file);
+    });
   }
 
-  /* ---- matcher ---- */
-  function matchFaculty(author){
-    if (!author) return null;
-    const full = normName(author);
-    const compact = full.replace(/\s+/g,'');
-    const li = lastNamePlusInitial(author);
-    const k = facultyIndex.get(full) || facultyIndex.get(compact) || facultyIndex.get(li) || facultyIndex.get(li.replace(' ',''));
-    if (k) return k;
-
-    const A = splitName(author);
-    if (!A.last || A.last.length < 3) return null;
-
-    let candidates = [];
-    if (A.initial && facByLI.has(`${A.last} ${A.initial}`)) candidates = facByLI.get(`${A.last} ${A.initial}`);
-    else if (facByLast.has(A.last)) candidates = facByLast.get(A.last);
-    else return null;
-
-    let best=null, bestScore=0;
-    for (const fac of candidates){
-      const B = splitName(fac.name || '');
-      if (!B.last) continue;
-      const lastSim = simRatio(A.last, B.last);
-      if (lastSim < 0.92) continue;
-      const firstSim = simRatio(A.first, B.first);
-      const initialMatch = !!(A.initial && B.initial) && (A.initial === B.initial);
-      const midBonus = (A.middles.length && B.middles.length) ? 0.03 : 0;
-      let score = 0.60*lastSim + 0.35*firstSim + (initialMatch ? 0.08 : 0) + midBonus;
-      if (!A.first && A.initial){ score = 0.70*lastSim + (initialMatch ? 0.25 : 0); }
-      if (score > bestScore){ bestScore=score; best=fac; }
-    }
-    return bestScore >= FUZZY_THRESHOLD ? best : null;
-  }
-
-  /* ---- upload/normalize ---- */
+  /* --------------- Normalize input rows --------------- */
   function normalizeFacultyRows(rows){
-    const mapKey = (s)=> String(s||'').toLowerCase().trim();
-    const grab = (row, keys)=> {
-      for (const k of keys){
+    const key = s => String(s||'').toLowerCase().trim();
+    const grab = (row, keys) => {
+      for (const want of keys){
         for (const rk of Object.keys(row)){
-          if (mapKey(rk) === mapKey(k)) return String(row[rk] ?? '').trim();
+          if (key(rk) === key(want)) return String(row[rk] ?? '').trim();
         }
       }
       return '';
     };
-    return rows.map(r=>({
-      emp:   grab(r, ['EMP NO','EMP ID','EMPID','EMP_NO','EMP']),
+    return rows.map(r => ({
+      emp:   grab(r, ['EMP NO','EMP ID','EMPID','EMP_ID','EMP_NO','EMP']),
       name:  grab(r, ['FACULTY NAME','NAME','FACULTY','EMPLOYEE NAME']),
       dept:  grab(r, ['DEPARTMENT','DEPT']),
       inst:  grab(r, ['INSTITUTE','INSTITUTION']),
       school:grab(r, ['SCHOOL']),
       status:grab(r, ['STATUS']),
       type:  grab(r, ['TYPE','ROLE'])
-    })).filter(x=>x.name);
-  }
-  async function readUploadToRows(file){
-    const lower = (file.name||'').toLowerCase();
-    return new Promise((resolve,reject)=>{
-      const reader = new FileReader();
-      reader.onload = (ev)=>{
-        try{
-          if (/\.(xlsx|xls)$/i.test(lower)){
-            const wb = XLSX.read(new Uint8Array(ev.target.result), {type:'array'});
-            const sheetName = wb.SheetNames[0];
-            const rows = XLSX.utils.sheet_to_json(wb.Sheets[sheetName], {defval:''});
-            resolve(normalizeFacultyRows(rows));
-          } else if (/\.csv$/i.test(lower)){
-            const text = new TextDecoder().decode(ev.target.result);
-            const wb = XLSX.read(text, {type:'string'});
-            const rows = XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]], {defval:''});
-            resolve(normalizeFacultyRows(rows));
-          } else reject(new Error('Unsupported file (use .xlsx/.xls/.csv)'));
-        }catch(e){ reject(e); }
-      };
-      reader.onerror = reject;
-      reader.readAsArrayBuffer(file);
-    });
+    })).filter(x => x.name);
   }
 
-  /* ---- authors helper (local) ---- */
-  function localDeriveAuthors(p){
-    const out=[];
-    if (Array.isArray(p.authorships)){
-      for (const a of p.authorships){
-        const nm = a?.author?.display_name || a?.display_name;
-        if (nm) out.push(String(nm));
+  /* --------------- Build indexes --------------- */
+  function buildFacultyIndex(arr){
+    facultyIndex.clear(); facByLast.clear(); facByLI.clear();
+    for (const row of arr){
+      const full = normName(row.name);
+      if (!full) continue;
+      const compact = full.replace(/\s+/g,'');
+      const li = lastNamePlusInitial(row.name);
+
+      // exact keys (first come wins)
+      if (!facultyIndex.has(full)) facultyIndex.set(full, row);
+      if (!facultyIndex.has(compact)) facultyIndex.set(compact, row);
+      if (li){
+        if (!facultyIndex.has(li)) facultyIndex.set(li, row);
+        const liNoSpace = li.replace(' ','');
+        if (!facultyIndex.has(liNoSpace)) facultyIndex.set(liNoSpace, row);
+      }
+
+      // buckets for fuzzy
+      const last = splitName(row.name).last;
+      if (last){
+        if (!facByLast.has(last)) facByLast.set(last, []);
+        facByLast.get(last).push(row);
+      }
+      if (li){
+        if (!facByLI.has(li)) facByLI.set(li, []);
+        facByLI.get(li).push(row);
       }
     }
-    if (!out.length && typeof p.authors === 'string' && p.authors.trim()){
-      return p.authors.split(/[,;]\s*/).filter(Boolean);
-    }
-    return out;
   }
 
-  /* ---- stats ---- */
+  /* --------------- Aliases / controls / debug --------------- */
+  window.facultyAddAliases = function(obj){
+    for (const [k,v] of Object.entries(obj||{})){
+      aliasMap.set(normName(k), String(v).trim());
+    }
+  };
+  window.setFacultyThreshold = function(v){
+    const x = Number(v);
+    if (Number.isFinite(x)) FUZZY_THRESHOLD = Math.max(0.6, Math.min(0.95, x));
+  };
+  function aliasLookup(author){
+    const n = normName(author);
+    const li = lastNamePlusInitial(author);
+    const tryKeys = [n, n.replace(/\s+/g,''), li, li.replace(' ','')].filter(Boolean);
+    for (const k of tryKeys){
+      const hit = aliasMap.get(normName(k));
+      if (!hit) continue;
+      // resolve EMP first
+      let row = facultyRows.find(r => r.emp && r.emp === hit);
+      if (row) return row;
+      // or canonical name
+      row = facultyRows.find(r => normName(r.name) === normName(hit));
+      if (row) return row;
+    }
+    return null;
+  }
+  window.testFacultyMatch = function(name){
+    const res = _debugMatch(name);
+    console.log('Best:', res.best || null);
+    if (res.candidates?.length){
+      console.table(res.candidates.map(c=>({
+        score:+c.score.toFixed(3),
+        name:c.fac.name, emp:c.fac.emp, dept:c.fac.dept, school:c.fac.school
+      })));
+    }
+    return res.best || null;
+  };
+
+  /* --------------- Matching --------------- */
+  function matchFaculty(author){
+    if (!author) return null;
+
+    // 0) Manual alias override
+    const byAlias = aliasLookup(author);
+    if (byAlias) return byAlias;
+
+    // 1) exact keys
+    const full = normName(author);
+    const compact = full.replace(/\s+/g,'');
+    const li = lastNamePlusInitial(author);
+    const k = facultyIndex.get(full) || facultyIndex.get(compact) || facultyIndex.get(li) || facultyIndex.get(li.replace(' ',''));
+    if (k) return k;
+
+    // 2) fuzzy (same-last candidates, weight last heavily)
+    const A = splitName(author);
+    if (!A.last) return null;
+
+    // prefer last+initial bucket if we have one
+    let candidates = [];
+    if (A.initial && facByLI.has(`${A.last} ${A.initial}`)) {
+      candidates = facByLI.get(`${A.last} ${A.initial}`);
+    } else if (facByLast.has(A.last)) {
+      candidates = facByLast.get(A.last);
+    }
+    if (!candidates.length) return null;
+
+    let best=null, bestScore=0;
+    for (const fac of candidates){
+      const B = splitName(fac.name || '');
+      if (!B.last) continue;
+      const lastSim = simRatio(A.last, B.last);
+      if (lastSim < 0.90) continue; // must share (near-)same last name
+
+      const firstSim = simRatio(A.first, B.first);
+      const initialMatch = !!(A.initial && B.initial) && (A.initial === B.initial);
+      const midBonus = (A.middles.length && B.middles.length) ? 0.03 : 0;
+
+      // default scoring
+      let score = 0.60*lastSim + 0.35*firstSim + (initialMatch ? 0.08 : 0) + midBonus;
+
+      // if author is given as "J Rawat" (no full first name), rely more on last + initial
+      if (!A.first && A.initial){
+        score = 0.70*lastSim + (initialMatch ? 0.25 : 0);
+      }
+
+      if (score > bestScore){ bestScore = score; best = fac; }
+    }
+    return (bestScore >= FUZZY_THRESHOLD) ? best : null;
+  }
+
+  function _debugMatch(author){
+    const A = splitName(author);
+    let candidates = [];
+    if (A.initial && facByLI.has(`${A.last} ${A.initial}`)) candidates = facByLI.get(`${A.last} ${A.initial}`);
+    else if (facByLast.has(A.last)) candidates = facByLast.get(A.last);
+
+    const scored=[];
+    let best=null, bestScore=0;
+    for (const fac of candidates){
+      const B = splitName(fac.name||'');
+      const lastSim = simRatio(A.last,B.last);
+      if (lastSim < 0.90) continue;
+      const firstSim = simRatio(A.first,B.first);
+      const initialMatch = !!(A.initial && B.initial) && (A.initial === B.initial);
+      const midBonus = (A.middles.length && B.middles.length) ? 0.03 : 0;
+      let score = 0.60*lastSim + 0.35*firstSim + (initialMatch?0.08:0) + midBonus;
+      if (!A.first && A.initial){ score = 0.70*lastSim + (initialMatch?0.25:0); }
+      scored.push({fac, score});
+      if (score > bestScore){ bestScore = score; best = fac; }
+    }
+    return { best: (bestScore>=FUZZY_THRESHOLD)?best:null, candidates:scored.sort((a,b)=>b.score-a.score) };
+  }
+
+  /* --------------- Stats / Rendering --------------- */
+  const setFacStatus = txt => { const el=document.getElementById('facStatus'); if(el) el.textContent = txt || ''; };
+
   function computeFacultyStats(){
     facultyStats.clear();
-    const items = (window.filtered && Array.isArray(window.filtered)) ? window.filtered
-                : (Array.isArray(window.all) ? window.all : []);
-    if (!items.length || !facultyIndex.size) return;
-
-    for (const p of items){
+    if (!window.filtered || !filtered.length || !facultyIndex.size) return;
+    for (const p of filtered){
       const authors = Array.isArray(p.home_authors) && p.home_authors.length
         ? p.home_authors
-        : (window.deriveAuthors ? window.deriveAuthors(p) : localDeriveAuthors(p));
+        : (typeof window.deriveAuthors === 'function' ? (Array.isArray(p.authors)?p.authors:window.deriveAuthors(p)) : (Array.isArray(p.authors)?p.authors:[]));
 
       for (const a of authors){
         const fac = matchFaculty(a);
@@ -216,15 +271,16 @@
         const key = fac.emp || fac.name;
         const s = facultyStats.get(key) || { fac, pubs:0, patents:0, dpatents:0 };
         s.pubs += 1;
+
         const t = String(p.type||p.type_crossref||'').toLowerCase();
         if (t.includes('design') && t.includes('patent')) s.dpatents += 1;
         else if (t.includes('patent')) s.patents += 1;
+
         facultyStats.set(key, s);
       }
     }
   }
 
-  /* ---- render ---- */
   function renderFacultySummary(){
     const total = facultyRows.length || 0;
     const matched = facultyStats.size || 0;
@@ -235,10 +291,11 @@
     if (!el) return;
     el.innerHTML =
       `<div>Faculty in file: <b>${facNum(total)}</b></div>
-       <div>Faculty with at least 1 publication in current view: <b>${facNum(matched)}</b></div>
+       <div>Faculty with ≥1 publication in current view: <b>${facNum(matched)}</b></div>
        <div>Publications attributed (view): <b>${facNum(pubs)}</b></div>
        <div>Patents: <b>${facNum(pats)}</b> · Design patents: <b>${facNum(dpats)}</b></div>`;
   }
+
   function renderFacultyTop(){
     const rows = [...facultyStats.values()].sort((a,b)=> b.pubs - a.pubs).slice(0,8);
     const el = document.getElementById('facTop'); if (!el) return;
@@ -247,8 +304,10 @@
       <div class="flex items-center justify-between border-b last:border-0 py-2">
         <div class="font-medium">${facEsc(x.fac.name)}</div>
         <div class="text-slate-600 text-sm">Pubs: <b>${x.pubs}</b></div>
-      </div>`).join('');
+      </div>
+    `).join('');
   }
+
   function renderFacultyList(){
     const el = document.getElementById('facList'); if (!el) return;
     const q = (document.getElementById('facSearch')?.value || '').toLowerCase().trim();
@@ -277,67 +336,95 @@
             <div class="text-2xl font-semibold">${x.pubs}</div>
             <div class="text-xs text-slate-500">Publications</div>
             <div class="mt-1 text-xs">
-              <span class="inline-flex items-center gap-1 px-2 py-0.5 rounded-full border">Patents: ${x.patents}</span>
-              <span class="inline-flex items-center gap-1 px-2 py-0.5 rounded-full border">Design: ${x.dpatents}</span>
+              <span class="badge">Patents: ${x.patents}</span>
+              <span class="badge">Design: ${x.dpatents}</span>
             </div>
           </div>
         </div>
-      </div>`).join('');
-    if (window.lucide) lucide.createIcons();
+      </div>
+    `).join('');
+    if (window.lucide) window.lucide.createIcons();
   }
 
-  /* ---- export (one global only) ---- */
+  /* --------------- Export mapping JSON --------------- */
   window.exportFacultyJSON = function(){
     if (!facultyRows.length) return;
-    const blob = new Blob([JSON.stringify(facultyRows,null,2)], {type:'application/json'});
-    const a=document.createElement('a'); a.href=URL.createObjectURL(blob); a.download='faculty_mapping.json'; a.click();
+    const payload = {
+      generated_at: new Date().toISOString(),
+      threshold: FUZZY_THRESHOLD,
+      aliases: Object.fromEntries(aliasMap),
+      rows: facultyRows
+    };
+    const blob = new Blob([JSON.stringify(payload,null,2)], {type:'application/json'});
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(blob);
+    a.download = 'faculty_mapping.json';
+    a.click();
     URL.revokeObjectURL(a.href);
   };
 
-  /* ---- hook / wiring ---- */
-  document.addEventListener('DOMContentLoaded', () => {
+  /* --------------- Wiring --------------- */
+  function attachFileHandler(){
     const input = document.getElementById('facFile');
-    if (input){
-      input.addEventListener('change', async (e) => {
-        const file = e.target.files[0];
-        if (!file) return;
-        setFacStatus('Reading file…');
-        try{
-          facultyRows = await readUploadToRows(file);
-          buildFacultyIndex(facultyRows);
-          document.getElementById('facExportBtn')?.classList.remove('hidden');
-          setFacStatus(`Loaded ${facNum(facultyRows.length)} faculty rows.`);
-          computeFacultyStats();
-          renderFacultySummary();
-          renderFacultyTop();
-          renderFacultyList();
-        }catch(err){
-          console.error(err);
-          setFacStatus('Failed: ' + err.message);
-        }
-      });
-    }
-    const search = document.getElementById('facSearch');
-    if (search) search.addEventListener('input', renderFacultyList);
-
-    // Hook into existing applyFilters (retry a few times in case it's defined later)
-    let tries = 0, timer = setInterval(() => {
-      tries++;
-      if (typeof window.applyFilters === 'function'){
-        const old = window.applyFilters;
-        window.applyFilters = function(goToPage=1){
-          old(goToPage);
-          if (facultyIndex.size){
-            computeFacultyStats();
-            renderFacultySummary();
-            renderFacultyTop();
-            renderFacultyList();
-          }
-        };
-        clearInterval(timer);
+    if (!input) return;
+    input.addEventListener('change', async (e)=>{
+      const file = e.target.files?.[0];
+      if (!file) return;
+      setFacStatus('Reading file…');
+      try{
+        // read via SheetJS (works for xlsx/xls/csv)
+        const wb = await readWorkbook(file);
+        const sheet = wb.SheetNames[0];
+        const rows = XLSX.utils.sheet_to_json(wb.Sheets[sheet], {defval:''});
+        facultyRows = normalizeFacultyRows(rows);
+        buildFacultyIndex(facultyRows);
+        document.getElementById('facExportBtn')?.classList.remove('hidden');
+        setFacStatus(`Loaded ${facultyRows.length} faculty rows.`);
+        recomputeAndRender();
+      }catch(err){
+        console.error(err);
+        setFacStatus('Failed: ' + err.message);
       }
-      if (tries > 20) clearInterval(timer); // stop after ~2s
-    }, 100);
+    });
+  }
+
+  function hookApplyFilters(){
+    // ensure compute runs whenever filters change
+    const wrap = ()=>{
+      if (!facultyRows.length) return;
+      computeFacultyStats();
+      renderFacultySummary();
+      renderFacultyTop();
+      renderFacultyList();
+    };
+    if (typeof window.applyFilters === 'function'){
+      const old = window.applyFilters;
+      window.applyFilters = function(goToPage=1){
+        old(goToPage);
+        wrap();
+      };
+    } else {
+      // define a small observer to re-hook once main loaded
+      setTimeout(hookApplyFilters, 0);
+    }
+  }
+
+  function recomputeAndRender(){
+    computeFacultyStats();
+    renderFacultySummary();
+    renderFacultyTop();
+    renderFacultyList();
+  }
+
+  // init when DOM ready
+  document.addEventListener('DOMContentLoaded', ()=>{
+    attachFileHandler();
+    hookApplyFilters();
+
+    // Optional: provide a couple of sample aliases you can tweak/remove
+    // Example for "J. Rawat" ⇒ Jayesh Rawat
+    // window.facultyAddAliases({ "j rawat": "jayesh rawat", "rawat j": "jayesh rawat" });
+    // window.setFacultyThreshold(0.83);
   });
 })();
 </script>
