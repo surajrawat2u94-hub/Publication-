@@ -7,8 +7,37 @@
 
   <!-- Tailwind -->
   <script src="https://cdn.tailwindcss.com"></script>
-  
+  <script>
+/* ================= FACULTY MAPPING ================= */
 
+/** State */
+let facultyRows = [];          // raw rows from Excel
+let facultyIndex = new Map();  // key -> faculty record
+let facultyStats = new Map();  // empNo -> {pubs, patents, dpatents}
+
+/** Upload handler */
+document.getElementById('facFile').addEventListener('change', async (e) => {
+  const file = e.target.files[0];
+  if (!file) return;
+  setFacStatus('Reading file…');
+  try{
+    const wb = await readWorkbook(file);
+    const sheetName = wb.SheetNames[0];
+    const rows = XLSX.utils.sheet_to_json(wb.Sheets[sheetName], {defval:''});
+    facultyRows = normalizeFacultyRows(rows);
+    buildFacultyIndex(facultyRows);
+    document.getElementById('facExportBtn').classList.remove('hidden');
+    setFacStatus(`Loaded ${facultyRows.length} faculty rows.`);
+    // Recompute on current view
+    computeFacultyStats();
+    renderFacultySummary();
+    renderFacultyTop();
+    renderFacultyList();
+  }catch(err){
+    setFacStatus('Failed: ' + err.message);
+    console.error(err);
+  }
+});
 
 /** Read Excel/CSV with SheetJS */
 function readWorkbook(file){
@@ -1734,38 +1763,6 @@ applyFilters = function(goToPage=1){
   });
 
 
-
-/* ================= FACULTY MAPPING ================= */
-
-/** State */
-let facultyRows = [];          // raw rows from Excel
-let facultyIndex = new Map();  // key -> faculty record
-let facultyStats = new Map();  // empNo -> {pubs, patents, dpatents}
-
-/** Upload handler */
-document.getElementById('facFile').addEventListener('change', async (e) => {
-  const file = e.target.files[0];
-  if (!file) return;
-  setFacStatus('Reading file…');
-  try{
-    const wb = await readWorkbook(file);
-    const sheetName = wb.SheetNames[0];
-    const rows = XLSX.utils.sheet_to_json(wb.Sheets[sheetName], {defval:''});
-    facultyRows = normalizeFacultyRows(rows);
-    buildFacultyIndex(facultyRows);
-    document.getElementById('facExportBtn').classList.remove('hidden');
-    setFacStatus(`Loaded ${facultyRows.length} faculty rows.`);
-    // Recompute on current view
-    computeFacultyStats();
-    renderFacultySummary();
-    renderFacultyTop();
-    renderFacultyList();
-  }catch(err){
-    setFacStatus('Failed: ' + err.message);
-    console.error(err);
-  }
-});
-</script>
   // Init
   document.addEventListener('DOMContentLoaded', ()=>{ buildSDGLegend(); autoLoad(); });
 </script>
