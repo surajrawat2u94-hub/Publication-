@@ -792,18 +792,8 @@ applyFilters = function(goToPage=1){
   ];
   const DOI_REGEX = /\b(10\.\d{4,9}\/\S+)\b/i;
 
-  /* ---------------- Tabs ---------------- */
-  function switchTab(name){
-    const tabs=['overview','publications','quartiles','sdg'];
-    for (const t of tabs){
-      document.getElementById(`view-${t}`).classList.toggle('hidden', t!==name);
-      const el = document.getElementById(`tab${t[0].toUpperCase()+t.slice(1)}`);
-      el.classList.toggle('tab-active', t===name);
-      el.classList.toggle('tab-inactive', t!==name);
-    }
-    if (name==='quartiles') updateCoverage();
-    if (name==='sdg') renderSDGChart();
-  }
+  
+ 
 
   /* --------------- Load data --------------- */
   async function autoLoad(){
@@ -1770,84 +1760,7 @@ applyFilters = function(goToPage=1){
       if (!panel.contains(e.target) && !btn.contains(e.target)) panel.classList.add('hidden');
     }
   });
-/* ================== FACULTY MAPPING ================== */
 
-let FAC_ROWS = [];                 // raw rows from Excel
-let FAC_READY = false;             // flag once a file is loaded
-let FAC_INDEX = new Map();         // key -> array of faculty rows (name keys)
-
-/* Wire the input */
-document.getElementById('facFile').addEventListener('change', async (e)=>{
-  const file = e.target.files[0];
-  if (!file) return;
-  FAC_ROWS = await readExcel(file);
-  FAC_READY = true;
-  indexFaculty(FAC_ROWS);
-  document.getElementById('facStatus').textContent =
-    `Loaded ${FAC_ROWS.length} rows from ${file.name}`;
-  document.getElementById('facExportBtn').classList.remove('hidden');
-  updateFacultyView();
-});
-
-function indexFaculty(rows){
-  FAC_INDEX.clear();
-  for (const r of rows){
-    const name = String(r['FACULTY NAME']||'').trim();
-    if (!name) continue;
-    const key1 = name.toLowerCase();
-    const parts = name.split(/\s+/);
-    const key2 = parts.length>1 ? (parts.pop().toLowerCase()+' '+parts[0][0].toLowerCase()) : key1;
-    for (const k of [key1,key2]) if (k) FAC_INDEX.set(k,(FAC_INDEX.get(k)||[]).concat(r));
-  }
-}
-
-function updateFacultyView(){
-  if (!FAC_READY){ document.getElementById('facSummary').textContent='No file loaded'; return; }
-
-  // Summary
-  const schools=[...new Set(FAC_ROWS.map(r=>r['SCHOOL']).filter(Boolean))];
-  const depts=[...new Set(FAC_ROWS.map(r=>r['DEPARTMENT']).filter(Boolean))];
-  document.getElementById('facSummary').textContent =
-    `${FAC_ROWS.length} faculty · ${schools.length} schools · ${depts.length} departments`;
-
-  // Top faculty
-  const counts=new Map();
-  for (const r of FAC_ROWS){
-    const n=r['FACULTY NAME'];
-    counts.set(n,(counts.get(n)||0)+1);
-  }
-  const top=[...counts.entries()].sort((a,b)=>b[1]-a[1]).slice(0,10);
-  document.getElementById('facTop').innerHTML =
-    top.map(([n,c])=>`${n} (${c})`).join('<br>');
-
-  renderFacultyList();
-}
-
-function renderFacultyList(){
-  const q=document.getElementById('facSearch').value.toLowerCase();
-  const box=document.getElementById('facList');
-  box.innerHTML='';
-  FAC_ROWS.filter(r=>{
-    const t=[r['FACULTY NAME'],r['DEPARTMENT'],r['SCHOOL']].join(' ').toLowerCase();
-    return !q || t.includes(q);
-  }).slice(0,50).forEach(r=>{
-    box.insertAdjacentHTML('beforeend',
-      `<div class="p-2 rounded-lg border">${r['FACULTY NAME']} · ${r['DEPARTMENT']} · ${r['SCHOOL']}</div>`);
-  });
-}
-
-function exportFacultyJSON(){
-  const blob=new Blob([JSON.stringify(FAC_ROWS,null,2)],{type:'application/json'});
-  const a=document.createElement('a'); a.href=URL.createObjectURL(blob);
-  a.download='faculty_map.json'; a.click(); URL.revokeObjectURL(a.href);
-}
-
-async function readExcel(file){
-  const data=await file.arrayBuffer();
-  const wb=XLSX.read(data,{type:'array'});
-  const sheet=wb.Sheets[wb.SheetNames[0]];
-  return XLSX.utils.sheet_to_json(sheet);
-}
 
   // Init
   document.addEventListener('DOMContentLoaded', ()=>{ buildSDGLegend(); autoLoad(); });
