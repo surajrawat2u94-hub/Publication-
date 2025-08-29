@@ -1748,7 +1748,7 @@ let facultyIndex = new Map();
 let facultyStats = new Map();
 
 /** Utilities already used elsewhere */
-const norm = s => String(s||'').toLowerCase().normalize('NFKD').replace(/[\u0300-\u036f]/g,'');
+
 const normName = s => norm(s).replace(/[^a-z\s]/g,'').replace(/\s+/g,' ').trim();
 function lastNamePlusInitial(name){
   const n = normName(name); if (!n) return '';
