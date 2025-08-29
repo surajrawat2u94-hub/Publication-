@@ -1739,26 +1739,14 @@ applyFilters = function(goToPage=1){
 </script>
 </body>
 </html>
-<!-- ⬇️ append inside your final <script> (bottom of the file) -->
+
 <script>
-/* ================= FACULTY MAPPING (moved to bottom) ================= */
-/** State */
+/* ================= FACULTY MAPPING ================= */
+
 let facultyRows = [];
 let facultyIndex = new Map();
 let facultyStats = new Map();
 
-/** Utilities already used elsewhere */
-
-const normName = s => norm(s).replace(/[^a-z\s]/g,'').replace(/\s+/g,' ').trim();
-function lastNamePlusInitial(name){
-  const n = normName(name); if (!n) return '';
-  const parts = n.split(' ').filter(Boolean); if (!parts.length) return '';
-  const last = parts[parts.length-1], first = parts[0][0] || '';
-  return `${last} ${first}`;
-}
-const setFacStatus = txt => document.getElementById('facStatus').textContent = txt || '';
-
-/** Read Excel/CSV */
 function readWorkbook(file){
   return new Promise((resolve, reject)=>{
     const reader = new FileReader();
@@ -1774,7 +1762,20 @@ function readWorkbook(file){
   });
 }
 
-/** Column normalization */
+/* --- helpers from your code (unchanged) --- */
+const norm = s => String(s||'').toLowerCase().normalize('NFKD').replace(/[\u0300-\u036f]/g,'');
+const normName = s => norm(s).replace(/[^a-z\s]/g,'').replace(/\s+/g,' ').trim();
+function lastNamePlusInitial(name){
+  const n = normName(name); if (!n) return '';
+  const parts = n.split(' ').filter(Boolean); if (!parts.length) return '';
+  const last = parts[parts.length-1]; const first = parts[0][0] || '';
+  return `${last} ${first}`;
+}
+const setFacStatus = txt => { const el=document.getElementById('facStatus'); if(el) el.textContent = txt || ''; };
+const esc = s => String(s).replace(/[&<>"']/g, m=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m]));
+const num = n => (n||0).toLocaleString();
+
+/* normalize, index, match (unchanged) */
 function normalizeFacultyRows(rows){
   const mapKey = (s)=> String(s||'').toLowerCase().trim();
   const grab = (row, keys)=> {
@@ -1795,15 +1796,13 @@ function normalizeFacultyRows(rows){
     type:  grab(r, ['TYPE','ROLE'])
   })).filter(x=>x.name);
 }
-
-/** Index + matching */
 function buildFacultyIndex(arr){
   facultyIndex.clear();
   for (const row of arr){
     const full = normName(row.name);
     const lastInit = lastNamePlusInitial(row.name);
     const keys = new Set([full,lastInit].filter(Boolean));
-    keys.add(full.replace(/\s+/g,'')); // compact key
+    keys.add(full.replace(/\s+/g,''));
     for (const k of keys){
       if (!facultyIndex.has(k)) facultyIndex.set(k, row);
     }
@@ -1811,17 +1810,21 @@ function buildFacultyIndex(arr){
 }
 function matchFaculty(author){
   const full = normName(author);
-  const a = facultyIndex.get(full); if (a) return a;
-  const b = facultyIndex.get(lastNamePlusInitial(author)); if (b) return b;
-  return facultyIndex.get(full.replace(/\s+/g,'')) || null;
+  const a = facultyIndex.get(full);
+  if (a) return a;
+  const li = lastNamePlusInitial(author);
+  const b = facultyIndex.get(li);
+  if (b) return b;
+  const c = facultyIndex.get(full.replace(/\s+/g,''));
+  return c || null;
 }
 
-/** Stats + renders */
+/* these use globals from your main script: filtered, deriveAuthors */
 function computeFacultyStats(){
   facultyStats.clear();
-  if (!filtered || !filtered.length || !facultyIndex.size) return;
+  if (!window.filtered || !filtered.length || !facultyIndex.size) return;
   for (const p of filtered){
-    const authors = Array.isArray(p.home_authors) && p.home_authors.length ? p.home_authors : deriveAuthors(p);
+    const authors = Array.isArray(p.home_authors) && p.home_authors.length ? p.home_authors : (window.deriveAuthors ? deriveAuthors(p) : []);
     for (const a of authors){
       const fac = matchFaculty(a);
       if (!fac) continue;
@@ -1841,7 +1844,9 @@ function renderFacultySummary(){
   const pubs = [...facultyStats.values()].reduce((s,x)=>s+x.pubs,0);
   const pats = [...facultyStats.values()].reduce((s,x)=>s+x.patents,0);
   const dpats = [...facultyStats.values()].reduce((s,x)=>s+x.dpatents,0);
-  document.getElementById('facSummary').innerHTML =
+  const el = document.getElementById('facSummary');
+  if (!el) return;
+  el.innerHTML =
     `<div>Faculty in file: <b>${num(total)}</b></div>
      <div>Faculty with at least 1 publication in current view: <b>${num(matched)}</b></div>
      <div>Publications attributed (view): <b>${num(pubs)}</b></div>
@@ -1849,15 +1854,17 @@ function renderFacultySummary(){
 }
 function renderFacultyTop(){
   const rows = [...facultyStats.values()].sort((a,b)=> b.pubs - a.pubs).slice(0,8);
-  document.getElementById('facTop').innerHTML = rows.length
-    ? rows.map(x=>`
-      <div class="flex items-center justify-between border-b last:border-0 py-2">
-        <div class="font-medium">${esc(x.fac.name)}</div>
-        <div class="text-slate-600 text-sm">Pubs: <b>${x.pubs}</b></div>
-      </div>`).join('')
-    : '—';
+  const el = document.getElementById('facTop'); if (!el) return;
+  if (!rows.length){ el.textContent = '—'; return; }
+  el.innerHTML = rows.map(x=>`
+    <div class="flex items-center justify-between border-b last:border-0 py-2">
+      <div class="font-medium">${esc(x.fac.name)}</div>
+      <div class="text-slate-600 text-sm">Pubs: <b>${x.pubs}</b></div>
+    </div>
+  `).join('');
 }
 function renderFacultyList(){
+  const el = document.getElementById('facList'); if (!el) return;
   const q = (document.getElementById('facSearch')?.value || '').toLowerCase().trim();
   let rows = [...facultyStats.values()];
   if (q){
@@ -1867,13 +1874,11 @@ function renderFacultyList(){
     });
   }
   rows.sort((a,b)=> b.pubs - a.pubs);
-  const cont = document.getElementById('facList');
-  cont.innerHTML = rows.length ? rows.map(x=>`
+  if (!rows.length){ el.innerHTML = '<div class="text-sm text-slate-500">No matches.</div>'; return; }
+  el.innerHTML = rows.map(x=>`
     <div class="border rounded-xl p-3 hover:bg-slate-50">
       <div class="flex items-center gap-3">
-        <div class="h-12 w-12 rounded-full bg-slate-200 grid place-content-center">
-          <i data-lucide="user"></i>
-        </div>
+        <div class="h-12 w-12 rounded-full bg-slate-200 grid place-content-center"><i data-lucide="user"></i></div>
         <div class="flex-1">
           <div class="font-semibold">${esc(x.fac.name || '—')}</div>
           <div class="text-xs text-slate-500">
@@ -1891,58 +1896,68 @@ function renderFacultyList(){
           </div>
         </div>
       </div>
-    </div>`).join('') : '<div class="text-sm text-slate-500">No matches.</div>';
-  lucide.createIcons();
+    </div>
+  `).join('');
+  if (window.lucide) lucide.createIcons();
 }
 
-/** Hook into tab */
-const _switchTab = switchTab;
-switchTab = function(name){
-  _switchTab(name);
-  if (name==='faculty') updateFacultyView();
-};
-function updateFacultyView(){
-  if (!facultyIndex.size) return;
-  computeFacultyStats();
-  renderFacultySummary();
-  renderFacultyTop();
-  renderFacultyList();
-}
-
-/** Hook into filters (patch AFTER original is defined) */
-const _oldApplyFilters = applyFilters;
-applyFilters = function(goToPage=1){
-  _oldApplyFilters(goToPage);
-  if (facultyIndex.size){
-    computeFacultyStats();
-    renderFacultySummary();
-    renderFacultyTop();
-    renderFacultyList();
-  }
-};
-
-/** Upload handler (attach AFTER DOM + libs are ready) */
-async function onFacultyFileChange(e){
-  const file = e.target.files[0];
-  if (!file) return;
-  setFacStatus('Reading file…');
-  try{
-    const wb = await readWorkbook(file);
-    const sheetName = wb.SheetNames[0];
-    const rows = XLSX.utils.sheet_to_json(wb.Sheets[sheetName], {defval:''});
-    facultyRows = normalizeFacultyRows(rows);
-    buildFacultyIndex(facultyRows);
-    document.getElementById('facExportBtn').classList.remove('hidden');
-    setFacStatus(`Loaded ${facultyRows.length} faculty rows.`);
-    updateFacultyView();
-  }catch(err){
-    setFacStatus('Failed: ' + err.message);
-    console.error(err);
-  }
-}
-
+/* defer wiring until DOM is ready and main script is loaded */
 document.addEventListener('DOMContentLoaded', () => {
-  const facInput = document.getElementById('facFile');
-  if (facInput) facInput.addEventListener('change', onFacultyFileChange);
+  // 1) attach upload handler safely
+  const input = document.getElementById('facFile');
+  if (input){
+    input.addEventListener('change', async (e) => {
+      const file = e.target.files[0];
+      if (!file) return;
+      setFacStatus('Reading file…');
+      try{
+        const wb = await readWorkbook(file);
+        const sheetName = wb.SheetNames[0];
+        const rows = XLSX.utils.sheet_to_json(wb.Sheets[sheetName], {defval:''});
+        facultyRows = normalizeFacultyRows(rows);
+        buildFacultyIndex(facultyRows);
+        document.getElementById('facExportBtn')?.classList.remove('hidden');
+        setFacStatus(`Loaded ${facultyRows.length} faculty rows.`);
+        computeFacultyStats();
+        renderFacultySummary();
+        renderFacultyTop();
+        renderFacultyList();
+      }catch(err){
+        setFacStatus('Failed: ' + err.message);
+        console.error(err);
+      }
+    });
+  }
+
+  // 2) hook into applyFilters AFTER it exists
+  if (typeof window.applyFilters === 'function'){
+    const oldApply = window.applyFilters;
+    window.applyFilters = function(goToPage=1){
+      oldApply(goToPage);
+      if (facultyIndex.size){
+        computeFacultyStats();
+        renderFacultySummary();
+        renderFacultyTop();
+        renderFacultyList();
+      }
+    };
+  } else {
+    // try again once, after current tick (in case main script defines it late)
+    setTimeout(() => {
+      if (typeof window.applyFilters === 'function'){
+        const oldApply = window.applyFilters;
+        window.applyFilters = function(goToPage=1){
+          oldApply(goToPage);
+          if (facultyIndex.size){
+            computeFacultyStats();
+            renderFacultySummary();
+            renderFacultyTop();
+            renderFacultyList();
+          }
+        };
+      }
+    }, 0);
+  }
 });
-/* ================= end faculty mapping ================= */
+</script>
+
