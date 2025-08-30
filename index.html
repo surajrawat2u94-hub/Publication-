@@ -368,350 +368,244 @@
     </section>
       <!-- FACULTY -->
 
-  <section id="view-faculty" class="hidden space-y-4">
+<!-- ===== FACULTY (TAB) ===== -->
+<section id="view-faculty" class="hidden space-y-4">
+  <div class="card p-4">
+    <div class="flex items-start justify-between gap-4">
+      <div>
+        <h3 class="font-semibold">Faculty mapping</h3>
+        <p class="text-xs text-slate-500">
+          Upload an Excel/CSV with columns like <em>EMP NO / EMPLOYEE ID</em>, <em>FACULTY NAME</em>, <em>DEPARTMENT</em>,
+          <em>SCHOOL</em>, <em>STATUS</em>, <em>TYPE</em>. Matching uses exact name + <em>last name &amp; first initial</em>, with fuzzy fallback.
+        </p>
+      </div>
+      <div class="flex items-center gap-2">
+        <input id="facFile" type="file" class="hidden" accept=".xlsx,.xls,.csv"/>
+        <button class="px-3 py-2 rounded-xl bg-slate-100 border border-slate-300 text-sm"
+                onclick="document.getElementById('facFile').click()">
+          <i data-lucide="upload"></i> Upload faculty Excel
+        </button>
+        <button id="facExportBtn"
+                class="px-3 py-2 rounded-xl bg-indigo-50 text-indigo-700 border border-indigo-200 text-sm hidden"
+                onclick="window.fac?.export()">
+          Export mapping JSON
+        </button>
+      </div>
+    </div>
+    <div id="facStatus" class="mt-2 text-xs text-slate-500"></div>
+  </div>
+
+  <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
     <div class="card p-4">
-      <div class="flex items-start justify-between gap-4">
-        <div>
-          <h3 class="font-semibold">Faculty mapping</h3>
-          <p class="text-xs text-slate-500">
-            Upload an Excel with columns like <em>EMP NO / EMPLOYEE ID</em>, <em>FACULTY NAME</em>, <em>DEPARTMENT</em>,
-            <em>SCHOOL</em>, <em>STATUS</em>, <em>TYPE</em>. Matching uses exact name + <em>last name &amp; first initial</em>,
-            with fuzzy fallback.
-          </p>
-        </div>
-        <div class="flex items-center gap-2">
-          <input id="facFile" type="file" class="hidden" accept=".xlsx,.xls,.csv"/>
-          <button class="px-3 py-2 rounded-xl bg-slate-100 border border-slate-300 text-sm"
-                  onclick="document.getElementById('facFile').click()">
-            <i data-lucide="upload"></i> Upload faculty Excel
-          </button>
-          <button id="facExportBtn"
-                  class="px-3 py-2 rounded-xl bg-indigo-50 text-indigo-700 border border-indigo-200 text-sm hidden"
-                  onclick="exportFacultyJSON()">
-            Export mapping JSON
-          </button>
-        </div>
-      </div>
-      <div id="facStatus" class="mt-2 text-xs text-slate-500"></div>
+      <h4 class="font-semibold mb-2">Summary (current view)</h4>
+      <div id="facSummary" class="text-sm">—</div>
     </div>
-
-    <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
-      <div class="card p-4">
-        <h4 class="font-semibold mb-2">Summary (current view)</h4>
-        <div id="facSummary" class="text-sm">—</div>
-      </div>
-      <div class="card p-4">
-        <h4 class="font-semibold mb-2">Top faculty (by publications)</h4>
-        <div id="facTop" class="text-sm">—</div>
-      </div>
-    </div>
-
     <div class="card p-4">
-      <div class="flex items-center justify-between">
-        <h4 class="font-semibold">Faculty list (current view)</h4>
-        <input id="facSearch" class="px-3 py-2 rounded-xl border border-slate-300 text-sm"
-               placeholder="Search faculty / department / school" oninput="renderFacultyList()"/>
-      </div>
-      <div id="facList" class="mt-3 grid grid-cols-1 gap-3"></div>
+      <h4 class="font-semibold mb-2">Top faculty (by publications)</h4>
+      <div id="facTop" class="text-sm">—</div>
     </div>
-  </section>
+  </div>
 
-  <footer class="text-center text-xs text-slate-500 pt-6">
-    Data from <code>institution_data.json</code> · Matching is heuristic/fuzzy
-  </footer>
-</main>
+  <div class="card p-4">
+    <div class="flex items-center justify-between">
+      <h4 class="font-semibold">Faculty list (current view)</h4>
+      <input id="facSearch" class="px-3 py-2 rounded-xl border border-slate-300 text-sm"
+             placeholder="Search faculty / department / school" oninput="window.fac?.recompute()"/>
+    </div>
+    <div id="facList" class="mt-3 grid grid-cols-1 gap-3"></div>
+  </div>
+</section>
 
 <script>
-  lucide.createIcons();
+/* ===== AI Publications — Faculty Mapping (tab adapter) ===== */
+(function(){
+  const STORAGE_KEY = 'faculty_mapping_v25';
 
-  /* ---------------------------- DATA LOAD ---------------------------- */
-  let all = []; // all publications
-  async function loadInstitutionData(){
-    try{
-      const res = await fetch('institution_data.json', { cache:'no-store' });
-      if (!res.ok) throw new Error('institution_data.json not found');
-      const j = await res.json();
-      document.getElementById('lastSynced').textContent =
-        j.updated ? `Last synced: ${dayjs(j.updated).format('DD MMM YYYY, HH:mm')}` : 'Loaded.';
-      all = Array.isArray(j.items) ? j.items : [];
-      // normalize authors & home authors for each record
-      for (const p of all){
-        if (!Array.isArray(p.authors)) p.authors = deriveAuthors(p);
-        p.home_authors = deriveHomeAuthors(p);
-      }
-    }catch(e){
-      document.getElementById('lastSynced').textContent = 'Error: '+e.message;
-      console.error(e);
+  /* ---------- small utils ---------- */
+  const _deacc = s => String(s||'').normalize('NFKD').replace(/[\u0300-\u036f]/g,'');
+  const _normName = s => _deacc(s).toLowerCase().replace(/[\.\(\)\[\]\{\}]/g,' ').replace(/[^a-z\s-]/g,' ').replace(/\s+/g,' ').trim();
+  const _esc = s => String(s).replace(/[&<>"']/g,m=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m]));
+  const _num = n => (n||0).toLocaleString();
+  const setStatus = t => { const el=document.getElementById('facStatus'); if(el) el.textContent=t||''; };
+
+  /* ---------- name parsing + similarity ---------- */
+  function parsePerson(s){
+    const raw=String(s||'').trim(); if(!raw) return {raw:s,tokens:[],last:'',first:'',fin:''};
+    if (raw.includes(',')){ const [L0,R0]=raw.split(',',2), L=_normName(L0), R=_normName(R0);
+      const lt=L.split(' ').filter(Boolean); const last=lt[lt.length-1]||''; const first=(R.split(' ').filter(Boolean)[0]||'');
+      return {raw:s, tokens:(L+' '+R).trim().split(/\s+/).filter(Boolean), last, first, fin:first?first[0]:''};
     }
+    const n=_normName(raw), t=n.split(' ').filter(Boolean); const first=t[0]||'', last=t[t.length-1]||'';
+    return {raw:s, tokens:t, last, first, fin:first?first[0]:''};
   }
+  function jaro(a,b){ if(a===b) return 1; const la=a.length, lb=b.length; if(!la||!lb) return 0;
+    const md=Math.max(0,Math.floor(Math.max(la,lb)/2)-1), am=new Array(la).fill(false), bm=new Array(lb).fill(false);
+    let m=0,t=0; for(let i=0;i<la;i++){ const from=Math.max(0,i-md), to=Math.min(i+md+1,lb);
+      for(let j=from;j<to;j++){ if(!bm[j]&&a[i]===b[j]){ am[i]=true; bm[j]=true; m++; break; } } }
+    if(!m) return 0; let k=0; for(let i=0;i<la;i++){ if(!am[i]) continue; while(!bm[k]) k++; if(a[i]!==b[k]) t++; k++; } t/=2;
+    return (m/la + m/lb + (m-t)/m)/3;
+  }
+  const jw=(a,b)=>{ const j=jaro(a,b); let l=0; const maxL=4; while(l<Math.min(a.length,b.length,maxL)&&a[l]===b[l]) l++; return j + l*0.1*(1-j); };
 
-  // authors from OpenAlex blob or string
+  /* ---------- authors helpers (local, no globals required) ---------- */
+  const HOME_ROR='04q2jes40', HOME_KW=/\b(university of petroleum|energy studies|^upes)\b/i;
   function deriveAuthors(p){
-    const out=[];
-    if (Array.isArray(p.authorships)){
-      for (const a of p.authorships){
-        const nm = a?.author?.display_name || a?.display_name;
-        if (nm) out.push(String(nm));
-      }
-    }
-    if (!out.length && typeof p.authors === 'string' && p.authors.trim()){
-      return p.authors.split(/[,;]\s*/).filter(Boolean);
-    }
+    const out=[]; if (Array.isArray(p.authorships)) for (const a of p.authorships){
+      const nm=a?.author?.display_name||a?.display_name; if(nm) out.push(String(nm)); }
+    if (!out.length && typeof p.authors==='string' && p.authors.trim()) return p.authors.split(/[,;]\s*/).filter(Boolean);
     return out;
   }
-  // institution “home authors”
-  const HOME_ROR = '04q2jes40';
-  const HOME_KW  = /(university of petroleum|energy studies|^upes\b)/i;
   function deriveHomeAuthors(p){
-    if (Array.isArray(p.home_authors) && p.home_authors.length) return p.home_authors;
-    const out=[];
-    const A = Array.isArray(p.authorships) ? p.authorships : [];
-    for (const a of A){
-      const nm = a?.author?.display_name || a?.display_name;
-      if (!nm) continue;
-      const insts = Array.isArray(a?.institutions) ? a.institutions : [];
-      const isHome = insts.some(i=>{
-        const ror = (i?.ror||'').split('/').pop()?.toLowerCase();
-        const name = (i?.display_name||'').toLowerCase();
+    const A=Array.isArray(p.authorships)?p.authorships:[], out=[];
+    for(const a of A){
+      const nm=a?.author?.display_name||a?.display_name; if(!nm) continue;
+      const insts=Array.isArray(a?.institutions)?a.institutions:[];
+      const isHome=insts.some(i=>{
+        const ror=(i?.ror||'').split('/').pop()?.toLowerCase();
+        const name=(i?.display_name||'').toLowerCase();
         return ror===HOME_ROR || HOME_KW.test(name);
       });
-      if (isHome) out.push(nm);
+      if(isHome) out.push(nm);
     }
     return [...new Set(out)];
   }
 
-  /* ------------------------- NAME & FUZZY MATCH ------------------------- */
-  const _deacc = s => String(s||'').normalize('NFKD').replace(/[\u0300-\u036f]/g,'');
-  const _normName = s => _deacc(s).toLowerCase().replace(/[\.\(\)\[\]\{\}]/g,' ').replace(/[^a-z\s-]/g,' ').replace(/\s+/g,' ').trim();
-
-  function parsePerson(s){
-    const raw = String(s||'').trim();
-    if (!raw) return { raw:s, tokens:[], last:'', first:'', fin:'' };
-    if (raw.includes(',')){ // "Last, First …"
-      const [left,right] = raw.split(',',2);
-      const L = _normName(left), R = _normName(right);
-      const lt = L.split(' ').filter(Boolean);
-      const last = lt[lt.length-1]||'';
-      const first= (R.split(' ').filter(Boolean)[0]||'');
-      const tokens=(L+' '+R).trim().split(/\s+/).filter(Boolean);
-      return { raw:s, tokens, last, first, fin:first?first[0]:'' };
-    }
-    const n=_normName(raw), t=n.split(' ').filter(Boolean);
-    const first=t[0]||'', last=t[t.length-1]||'';
-    return { raw:s, tokens:t, last, first, fin:first?first[0]:'' };
-  }
-
-  // Jaro + Winkler
-  function jaro(a,b){
-    if (a===b) return 1;
-    const la=a.length, lb=b.length;
-    if (!la||!lb) return 0;
-    const md=Math.max(0,Math.floor(Math.max(la,lb)/2)-1);
-    const am=new Array(la).fill(false), bm=new Array(lb).fill(false);
-    let m=0,t=0;
-    for (let i=0;i<la;i++){
-      const from=Math.max(0,i-md), to=Math.min(i+md+1,lb);
-      for (let j=from;j<to;j++){
-        if (!bm[j] && a[i]===b[j]){ am[i]=true; bm[j]=true; m++; break; }
-      }
-    }
-    if (!m) return 0;
-    let k=0; for (let i=0;i<la;i++){ if (!am[i]) continue; while(!bm[k]) k++; if (a[i]!==b[k]) t++; k++; }
-    t/=2;
-    return (m/la + m/lb + (m-t)/m)/3;
-  }
-  const jaroWinkler=(a,b)=>{ const j=jaro(a,b); let l=0; const maxL=4; while (l<Math.min(a.length,b.length,maxL) && a[l]===b[l]) l++; return j + l*0.1*(1-j); };
-
-  // Excel rows (normalized) + buckets
-  let facultyRows=[], facBuckets=new Map();
-  const facultyStats=new Map(); // key -> {fac,pubs,patents,dpatents}
-  const authorMappings=[];      // for export
+  /* ---------- in-memory data ---------- */
+  let facultyRows=[], facBuckets=new Map(), facultyStats=new Map(), authorMappings=[];
 
   function normalizeFacultyRows(rows){
     const key=s=>String(s||'').toLowerCase().trim();
     const grab=(row,keys)=>{ for(const k of keys){ for(const rk of Object.keys(row)){ if(key(rk)===key(k)) return String(row[rk]??'').trim(); } } return ''; };
     return rows.map(r=>{
-      const name  = grab(r,['FACULTY NAME','NAME','EMPLOYEE NAME']);
-      const emp   = grab(r,['EMP NO','EMP ID','EMPLOYEE ID','EMPID','EMP_NO','EMP']);
-      const dept  = grab(r,['DEPARTMENT','DEPT']);
-      const inst  = grab(r,['INSTITUTE','INSTITUTION']);
-      const school= grab(r,['SCHOOL']);
-      const status= grab(r,['STATUS']);
-      const type  = grab(r,['TYPE','ROLE']);
-      const profile= grab(r,['PROFILE URL','URL','LINK']);
-      const p=parsePerson(name);
-      return { emp,name,dept,inst,school,status,type,profile_url:profile,_p:p };
-    }).filter(x=>x.name);
+      const name=grab(r,['FACULTY NAME','NAME','EMPLOYEE NAME','Faculty Name']); if(!name) return null;
+      const emp =grab(r,['EMP NO','EMP ID','EMPLOYEE ID','EMPID','EMP_NO','EMP']);
+      const dept=grab(r,['DEPARTMENT','DEPT']); const inst=grab(r,['INSTITUTE','INSTITUTION']); const school=grab(r,['SCHOOL']);
+      const status=grab(r,['STATUS']); const type=grab(r,['TYPE','ROLE']); const profile=grab(r,['PROFILE URL','URL','LINK']);
+      return { emp,name,dept,inst,school,status,type,profile_url:profile,_p:parsePerson(name) };
+    }).filter(Boolean);
   }
-  function buildFacultyBuckets(arr){
-    facBuckets.clear();
-    for (const row of arr){
-      const last=row._p.last;
-      if (!last) continue;
-      const b = facBuckets.get(last)||[];
-      b.push(row); facBuckets.set(last,b);
-    }
-  }
+  function buildBuckets(arr){ facBuckets.clear(); for(const row of arr){ const last=row._p.last; if(!last) continue; (facBuckets.get(last)||facBuckets.set(last,[]).get(last)).push(row); } }
 
-  // scoring an author name to a faculty row
-  function scoreAuthorToFaculty(authorName, facRow){
-    const a=parsePerson(authorName), f=facRow._p;
-    if (!a.last || !f.last) return 0;
-    const lastExact = a.last===f.last ? 1 : 0;
-    const lastSim   = jaroWinkler(a.last,f.last);
-    const firstSim  = jaroWinkler(a.first,f.first);
-    const initialHit= (a.fin && f.fin && a.fin===f.fin) ? 1 : 0;
-    const fullSim   = jaroWinkler(_normName(authorName), _normName(facRow.name));
-    let score = 0.42*(lastExact?1:lastSim) + 0.23*Math.max(firstSim, initialHit?0.95:0) + 0.27*fullSim;
-    const aTok=new Set(a.tokens), fTok=new Set(f.tokens); let overlap=0; for(const t of aTok) if (fTok.has(t)) overlap++;
-    score += Math.min(0.08, overlap*0.02);
-    return Math.min(1,score);
+  function scoreAuthorToFaculty(author, fac){
+    const a=parsePerson(author), f=fac._p; if(!a.last||!f.last) return 0;
+    const lastExact=(a.last===f.last)?1:0; const lastSim=jw(a.last,f.last);
+    const firstSim=jw(a.first,f.first); const initialHit=(a.fin&&f.fin&&a.fin===f.fin)?1:0;
+    const fullSim=jw(_normName(author), _normName(fac.name));
+    let s=0.42*(lastExact?1:lastSim)+0.23*Math.max(firstSim, initialHit?0.95:0)+0.27*fullSim;
+    const aTok=new Set(a.tokens), fTok=new Set(f.tokens); let overlap=0; for(const t of aTok) if(fTok.has(t)) overlap++; s+=Math.min(0.08,overlap*0.02);
+    return Math.min(1,s);
   }
-  const FACULTY_SCORE_MIN = 0.80;
-  function matchFaculty(authorName){
-    const a=parsePerson(authorName);
-    if (!a.last) return null;
-    let candidates = facBuckets.get(a.last) || [];
-    if (!candidates.length){
-      for (const [last,arr] of facBuckets){
-        if (jaroWinkler(a.last,last) >= 0.92) candidates = candidates.concat(arr);
-      }
-    }
-    if (!candidates.length) return null;
-    let best=null, bestScore=0;
-    for (const fac of candidates){
-      const s=scoreAuthorToFaculty(authorName, fac);
-      if (s>bestScore){ best=fac; bestScore=s; }
-    }
-    return (best && bestScore>=FACULTY_SCORE_MIN) ? {fac:best, score:bestScore} : null;
+  function matchFaculty(author){
+    const a=parsePerson(author); if(!a.last) return null; let cand=facBuckets.get(a.last)||[];
+    if(!cand.length){ for(const [last,arr] of facBuckets){ if(jw(a.last,last)>=0.92) cand=cand.concat(arr);} }
+    let best=null,bestScore=0; for(const fac of cand){ const s=scoreAuthorToFaculty(author,fac); if(s>bestScore){best=fac;bestScore=s;} }
+    return (best && bestScore>=0.80) ? {fac:best, score:bestScore} : null;
   }
-
-  /* --------------------------- COMPUTE & RENDER --------------------------- */
-  function setFacStatus(txt){ const el=document.getElementById('facStatus'); if (el) el.textContent=txt||''; }
-  function currentPubs(){ return all || []; }
-
   function homesFromAny(p){
-    if (Array.isArray(p.home_authors) && p.home_authors.length){
-      return p.home_authors.map(s=>String(s).trim()).filter(Boolean);
-    }
-    if (typeof p.home_authors === 'string' && p.home_authors.trim()){
-      const s = p.home_authors.replace(/<br\s*\/?>/gi,'\n').replace(/[，、]/g, ',');
+    if (Array.isArray(p.home_authors) && p.home_authors.length) return p.home_authors.map(s=>String(s).trim()).filter(Boolean);
+    if (typeof p.home_authors==='string' && p.home_authors.trim()){
+      const s=p.home_authors.replace(/<br\s*\/?>/gi,'\n').replace(/[，、]/g, ',');
       return s.split(/[,;\n\r|]+/).map(t=>t.replace(/\s+/g,' ').replace(/^[\s.'"-]+|[\s.'"-]+$/g,'')).filter(Boolean);
     }
-    // fallback from authorships
     return deriveHomeAuthors(p);
   }
+  const currentPubs = ()=> (Array.isArray(window.filtered)&&window.filtered.length) ? window.filtered
+                      : (Array.isArray(window.all)&&window.all.length) ? window.all : [];
 
-  function computeFacultyStatsFromHomeAuthors(){
-    facultyStats.clear(); authorMappings.length = 0;
-    const pubs=currentPubs(); if (!pubs.length || !facBuckets.size) return;
-
-    for (const p of pubs){
-      const homes=homesFromAny(p); if (!homes.length) continue;
-      for (const author of homes){
-        const hit=matchFaculty(author); if (!hit) continue;
-        const fac=hit.fac; const key=fac.emp || fac.name;
-        const stat = facultyStats.get(key) || { fac, pubs:0, patents:0, dpatents:0 };
-        stat.pubs += 1;
-        const t = String(p.type || p.type_crossref || '').toLowerCase();
-        if (t.includes('design') && t.includes('patent')) stat.dpatents += 1;
-        else if (t.includes('patent')) stat.patents += 1;
-        facultyStats.set(key, stat);
-
-        authorMappings.push({
-          home_author: author,
-          match_score: +hit.score.toFixed(4),
-          matched: { emp:fac.emp, name:fac.name, dept:fac.dept, school:fac.school, inst:fac.inst, profile_url:fac.profile_url||'' },
-          publication: {
-            year: p.year ?? null,
-            title: p.title || '',
-            journal: p.journal || '',
-            doi: p.doi || '',
-            url: p.url || '',
-            type: p.type || p.type_crossref || ''
-          }
+  /* ---------- compute + render ---------- */
+  function compute(){
+    facultyStats.clear(); authorMappings.length=0;
+    const pubs=currentPubs(); if(!pubs.length||!facBuckets.size) return;
+    for(const p of pubs){
+      const homes=homesFromAny(p); if(!homes.length) continue;
+      for(const a of homes){
+        const hit=matchFaculty(a); if(!hit) continue; const fac=hit.fac; const key=fac.emp||fac.name;
+        const stat=facultyStats.get(key)||{fac,pubs:0,patents:0,dpatents:0}; stat.pubs++;
+        const t=String(p.type||p.type_crossref||'').toLowerCase();
+        if(t.includes('design')&&t.includes('patent')) stat.dpatents++; else if(t.includes('patent')) stat.patents++;
+        facultyStats.set(key,stat);
+        authorMappings.push({home_author:a, match_score:+hit.score.toFixed(4),
+          matched:{emp:fac.emp,name:fac.name,dept:fac.dept,school:fac.school,inst:fac.inst,profile_url:fac.profile_url||''},
+          publication:{year:p.year??null,title:p.title||'',journal:p.journal||'',doi:p.doi||'',url:p.url||'',type:p.type||p.type_crossref||''}
         });
       }
     }
   }
-
-  function _num(n){ return (n||0).toLocaleString(); }
-  function _esc(s){ return String(s).replace(/[&<>"']/g,m=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m])); }
-
-  function renderFacultySummary(){
-    const el=document.getElementById('facSummary'); if (!el) return;
-    if (!facultyRows.length){ el.textContent='—'; return; }
-    const total=facultyRows.length;
-    const matched=facultyStats.size;
+  function renderSummary(){
+    const el=document.getElementById('facSummary'); if(!el) return;
+    if(!facultyRows.length){ el.textContent='—'; return; }
+    const total=facultyRows.length, matched=facultyStats.size;
     const pubs=[...facultyStats.values()].reduce((s,x)=>s+x.pubs,0);
     const pats=[...facultyStats.values()].reduce((s,x)=>s+x.patents,0);
     const dpats=[...facultyStats.values()].reduce((s,x)=>s+x.dpatents,0);
-    el.innerHTML = `
-      <div>Faculty in file: <b>${_num(total)}</b></div>
-      <div>Faculty with at least 1 publication in current view: <b>${_num(matched)}</b></div>
-      <div>Publications attributed (view): <b>${_num(pubs)}</b></div>
-      <div>Patents: <b>${_num(pats)}</b> · Design patents: <b>${_num(dpats)}</b></div>
-    `;
+    el.innerHTML=`Faculty in file: <b>${_num(total)}</b><br>Faculty with at least 1 publication in current view: <b>${_num(matched)}</b><br>Publications attributed (view): <b>${_num(pubs)}</b><br>Patents: <b>${_num(pats)}</b> · Design patents: <b>${_num(dpats)}</b>`;
   }
-
-  function renderFacultyTop(){
-    const el=document.getElementById('facTop'); if (!el) return;
-    const rows=[...facultyStats.values()].sort((a,b)=>b.pubs-a.pubs).slice(0,10);
-    if (!rows.length){ el.textContent='—'; return; }
-    el.innerHTML = rows.map(x=>{
-      const linkStart = x.fac.profile_url ? `<a class="text-indigo-600 hover:underline" href="${_esc(x.fac.profile_url)}" target="_blank">` : '';
-      const linkEnd   = x.fac.profile_url ? `</a>` : '';
-      return `
-        <div class="flex items-center justify-between border-b last:border-0 py-2">
-          <div class="font-medium">${linkStart}${_esc(x.fac.name)}${linkEnd}</div>
-          <div class="text-right text-slate-600">
-            <div class="text-2xl font-semibold">${x.pubs}</div>
-            <div class="text-xs">Publications</div>
-          </div>
-        </div>
-      `;
-    }).join('');
+  function renderTop(){
+    const el=document.getElementById('facTop'); if(!el) return;
+    const rows=[...facultyStats.values()].sort((a,b)=>b.pubs-a.pubs).slice(0,12);
+    el.innerHTML = rows.length ? rows.map(x=>{
+      const aStart=x.fac.profile_url?`<a class="text-indigo-600 hover:underline" href="${_esc(x.fac.profile_url)}" target="_blank">`:''; const aEnd=x.fac.profile_url?'</a>':'';
+      return `<div class="flex items-center justify-between border-b last:border-0 py-2">
+                <div class="font-medium">${aStart}${_esc(x.fac.name)}${aEnd}
+                  <div class="text-xs text-slate-500">${_esc([x.fac.dept,x.fac.school,x.fac.inst].filter(Boolean).join(' · '))}</div>
+                </div>
+                <div class="text-right text-slate-600">
+                  <div class="text-xl font-semibold">${_num(x.pubs)}</div>
+                  <div class="text-xs">Publications</div>
+                </div>
+              </div>`;
+    }).join('') : '—';
   }
-
-  function renderFacultyList(){
-    const el=document.getElementById('facList'); if (!el) return;
+  function renderList(){
+    const el=document.getElementById('facList'); if(!el) return;
     const q=(document.getElementById('facSearch')?.value||'').toLowerCase().trim();
     let rows=[...facultyStats.values()];
-    if (q){
-      rows = rows.filter(x=>{
-        const hay=`${x.fac.name} ${x.fac.dept} ${x.fac.school} ${x.fac.inst}`.toLowerCase();
-        return hay.includes(q);
-      });
-    }
-    rows.sort((a,b)=>b.pubs-a.pubs);
-    if (!rows.length){ el.innerHTML='<div class="text-sm text-slate-500">No matches.</div>'; return; }
-    el.innerHTML = rows.map(x=>{
-      const prof = x.fac.profile_url ? `<a class="text-indigo-600 hover:underline" href="${_esc(x.fac.profile_url)}" target="_blank">Profile</a>` : '';
-      return `
-        <div class="border rounded-xl p-3 hover:bg-slate-50">
-          <div class="flex items-center gap-3">
-            <div class="h-12 w-12 rounded-full bg-slate-200 grid place-content-center"><i data-lucide="user"></i></div>
-            <div class="flex-1">
-              <div class="font-semibold">${_esc(x.fac.name || '—')}</div>
-              <div class="text-xs text-slate-500">
-                ${_esc(x.fac.school||'')}${x.fac.school?' · ':''}${_esc(x.fac.dept||'')}
-              </div>
-              <div class="text-xs text-slate-500">${_esc(x.fac.inst||'')}</div>
-              <div class="text-xs text-slate-500">${x.fac.emp?('EMP ID: '+_esc(x.fac.emp)) : ''}</div>
-              ${prof?`<div class="text-xs mt-1">${prof}</div>`:''}
-            </div>
-            <div class="text-right">
-              <div class="text-2xl font-semibold">${x.pubs}</div>
-              <div class="text-xs text-slate-500">Publications</div>
-            </div>
-          </div>
-        </div>`;
-    }).join('');
-    if (window.lucide) lucide.createIcons();
+    if(q){ rows=rows.filter(x=>`${x.fac.name} ${x.fac.dept||''} ${x.fac.school||''} ${x.fac.inst||''}`.toLowerCase().includes(q)); }
+    rows.sort((a,b)=>b.pubs-a.pubs || a.fac.name.localeCompare(b.fac.name));
+    el.innerHTML = rows.length ? rows.map(x=>{
+      const prof=x.fac.profile_url?`<a class="text-indigo-600 hover:underline" href="${_esc(x.fac.profile_url)}" target="_blank">Profile</a>`:'';
+      return `<div class="border rounded-xl p-3 hover:bg-slate-50">
+                <div class="flex items-center gap-3">
+                  <div class="h-10 w-10 rounded-full bg-slate-200 grid place-content-center"><i data-lucide="user"></i></div>
+                  <div class="flex-1">
+                    <div class="font-semibold">${_esc(x.fac.name)}</div>
+                    <div class="text-xs text-slate-500">${_esc(x.fac.school||'')}${x.fac.school?' · ':''}${_esc(x.fac.dept||'')}</div>
+                    <div class="text-xs text-slate-500">${_esc(x.fac.inst||'')}</div>
+                    ${x.fac.emp?`<div class="text-xs text-slate-500">EMP ID: ${_esc(x.fac.emp)}</div>`:''}
+                    ${prof?`<div class="text-xs mt-1">${prof}</div>`:''}
+                  </div>
+                  <div class="text-right">
+                    <div class="text-2xl font-semibold">${_num(x.pubs)}</div>
+                    <div class="text-xs text-slate-500">Publications</div>
+                  </div>
+                </div>
+              </div>`;
+    }).join('') : '<div class="text-sm text-slate-500">No matches.</div>';
+    if (window.lucide) window.lucide.createIcons();
   }
 
-  /* ------------------------------ EXPORT ------------------------------ */
-  function exportFacultyJSON(){
+  /* ---------- file I/O ---------- */
+  async function readFile(file){
+    const name=(file.name||'').toLowerCase(); let rows=[];
+    if (name.endsWith('.csv')){ const txt=await file.text(); rows=csvToObjects(txt); }
+    else { if(!window.XLSX){ setStatus('Error: Excel reader did not load.'); return; }
+           const buf=await file.arrayBuffer(); const wb=XLSX.read(buf,{type:'array'});
+           rows=XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]],{defval:''}); }
+    facultyRows=normalizeFacultyRows(rows); buildBuckets(facultyRows);
+    try{ localStorage.setItem(STORAGE_KEY, JSON.stringify({rows:facultyRows})); }catch{}
+    document.getElementById('facExportBtn')?.classList.remove('hidden');
+    setStatus(`Loaded ${_num(facultyRows.length)} faculty rows.`);
+    api.recompute();
+  }
+  function csvToObjects(text){
+    const lines=text.split(/\r?\n/).filter(l=>l.trim().length); if(!lines.length) return [];
+    const delim=(lines[0].match(/;/g)||[]).length>(lines[0].match(/,/g)||[]).length?';':','; 
+    const split=(line)=>{ const out=[]; let cur='',q=false; for(let i=0;i<line.length;i++){
+      const ch=line[i]; if(ch==='"'){ q=!q; continue; } if(ch===delim && !q){ out.push(cur); cur=''; continue; } cur+=ch; }
+      out.push(cur); return out.map(s=>s.trim()); };
+    const hdr=split(lines.shift()); return lines.map(l=>{ const c=split(l), o={}; hdr.forEach((h,i)=>o[h]=c[i]??''); return o; });
+  }
+  function exportJSON(){
     if (!facultyStats.size) return;
     const rows=[...facultyStats.values()].map(s=>({
       emp:s.fac.emp, name:s.fac.name, dept:s.fac.dept, school:s.fac.school, institute:s.fac.inst,
@@ -723,34 +617,34 @@
     const a=document.createElement('a'); a.href=URL.createObjectURL(blob); a.download='faculty_mapping.json'; a.click(); URL.revokeObjectURL(a.href);
   }
 
-  /* --------------------------- FILE HANDLER --------------------------- */
-  document.getElementById('facFile').addEventListener('change', async (e)=>{
-    const file=e.target.files?.[0]; if (!file) return;
-    if (!window.XLSX){ setFacStatus('Error: Excel reader did not load.'); return; }
-    try{
-      setFacStatus(`Reading ${file.name} …`);
-      const data = await file.arrayBuffer();
-      const wb   = XLSX.read(new Uint8Array(data), { type:'array' });
-      const sn   = wb.SheetNames[0];
-      const rows = XLSX.utils.sheet_to_json(wb.Sheets[sn], { defval:'' });
-      facultyRows = normalizeFacultyRows(rows);
-      buildFacultyBuckets(facultyRows);
-      document.getElementById('facExportBtn')?.classList.remove('hidden');
-      setFacStatus(`Loaded ${facultyRows.length} faculty rows.`);
-      computeFacultyStatsFromHomeAuthors();
-      renderFacultySummary(); renderFacultyTop(); renderFacultyList();
-    }catch(err){
-      console.error(err);
-      setFacStatus('Failed: '+err.message);
-    }
-  });
+  /* ---------- public API + boot ---------- */
+  const api = {
+    init(){
+      // restore previously uploaded mapping
+      try{ const s=localStorage.getItem(STORAGE_KEY); if(s){ const saved=JSON.parse(s);
+        if(Array.isArray(saved.rows)&&saved.rows.length){ facultyRows=saved.rows; buildBuckets(facultyRows);
+          document.getElementById('facExportBtn')?.classList.remove('hidden');
+          setStatus(`Loaded ${_num(facultyRows.length)} faculty rows.`); } } }catch{}
+      document.getElementById('facFile')?.addEventListener('change', e=>{ const f=e.target.files?.[0]; if(f) readFile(f); });
+      document.getElementById('facSearch')?.addEventListener('input', ()=>api.recompute());
 
-  /* ------------------------------- INIT ------------------------------- */
-  (async function(){
-    await loadInstitutionData(); // load publications so mapping can occur
-    setFacStatus('Upload the faculty Excel to begin.');
-  })();
+      // recompute when user opens the tab
+      document.getElementById('tabFaculty')?.addEventListener('click', ()=>api.recompute());
 
+      if (!facultyRows.length) setStatus('Upload the faculty Excel to begin.');
+      this.recompute();
+    },
+    recompute(){ compute(); renderSummary(); renderTop(); renderList(); },
+    export(){ exportJSON(); }
+  };
+  window.fac = api;
+
+  document.addEventListener('DOMContentLoaded', ()=> window.fac.init());
+
+  // optional: if your publications code dispatches an event after filtering, this keeps it synced
+  window.addEventListener('publications:filtered', ()=> window.fac.recompute());
+})();
+</script>
 
 
   </div>
