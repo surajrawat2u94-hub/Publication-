@@ -367,16 +367,16 @@
       </div>
     </section>
       <!-- FACULTY -->
-<!-- ===================== FACULTY (stand-alone) ===================== -->
-<section id="view-faculty" class="space-y-4">
+<!-- ===================== FACULTY (standalone & namespaced) ===================== -->
+<section id="view-faculty" class="hidden space-y-4">
   <div class="card p-4">
     <div class="flex items-start justify-between gap-4">
       <div>
         <h3 class="font-semibold">Faculty mapping</h3>
         <p class="text-xs text-slate-500">
           Upload an Excel with columns like <em>EMP NO / EMPLOYEE ID</em>, <em>FACULTY NAME</em>, <em>DEPARTMENT</em>,
-          <em>SCHOOL</em>, <em>STATUS</em>, <em>TYPE</em>. Matching uses exact name + <em>last name &amp; first initial</em>,
-          with fuzzy fallback.
+          <em>SCHOOL</em>, <em>STATUS</em>, <em>TYPE</em>. Matching uses exact name +
+          <em>last name &amp; first initial</em>, with fuzzy fallback.
         </p>
       </div>
       <div class="flex items-center gap-2">
@@ -387,7 +387,7 @@
         </button>
         <button id="facExportBtn"
                 class="px-3 py-2 rounded-xl bg-indigo-50 text-indigo-700 border border-indigo-200 text-sm hidden"
-                onclick="window.faculty?.exportJSON()">
+                onclick="window.faculty.exportJSON()">
           Export mapping JSON
         </button>
       </div>
@@ -410,7 +410,7 @@
     <div class="flex items-center justify-between">
       <h4 class="font-semibold">Faculty list (current view)</h4>
       <input id="facSearch" class="px-3 py-2 rounded-xl border border-slate-300 text-sm"
-             placeholder="Search faculty / department / school"/>
+             placeholder="Search faculty / department / school" oninput="window.faculty.renderList()"/>
     </div>
     <div id="facList" class="mt-3 grid grid-cols-1 gap-3"></div>
   </div>
@@ -420,117 +420,70 @@
   </footer>
 </section>
 
-<!-- Profile Modal -->
-<div id="facProfileOverlay" class="focus-overlay hidden">
-  <div class="absolute inset-0 grid place-items-center p-4" onclick="this.classList.add('hidden')">
-    <div class="bg-white rounded-2xl shadow-2xl w-full max-w-6xl h-[90vh] p-4 relative overflow-hidden"
-         onclick="event.stopPropagation()">
-      <button id="facProfClose" class="icon-btn absolute top-3 right-3"><i data-lucide="x"></i></button>
-
-      <div class="flex items-center justify-between border-b pb-3 mb-4">
-        <div>
-          <div id="facProfName" class="text-xl font-semibold"></div>
-          <div id="facProfMeta" class="text-xs text-slate-500 mt-1"></div>
-        </div>
-        <button id="facProfExportBtn" class="px-3 py-2 rounded-xl bg-slate-100 border border-slate-300 text-sm">
-          <i data-lucide="download"></i> Export CSV
-        </button>
-      </div>
-
-      <div class="grid grid-cols-1 sm:grid-cols-3 gap-3 mb-4">
-        <div class="card p-4"><div class="text-xs text-slate-500">Publications</div><div id="facProfKPIPubs" class="text-2xl font-semibold">—</div></div>
-        <div class="card p-4"><div class="text-xs text-slate-500">Patents</div><div id="facProfKPIPats" class="text-2xl font-semibold">—</div></div>
-        <div class="card p-4"><div class="text-xs text-slate-500">Design patents</div><div id="facProfKPIDPats" class="text-2xl font-semibold">—</div></div>
-      </div>
-
-      <div class="grid grid-cols-1 lg:grid-cols-2 gap-4 mb-4">
-        <div class="card p-4">
-          <div class="flex items-center justify-between">
-            <div class="font-semibold">Publications by Year</div>
-            <div class="text-xs text-slate-500" id="facProfYearRange"></div>
-          </div>
-          <div class="mt-2 h-[260px]"><canvas id="facProfYearChart"></canvas></div>
-        </div>
-        <div class="card p-4">
-          <div class="font-semibold">Type Distribution</div>
-          <div class="mt-2 h-[260px]"><canvas id="facProfTypeChart"></canvas></div>
-        </div>
-      </div>
-
-      <div class="card h-[calc(90vh-360px)] overflow-hidden flex flex-col">
-        <div class="px-4 py-3 border-b border-slate-200 flex items-center justify-between">
-          <div class="font-semibold">Publications</div>
-          <input id="facProfSearch" class="px-3 py-2 rounded-xl border border-slate-300 text-sm"
-                 placeholder="Search title / journal / DOI"/>
-        </div>
-        <div class="overflow-auto thin-scrollbar">
-          <table class="w-full text-sm">
-            <thead class="bg-slate-50 text-slate-600 sticky top-0">
-              <tr><th class="text-left px-4 py-2">Year</th><th class="text-left px-4 py-2">Title</th><th class="text-left px-4 py-2">Journal</th><th class="text-left px-4 py-2">Type</th><th class="text-left px-4 py-2">DOI</th></tr>
-            </thead>
-            <tbody id="facProfTBody"></tbody>
-          </table>
-        </div>
-      </div>
-
-    </div>
-  </div>
-</div>
-<!-- =================== /FACULTY =================== -->
+<!-- Detail modal styles (scoped by class prefix .facd-) -->
+<style>
+  .facd-overlay{position:fixed;inset:0;background:rgba(15,23,42,.55);backdrop-filter:saturate(120%) blur(2px);z-index:60;display:flex;align-items:center;justify-content:center;}
+  .facd-modal{background:#fff;border-radius:16px;box-shadow:0 20px 60px rgba(2,6,23,.25);width:min(1100px,96vw);max-height:86vh;display:flex;flex-direction:column;overflow:hidden}
+  .facd-header{padding:16px 20px;border-bottom:1px solid #e5e7eb;display:flex;gap:14px;align-items:center;justify-content:space-between}
+  .facd-title{font-weight:600}
+  .facd-sub{color:#64748b;font-size:12px;margin-top:2px}
+  .facd-close{border:none;background:#f8fafc;border-radius:12px;padding:8px;cursor:pointer}
+  .facd-body{padding:16px 20px;overflow:auto}
+  .facd-grid{display:grid;grid-template-columns:1fr 1fr;gap:16px}
+  .facd-kpis{display:grid;grid-template-columns:repeat(3, minmax(0,1fr));gap:12px;margin-bottom:12px}
+  .facd-kpi{background:#f8fafc;border:1px solid #e5e7eb;border-radius:14px;padding:12px;cursor:pointer}
+  .facd-kpi:hover{background:#f1f5f9}
+  .facd-kpi .n{font-size:28px;font-weight:700;line-height:1}
+  .facd-kpi .t{font-size:12px;color:#64748b}
+  .facd-chart{background:#fff;border:1px solid #e5e7eb;border-radius:14px;padding:12px}
+  .facd-list{background:#fff;border:1px solid #e5e7eb;border-radius:14px;padding:0;display:flex;flex-direction:column;min-height:320px}
+  .facd-listhead{display:flex;gap:8px;align-items:center;padding:10px 12px;border-bottom:1px solid #e5e7eb}
+  .facd-chip{font-size:12px;border:1px solid #e5e7eb;border-radius:999px;padding:4px 10px;background:#f8fafc;cursor:pointer}
+  .facd-chip.active{background:#eef2ff;border-color:#c7d2fe;color:#3730a3}
+  .facd-search{margin-left:auto;border:1px solid #e5e7eb;border-radius:10px;padding:6px 10px;font-size:12px}
+  .facd-scroll{overflow:auto;max-height:330px;padding:6px 0}
+  .facd-item{padding:12px 14px;border-bottom:1px solid #f1f5f9;display:flex;gap:12px}
+  .facd-item:last-child{border-bottom:0}
+  .facd-item .meta{font-size:12px;color:#64748b;margin-top:4px}
+  .facd-item .badge{font-size:11px;background:#f1f5f9;border:1px solid #e5e7eb;border-radius:999px;padding:2px 8px;margin-left:6px}
+  .facd-actions{display:flex;gap:8px}
+  .facd-export{border:1px solid #e5e7eb;background:#fff;border-radius:12px;padding:8px 10px;font-size:12px;display:flex;align-items:center;gap:6px;cursor:pointer}
+</style>
 
 <script>
 (() => {
+  // ——— helpers (scoped, no globals) ———
   const $ = id => document.getElementById(id);
   const esc = s => String(s).replace(/[&<>"']/g, m => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m]));
-  const num = n => (n||0).toLocaleString();
   const deacc = s => String(s||'').normalize('NFKD').replace(/[\u0300-\u036f]/g,'');
   const normName = s => deacc(s).toLowerCase().replace(/[\.\(\)\[\]\{\}]/g,' ').replace(/[^a-z\s-]/g,' ').replace(/\s+/g,' ').trim();
+  const num = n => (n||0).toLocaleString();
   const HOME_ROR = '04q2jes40';
   const HOME_KW  = /(university of petroleum|energy studies|^upes\b)/i;
-  if (window.lucide) lucide.createIcons();
 
-  // ---------- Lazy libs ----------
-  const ensureXLSX = () => new Promise(res => { if (window.XLSX) return res(); const s=document.createElement('script'); s.src='https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js'; s.onload=res; document.head.appendChild(s); });
-  const ensureChart = () => new Promise(res => { if (window.Chart) return res(); const s=document.createElement('script'); s.src='https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js'; s.onload=res; document.head.appendChild(s); });
+  // pull pubs from app (won’t conflict with global variables)
+  const currentPubs = () => (Array.isArray(window.filtered) && window.filtered.length ? window.filtered
+                             : Array.isArray(window.all) ? window.all : []);
 
-  // ---------- Stand-alone publications loader ----------
-  const FAC_PUBS = []; // private store when app globals are absent
-  async function loadPubsOnce(){
-    if (FAC_PUBS.length) return;
-    try{
-      const res = await fetch('institution_data.json', { cache:'no-store' });
-      if (!res.ok) return;
-      const j = await res.json();
-      const items = Array.isArray(j.items) ? j.items : [];
-      for (const p of items){
-        if (!Array.isArray(p.authors))      p.authors      = facAuthors(p);
-        if (!Array.isArray(p.home_authors)) p.home_authors = facHomeAuthors(p);
-        FAC_PUBS.push(p);
-      }
-    }catch(e){ console.warn('Faculty: could not load institution_data.json', e); }
-  }
-  const currentPubs = () =>
-    (Array.isArray(window.filtered) && window.filtered.length ? window.filtered :
-     Array.isArray(window.all)      && window.all.length      ? window.all      :
-     FAC_PUBS);
-
-  // ---------- name & matching ----------
-  function parsePerson(s){
+  // person parsing
+  const parsePerson = (s) => {
     const raw = String(s||'').trim();
     if (!raw) return { raw:s, tokens:[], last:'', first:'', fin:'' };
     if (raw.includes(',')){
       const [Lraw,Rraw] = raw.split(',',2);
-      const L=normName(Lraw), R=normName(Rraw);
-      const lt=L.split(' ').filter(Boolean);
-      const last=lt[lt.length-1]||'';
-      const first=(R.split(' ').filter(Boolean)[0]||'');
+      const L = normName(Lraw), R = normName(Rraw);
+      const lt = L.split(' ').filter(Boolean);
+      const last = lt[lt.length-1]||'';
+      const first= (R.split(' ').filter(Boolean)[0]||'');
       const tokens=(L+' '+R).trim().split(/\s+/).filter(Boolean);
       return { raw, tokens, last, first, fin:first?first[0]:'' };
     }
-    const n=normName(raw), t=n.split(' ').filter(Boolean);
+    const n = normName(raw), t=n.split(' ').filter(Boolean);
     const first=t[0]||'', last=t[t.length-1]||'';
     return { raw, tokens:t, last, first, fin:first?first[0]:'' };
-  }
+  };
+
+  // Jaro-Winkler similarity
   function jaro(a,b){
     if (a===b) return 1;
     const la=a.length, lb=b.length; if(!la||!lb) return 0;
@@ -545,10 +498,12 @@
     }
     if (!m) return 0;
     let k=0; for (let i=0;i<la;i++){ if (!am[i]) continue; while(!bm[k]) k++; if (a[i]!==b[k]) t++; k++; }
-    t/=2; return (m/la + m/lb + (m-t)/m)/3;
+    t/=2;
+    return (m/la + m/lb + (m-t)/m)/3;
   }
-  const jw=(a,b)=>{ const j=jaro(a,b); let l=0, max=4; while(l<Math.min(a.length,b.length,max)&&a[l]===b[l]) l++; return j + l*0.1*(1-j); };
+  const jw = (a,b)=>{ const j=jaro(a,b); let l=0; const max=4; while(l<Math.min(a.length,b.length,max)&&a[l]===b[l]) l++; return j + l*0.1*(1-j); };
 
+  // basic author readers (no collisions)
   function facAuthors(p){
     if (Array.isArray(p.authors)) return p.authors;
     const out=[];
@@ -567,8 +522,9 @@
     if (Array.isArray(p.home_authors) && p.home_authors.length) return p.home_authors;
     const out=[]; const A=Array.isArray(p.authorships)?p.authorships:[];
     for (const a of A){
-      const nm=a?.author?.display_name || a?.display_name; if (!nm) continue;
-      const insts=Array.isArray(a?.institutions)?a.institutions:[];
+      const nm = a?.author?.display_name || a?.display_name;
+      if (!nm) continue;
+      const insts = Array.isArray(a?.institutions) ? a.institutions : [];
       const isHome = insts.some(i=>{
         const ror=(i?.ror||'').split('/').pop()?.toLowerCase();
         const name=(i?.display_name||'').toLowerCase();
@@ -579,25 +535,12 @@
     return [...new Set(out)];
   }
 
-  // ---------- module state ----------
-  const facultyRows=[];               // normalized rows from Excel
-  const facBuckets=new Map();         // last-name -> rows
-  const facultyStats=new Map();       // key -> { fac, pubs, patents, dpatents }
-  const authorMappings=[];            // detailed mapping
-  const pubsByFaculty=new Map();      // key -> [pubs]
-
-  window.faculty = Object.assign(window.faculty||{}, {
-    exportJSON, openProfile, _statsMap:facultyStats, _pubsByFaculty:pubsByFaculty
-  });
-
-  function setStatus(t){ $('facStatus').textContent=t||''; }
-
+  // normalize Excel rows
   function normalizeFacultyRows(rows){
     const key=s=>String(s||'').toLowerCase().trim();
     const grab=(row,keys)=>{ for(const k of keys){ for(const rk of Object.keys(row)){ if(key(rk)===key(k)) return String(row[rk]??'').trim(); } } return ''; };
-    facultyRows.length=0;
-    rows.forEach(r=>{
-      const name  = grab(r,['FACULTY NAME','NAME','EMPLOYEE NAME']); if (!name) return;
+    return rows.map(r=>{
+      const name  = grab(r,['FACULTY NAME','NAME','EMPLOYEE NAME']);
       const emp   = grab(r,['EMP NO','EMP ID','EMPLOYEE ID','EMPID','EMP_NO','EMP']);
       const dept  = grab(r,['DEPARTMENT','DEPT']);
       const inst  = grab(r,['INSTITUTE','INSTITUTION']);
@@ -606,73 +549,125 @@
       const type  = grab(r,['TYPE','ROLE']);
       const profile= grab(r,['PROFILE URL','URL','LINK']);
       const p=parsePerson(name);
-      facultyRows.push({ emp,name,dept,inst,school,status,type,profile_url:profile,_p:p });
-    });
+      return { emp,name,dept,inst,school,status,type,profile_url:profile,_p:p };
+    }).filter(x=>x.name);
   }
-  function buildBuckets(){
+
+  // buckets for candidate matching
+  const facBuckets = new Map();
+  function buildBuckets(arr){
     facBuckets.clear();
-    for (const row of facultyRows){
-      const last=row._p.last; if (!last) continue;
-      const b = facBuckets.get(last)||[]; b.push(row); facBuckets.set(last,b);
+    for (const row of arr){
+      const last=row._p.last;
+      if (!last) continue;
+      const b = facBuckets.get(last)||[];
+      b.push(row); facBuckets.set(last,b);
     }
   }
 
-  const MIN_SCORE=0.80;
+  // author ↔ faculty scoring
   function scoreAuthorToFac(authorName, facRow){
     const a=parsePerson(authorName), f=facRow._p;
     if (!a.last || !f.last) return 0;
-    const lastExact=a.last===f.last ? 1 : 0;
-    const sLast=jw(a.last,f.last), sFirst=jw(a.first,f.first);
-    const initialHit=(a.fin&&f.fin&&a.fin===f.fin)?1:0;
-    const full=jw(normName(authorName), normName(facRow.name));
-    let s=0.42*(lastExact?1:sLast)+0.23*Math.max(sFirst,initialHit?0.95:0)+0.27*full;
+    const lastExact = a.last===f.last ? 1 : 0;
+    const lastSim   = jw(a.last,f.last);
+    const firstSim  = jw(a.first,f.first);
+    const initialHit= (a.fin && f.fin && a.fin===f.fin) ? 1 : 0;
+    const fullSim   = jw(normName(authorName), normName(facRow.name));
+    let s = 0.42*(lastExact?1:lastSim) + 0.23*Math.max(firstSim, initialHit?0.95:0) + 0.27*fullSim;
     const aTok=new Set(a.tokens), fTok=new Set(f.tokens); let overlap=0; for(const t of aTok) if (fTok.has(t)) overlap++;
-    s+=Math.min(0.08, overlap*0.02); return Math.min(1,s);
+    s += Math.min(0.08, overlap*0.02);
+    return Math.min(1,s);
   }
+
+  const MIN_SCORE = 0.80;
   function matchFaculty(authorName){
-    const a=parsePerson(authorName); if (!a.last) return null;
-    let cand=facBuckets.get(a.last)||[];
+    const a=parsePerson(authorName);
+    if (!a.last) return null;
+    let cand = facBuckets.get(a.last) || [];
     if (!cand.length){
-      for (const [last,arr] of facBuckets){ if (jw(a.last,last)>=0.92) cand=cand.concat(arr); }
+      for (const [last,arr] of facBuckets){
+        if (jw(a.last,last) >= 0.92) cand = cand.concat(arr);
+      }
     }
     if (!cand.length) return null;
     let best=null, bestScore=0;
-    for (const fac of cand){ const s=scoreAuthorToFac(authorName,fac); if (s>bestScore){ best=fac; bestScore=s; } }
-    return (best && bestScore>=MIN_SCORE) ? {fac:best, score:bestScore} : null;
+    for (const fac of cand){
+      const s=scoreAuthorToFac(authorName, fac);
+      if (s>bestScore){ best=fac; bestScore=s; }
+    }
+    return (best && bestScore>=MIN_SCORE) ? { fac:best, score:bestScore } : null;
   }
 
-  async function compute(){
-    await loadPubsOnce(); // <-- key fix for stand-alone
-    facultyStats.clear(); authorMappings.length=0; pubsByFaculty.clear();
-    const pubs = currentPubs(); if (!pubs.length || !facBuckets.size) return;
+  // ——— state ———
+  let facultyRows = [];
+  const facultyStats = new Map();  // key -> {fac, pubs, patents, dpatents, items:[]}
+  const authorMappings = [];       // for export/QA
+
+  // list of pubs assigned to a faculty (we store items)
+  function classifyType(p){
+    const t = String(p.type || p.type_crossref || '').toLowerCase();
+    if (t.includes('journal')) return 'Article';
+    if (t.includes('conference')) return 'Conference';
+    if (t.includes('book chapter')) return 'Book/Chapter';
+    if (t.includes('book')) return 'Book/Chapter';
+    if (t.includes('preprint')) return 'Preprint';
+    if (t.includes('review')) return 'Review';
+    if (t.includes('patent') && t.includes('design')) return 'DesignPatent';
+    if (t.includes('patent')) return 'Patent';
+    return 'Other';
+  }
+
+  function compute(){
+    facultyStats.clear(); authorMappings.length=0;
+    const pubs = currentPubs();
+    if (!pubs.length || !facBuckets.size) return;
 
     for (const p of pubs){
-      if (!Array.isArray(p.authors))      p.authors      = facAuthors(p);
+      // pre-warm authors for speed
+      if (!Array.isArray(p.authors)) p.authors = facAuthors(p);
       if (!Array.isArray(p.home_authors)) p.home_authors = facHomeAuthors(p);
-      const homes = Array.isArray(p.home_authors)?p.home_authors:[];
+
+      const homes = Array.isArray(p.home_authors) ? p.home_authors : [];
       if (!homes.length) continue;
 
       for (const author of homes){
-        const hit=matchFaculty(author); if (!hit) continue;
+        const hit = matchFaculty(author); if (!hit) continue;
         const fac=hit.fac; const key=fac.emp || fac.name;
-        const stat=facultyStats.get(key) || { fac, pubs:0, patents:0, dpatents:0 };
-        stat.pubs += 1;
-        const t=String(p.type||p.type_crossref||'').toLowerCase();
-        if (t.includes('design') && t.includes('patent')) stat.dpatents += 1;
-        else if (t.includes('patent')) stat.patents += 1;
-        facultyStats.set(key,stat);
+
+        let stat = facultyStats.get(key);
+        if (!stat){ stat = { fac, pubs:0, patents:0, dpatents:0, items:[] }; facultyStats.set(key, stat); }
+
+        // type classification & counters
+        const cls = classifyType(p);
+        if (cls==='Patent') stat.patents += 1;
+        else if (cls==='DesignPatent') stat.dpatents += 1;
+        else stat.pubs += 1;
+
+        // keep a light item snapshot for detail view
+        stat.items.push({
+          year: p.year ?? null,
+          title: p.title || '',
+          journal: p.journal || p.host_venue || '',
+          type: cls,
+          doi: p.doi || '',
+          url: p.url || '',
+          authors: Array.isArray(p.authors)? p.authors.join(', ') : (p.authors||''),
+        });
 
         authorMappings.push({
-          home_author:author, match_score:+hit.score.toFixed(4),
-          matched:{ emp:fac.emp,name:fac.name,dept:fac.dept,school:fac.school,inst:fac.inst,profile_url:fac.profile_url||'' },
-          publication:{ year:p.year??null,title:p.title||'',journal:p.journal||'',doi:p.doi||'',url:p.url||'',type:p.type||p.type_crossref||'' },
-          _pubRef:p
+          home_author: author,
+          match_score: +hit.score.toFixed(4),
+          matched: { emp:fac.emp, name:fac.name, dept:fac.dept, school:fac.school, inst:fac.inst, profile_url:fac.profile_url||'' },
+          publication: { year:p.year ?? null, title:p.title||'', journal:p.journal||'', doi:p.doi||'', url:p.url||'', type:p.type||p.type_crossref||'' }
         });
-        const lst=pubsByFaculty.get(key)||[]; lst.push(p); pubsByFaculty.set(key,lst);
       }
     }
   }
 
+  function setStatus(t){ const el=$('facStatus'); if (el) el.textContent=t||''; }
+
+  // ——— render summary/top/list ———
   function renderSummary(){
     const el=$('facSummary'); if (!el) return;
     if (!facultyRows.length){ el.textContent='—'; return; }
@@ -687,27 +682,28 @@
       <div>Publications attributed (view): <b>${num(pubs)}</b></div>
       <div>Patents: <b>${num(pats)}</b> · Design patents: <b>${num(dpats)}</b></div>`;
   }
-  function attachProfileClicks(root){
-    (root||document).querySelectorAll('[data-fac-key]')?.forEach(btn=>{
-      btn.addEventListener('click',()=>openProfile(btn.dataset.facKey));
-    });
-  }
+
   function renderTop(){
     const el=$('facTop'); if (!el) return;
     const rows=[...facultyStats.values()].sort((a,b)=>b.pubs-a.pubs).slice(0,10);
     if (!rows.length){ el.textContent='—'; return; }
     el.innerHTML = rows.map(x=>{
-      const key=x.fac.emp || x.fac.name;
-      return `<div class="flex items-center justify-between border-b last:border-0 py-2">
-        <div class="font-medium"><button class="text-indigo-600 hover:underline" data-fac-key="${esc(key)}">${esc(x.fac.name)}</button></div>
-        <div class="text-right text-slate-600"><div class="text-2xl font-semibold">${x.pubs}</div><div class="text-xs">Publications</div></div>
-      </div>`;
+      const linkStart = `<a class="text-indigo-600 hover:underline" href="javascript:void(0)" onclick="window.faculty.openDetail('${esc(x.fac.emp||x.fac.name)}')">`;
+      const linkEnd   = `</a>`;
+      return `
+        <div class="flex items-center justify-between border-b last:border-0 py-2">
+          <div class="font-medium">${linkStart}${esc(x.fac.name)}${linkEnd}</div>
+          <div class="text-right text-slate-600">
+            <div class="text-2xl font-semibold">${x.pubs}</div>
+            <div class="text-xs">Publications</div>
+          </div>
+        </div>`;
     }).join('');
-    attachProfileClicks(el);
   }
+
   function renderList(){
     const el=$('facList'); if (!el) return;
-    const q=($('facSearch')?.value||'').toLowerCase().trim();
+    const q=$('facSearch')?.value?.toLowerCase()?.trim() || '';
     let rows=[...facultyStats.values()];
     if (q){
       rows = rows.filter(x=>{
@@ -718,161 +714,273 @@
     rows.sort((a,b)=>b.pubs-a.pubs);
     if (!rows.length){ el.innerHTML='<div class="text-sm text-slate-500">No matches.</div>'; return; }
     el.innerHTML = rows.map(x=>{
-      const key=x.fac.emp || x.fac.name;
-      const prof=x.fac.profile_url ? `<a class="text-indigo-600 hover:underline" href="${esc(x.fac.profile_url)}" target="_blank">Profile</a>` : '';
-      return `<div class="border rounded-xl p-3 hover:bg-slate-50">
-        <div class="flex items-center gap-3">
-          <div class="h-12 w-12 rounded-full bg-slate-200 grid place-content-center"><i data-lucide="user"></i></div>
-          <div class="flex-1">
-            <div class="font-semibold"><button class="text-indigo-600 hover:underline" data-fac-key="${esc(key)}">${esc(x.fac.name||'—')}</button></div>
-            <div class="text-xs text-slate-500">${esc(x.fac.school||'')}${x.fac.school?' · ':''}${esc(x.fac.dept||'')}</div>
-            <div class="text-xs text-slate-500">${esc(x.fac.inst||'')}</div>
-            <div class="text-xs text-slate-500">${x.fac.emp?('EMP ID: '+esc(x.fac.emp)) : ''}</div>
-            ${prof?`<div class="text-xs mt-1">${prof}</div>`:''}
+      const prof = x.fac.profile_url ? `<a class="text-indigo-600 hover:underline" href="${esc(x.fac.profile_url)}" target="_blank">Profile</a>` : '';
+      const key = esc(x.fac.emp||x.fac.name);
+      return `
+        <div class="border rounded-xl p-3 hover:bg-slate-50">
+          <div class="flex items-center gap-3">
+            <div class="h-12 w-12 rounded-full bg-slate-200 grid place-content-center"><i data-lucide="user"></i></div>
+            <div class="flex-1">
+              <div class="font-semibold">
+                <a class="hover:underline text-indigo-700" href="javascript:void(0)" onclick="window.faculty.openDetail('${key}')">${esc(x.fac.name || '—')}</a>
+              </div>
+              <div class="text-xs text-slate-500">${esc(x.fac.school||'')}${x.fac.school?' · ':''}${esc(x.fac.dept||'')}</div>
+              <div class="text-xs text-slate-500">${esc(x.fac.inst||'')}</div>
+              <div class="text-xs text-slate-500">${x.fac.emp?('EMP ID: '+esc(x.fac.emp)) : ''}</div>
+              ${prof?`<div class="text-xs mt-1">${prof}</div>`:''}
+            </div>
+            <div class="text-right">
+              <div class="text-2xl font-semibold">${x.pubs}</div>
+              <div class="text-xs text-slate-500">Publications</div>
+            </div>
           </div>
-          <div class="text-right">
-            <div class="text-2xl font-semibold">${x.pubs}</div>
-            <div class="text-xs text-slate-500">Publications</div>
-          </div>
-        </div></div>`;
+        </div>`;
     }).join('');
     if (window.lucide) lucide.createIcons();
-    attachProfileClicks(el);
-  }
-  async function refreshUI(){
-    await compute();
-    renderSummary(); renderTop(); renderList();
-    const btn=$('facExportBtn'); if (btn) (facultyStats.size ? btn.classList.remove('hidden') : btn.classList.add('hidden'));
   }
 
-  // ---------- File handler ----------
+  function refreshUI(){
+    compute(); renderSummary(); renderTop(); renderList();
+    const btn=$('facExportBtn');
+    if (btn) (facultyStats.size ? btn.classList.remove('hidden') : btn.classList.add('hidden'));
+  }
+
+  // ——— Detail Modal (scorebook-like) ———
+  let chartJSReady=false;
+  function ensureChartJS(){
+    return new Promise((res,rej)=>{
+      if (chartJSReady) return res();
+      const s=document.createElement('script');
+      s.src='https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js';
+      s.onload=()=>{ chartJSReady=true; res(); };
+      s.onerror=()=>rej(new Error('Failed loading Chart.js'));
+      document.head.appendChild(s);
+    });
+  }
+
+  function mountDetail(stat){
+    const items = stat.items || [];
+    const title = stat.fac.name || '—';
+    const subtitle = [stat.fac.school, stat.fac.dept].filter(Boolean).join(' · ') + (stat.fac.emp? ` · EMP ID: ${stat.fac.emp}`:'');
+    const pubs = stat.pubs||0, pats=stat.patents||0, dpats=stat.dpatents||0;
+
+    // overlay DOM
+    const ov=document.createElement('div');
+    ov.className='facd-overlay';
+    ov.innerHTML=`
+      <div class="facd-modal">
+        <div class="facd-header">
+          <div>
+            <div class="facd-title">${esc(title)}</div>
+            <div class="facd-sub">${esc(subtitle)}</div>
+          </div>
+          <div class="facd-actions">
+            <button class="facd-export" id="facdExportBtn"><i data-lucide="download"></i>Export CSV</button>
+            <button class="facd-close" id="facdClose"><i data-lucide="x"></i></button>
+          </div>
+        </div>
+        <div class="facd-body">
+          <div class="facd-kpis">
+            <div class="facd-kpi" data-filter="pubs"><div class="n">${num(pubs)}</div><div class="t">Publications</div></div>
+            <div class="facd-kpi" data-filter="patents"><div class="n">${num(pats)}</div><div class="t">Patents</div></div>
+            <div class="facd-kpi" data-filter="dpatents"><div class="n">${num(dpats)}</div><div class="t">Design patents</div></div>
+          </div>
+          <div class="facd-grid">
+            <div class="facd-chart"><canvas id="facdYear"></canvas></div>
+            <div class="facd-chart"><canvas id="facdType"></canvas></div>
+          </div>
+          <div class="facd-list" style="margin-top:12px">
+            <div class="facd-listhead">
+              <span class="facd-chip active" data-type="All">All</span>
+              <span class="facd-chip" data-type="Article">Article</span>
+              <span class="facd-chip" data-type="Book/Chapter">Book/Chapter</span>
+              <span class="facd-chip" data-type="Conference">Conference</span>
+              <span class="facd-chip" data-type="Preprint">Preprint</span>
+              <span class="facd-chip" data-type="Review">Review</span>
+              <span class="facd-chip" data-type="Other">Other</span>
+              <input class="facd-search" id="facdSearch" placeholder="Search title / journal / year" />
+            </div>
+            <div class="facd-scroll" id="facdScroll"></div>
+          </div>
+        </div>
+      </div>`;
+    document.body.appendChild(ov);
+    if (window.lucide) lucide.createIcons();
+
+    // list state
+    let typeFilter='All', textFilter='';
+    const scrollEl = ov.querySelector('#facdScroll');
+
+    function renderListFiltered(){
+      const filtered = items.filter(it=>{
+        if (typeFilter!=='All'){
+          if (typeFilter==='Patents') return it.type==='Patent';
+          if (typeFilter==='Design') return it.type==='DesignPatent';
+          if (it.type!==typeFilter) return false;
+        }
+        if (textFilter){
+          const hay = `${it.title} ${it.journal} ${it.year}`.toLowerCase();
+          if (!hay.includes(textFilter)) return false;
+        }
+        return true;
+      });
+
+      if (!filtered.length){
+        scrollEl.innerHTML='<div class="text-sm text-slate-500 px-4 py-6">No items.</div>';
+        return;
+      }
+      scrollEl.innerHTML = filtered.map((it,idx)=>`
+        <div class="facd-item">
+          <div class="grow">
+            <div class="font-medium">${esc(it.title||'—')}</div>
+            <div class="meta">${esc(it.journal||'')}${it.journal?' · ':''}${esc(String(it.year||'').toString())}
+              <span class="badge">${esc(it.type||'')}</span>
+            </div>
+          </div>
+          <div class="shrink-0">
+            ${it.url? `<a href="${esc(it.url)}" target="_blank" class="text-indigo-700 text-xs hover:underline">Open</a>`:''}
+          </div>
+        </div>
+      `).join('');
+    }
+
+    // filters
+    ov.querySelectorAll('.facd-chip').forEach(ch=>{
+      ch.addEventListener('click',()=>{
+        ov.querySelectorAll('.facd-chip').forEach(c=>c.classList.remove('active'));
+        ch.classList.add('active');
+        typeFilter = ch.getAttribute('data-type') || 'All';
+        renderListFiltered();
+      });
+    });
+    ov.querySelector('#facdSearch').addEventListener('input', (e)=>{
+      textFilter = (e.target.value||'').toLowerCase().trim();
+      renderListFiltered();
+    });
+
+    // KPI quick filters
+    ov.querySelectorAll('.facd-kpi').forEach(k=>{
+      k.addEventListener('click', ()=>{
+        const f = k.getAttribute('data-filter');
+        // map to list filters
+        if (f==='pubs'){ typeFilter='All'; ov.querySelectorAll('.facd-chip').forEach(c=>c.classList.remove('active')); ov.querySelector('[data-type="All"]').classList.add('active'); }
+        if (f==='patents'){ typeFilter='Patents'; ov.querySelectorAll('.facd-chip').forEach(c=>c.classList.remove('active')); }
+        if (f==='dpatents'){ typeFilter='Design'; ov.querySelectorAll('.facd-chip').forEach(c=>c.classList.remove('active')); }
+        renderListFiltered();
+      });
+    });
+
+    // export CSV
+    ov.querySelector('#facdExportBtn').addEventListener('click', ()=>{
+      const rows = [['Title','Year','Type','Journal','DOI','URL','Authors']];
+      for (const it of items){
+        rows.push([it.title, it.year||'', it.type||'', it.journal||'', it.doi||'', it.url||'', it.authors||'']);
+      }
+      const csv = rows.map(r=>r.map(x=>{
+        const s=String(x??'');
+        return /[",\n]/.test(s) ? `"${s.replace(/"/g,'""')}"` : s;
+      }).join(',')).join('\n');
+      const blob=new Blob([csv],{type:'text/csv;charset=utf-8;'});
+      const a=document.createElement('a'); a.href=URL.createObjectURL(blob);
+      a.download=(stat.fac.name||'faculty')+'_publications.csv'; a.click(); URL.revokeObjectURL(a.href);
+    });
+
+    // close
+    ov.querySelector('#facdClose').addEventListener('click', ()=>ov.remove());
+    ov.addEventListener('click', (e)=>{ if(e.target===ov) ov.remove(); });
+
+    // charts
+    (async ()=>{
+      try{
+        await ensureChartJS();
+        // Year chart
+        const byYear=new Map();
+        for (const it of items){
+          const y=Number(it.year)||null; if(!y) continue;
+          byYear.set(y, (byYear.get(y)||0)+ (it.type==='Patent'||it.type==='DesignPatent'?0:1));
+        }
+        const ys=[...byYear.keys()].sort((a,b)=>a-b);
+        const yearLabels=ys.length? ys : [];
+        const yearData=yearLabels.map(y=>byYear.get(y)||0);
+        new Chart(ov.querySelector('#facdYear'), {
+          type:'bar',
+          data:{ labels: yearLabels, datasets:[{ label:'Publications', data: yearData }]},
+          options:{ responsive:true, plugins:{ legend:{display:false}}, scales:{ y:{ beginAtZero:true, ticks:{precision:0} } } }
+        });
+
+        // Type donut
+        const typeOrder=['Article','Book/Chapter','Conference','Other','Preprint','Review'];
+        const counts = Object.fromEntries(typeOrder.map(t=>[t,0]));
+        for (const it of items){
+          if (it.type==='Patent' || it.type==='DesignPatent') continue;
+          counts[it.type] = (counts[it.type]||0)+1;
+        }
+        new Chart(ov.querySelector('#facdType'), {
+          type:'doughnut',
+          data:{ labels:typeOrder, datasets:[{ data:typeOrder.map(t=>counts[t]||0) }]},
+          options:{ responsive:true, plugins:{ legend:{ position:'bottom' } }, cutout:'55%' }
+        });
+      }catch(e){ console.error(e); }
+    })();
+
+    // initial list
+    renderListFiltered();
+  }
+
+  function openDetailByKey(key){
+    const stat=[...facultyStats.values()].find(s => (s.fac.emp||s.fac.name)===key);
+    if (!stat || !stat.items?.length){
+      alert('No detailed items for this faculty in the current view.');
+      return;
+    }
+    mountDetail(stat);
+  }
+
+  // ——— File handler ———
   $('facFile')?.addEventListener('change', async (e)=>{
     const file=e.target.files?.[0]; if (!file) return;
-    await ensureXLSX();
+    if (!window.XLSX){ setStatus('Error: Excel reader did not load.'); return; }
     try{
       setStatus(`Reading ${file.name} …`);
       const data = await file.arrayBuffer();
       const wb   = XLSX.read(new Uint8Array(data), { type:'array' });
       const sn   = wb.SheetNames[0];
       const rows = XLSX.utils.sheet_to_json(wb.Sheets[sn], { defval:'' });
-      normalizeFacultyRows(rows);
-      buildBuckets();
+      facultyRows = normalizeFacultyRows(rows);
+      buildBuckets(facultyRows);
       setStatus(`Loaded ${facultyRows.length} faculty rows.`);
-      await refreshUI();
+      refreshUI();
     }catch(err){
       console.error(err);
       setStatus('Failed: '+err.message);
     }
   });
 
-  // ---------- Export ----------
-  function exportJSON(){
-    if (!facultyStats.size) return;
-    const rows=[...facultyStats.values()].map(s=>({
-      emp:s.fac.emp, name:s.fac.name, dept:s.fac.dept, school:s.fac.school, institute:s.fac.inst,
-      status:s.fac.status, type:s.fac.type, profile_url:s.fac.profile_url||'',
-      pubs:s.pubs, patents:s.patents, design_patents:s.dpatents
-    }));
-    const out={ version:'2.6', matched_faculty:rows, author_mappings:authorMappings };
-    const blob=new Blob([JSON.stringify(out,null,2)],{type:'application/json'});
-    const a=document.createElement('a'); a.href=URL.createObjectURL(blob); a.download='faculty_mapping.json'; a.click(); URL.revokeObjectURL(a.href);
-  }
+  // Expose tiny API
+  window.faculty = {
+    exportJSON(){
+      if (!facultyStats.size) return;
+      const rows=[...facultyStats.values()].map(s=>({
+        emp:s.fac.emp, name:s.fac.name, dept:s.fac.dept, school:s.fac.school, institute:s.fac.inst,
+        status:s.fac.status, type:s.fac.type, profile_url:s.fac.profile_url||'',
+        pubs:s.pubs, patents:s.patents, design_patents:s.dpatents
+      }));
+      const out = { version:'2.6', matched_faculty:rows, author_mappings:authorMappings };
+      const blob=new Blob([JSON.stringify(out,null,2)],{type:'application/json'});
+      const a=document.createElement('a'); a.href=URL.createObjectURL(blob); a.download='faculty_mapping.json'; a.click(); URL.revokeObjectURL(a.href);
+    },
+    renderList,
+    openDetail: openDetailByKey
+  };
 
-  // ---------- Profile modal (charts + table) ----------
-  let profYearChart=null, profTypeChart=null, fullRows=[], visibleRows=[];
-  function normalizeType(t){
-    const s=String(t||'').toLowerCase();
-    if (s==='journal-article') return 'article';
-    if (s.includes('proceed')) return 'proceedings-article';
-    if (s.startsWith('book'))  return 'book';
-    return s || 'unknown';
-  }
-  const typeLabel = (key) => ({
-    'article':'Article','proceedings-article':'Proceedings','book':'Book/Chapter','dataset':'Dataset','report':'Report',
-    'preprint':'Preprint','letter':'Letter','review':'Review','editorial':'Editorial','unknown':'Other'
-  }[key] || key.replace(/(^|\-)(\w)/g,(m,_,c)=>' '+c.toUpperCase()).trim());
-
-  async function openProfile(key){
-    await ensureChart();
-    const stat = facultyStats.get(key);
-    const list = pubsByFaculty.get(key) || [];
-    fullRows = list.map(p=>({
-      year: p.year ?? '', title: p.title || '', journal: p.journal || '',
-      typeK: normalizeType(p.type || p.type_crossref), typeL: typeLabel(normalizeType(p.type || p.type_crossref)),
-      doi: p.doi || '', url: p.url || ''
-    }));
-
-    $('facProfName').textContent = stat?.fac?.name || key || 'Faculty';
-    $('facProfMeta').textContent = [stat?.fac?.school, stat?.fac?.dept, stat?.fac?.inst, stat?.fac?.emp?`EMP ID: ${stat.fac.emp}`:''].filter(Boolean).join(' · ');
-    $('facProfKPIPubs').textContent = num(stat?.pubs || fullRows.length);
-    $('facProfKPIPats').textContent = num(stat?.patents || 0);
-    $('facProfKPIDPats').textContent = num(stat?.dpatents || 0);
-
-    renderYearChart(fullRows);
-    renderTypeChart(fullRows);
-    visibleRows=[...fullRows]; renderTable(visibleRows);
-    $('facProfSearch').value='';
-    $('facProfileOverlay').classList.remove('hidden');
-    if (window.lucide) lucide.createIcons();
-  }
-  function renderYearChart(rows){
-    const ctx=$('facProfYearChart').getContext('2d');
-    if (profYearChart) profYearChart.destroy();
-    const byY=new Map(); for (const r of rows){ if (r.year) byY.set(r.year,(byY.get(r.year)||0)+1); }
-    const labels=[...byY.keys()].sort((a,b)=>a-b), data=labels.map(y=>byY.get(y));
-    $('facProfYearRange').textContent = labels.length ? `${labels[0]} – ${labels[labels.length-1]}` : '';
-    profYearChart = new Chart(ctx,{ type:'bar', data:{ labels, datasets:[{ label:'Pubs', data, borderRadius:12, borderSkipped:false }] },
-      options:{ responsive:true, maintainAspectRatio:false, plugins:{ legend:{display:false} }, scales:{ x:{ grid:{display:false} }, y:{ beginAtZero:true } } }});
-  }
-  function renderTypeChart(rows){
-    const ctx=$('facProfTypeChart').getContext('2d');
-    if (profTypeChart) profTypeChart.destroy();
-    const byT=new Map(); for (const r of rows) byT.set(r.typeL,(byT.get(r.typeL)||0)+1);
-    const labels=[...byT.keys()], data=labels.map(k=>byT.get(k));
-    profTypeChart = new Chart(ctx,{ type:'doughnut', data:{ labels, datasets:[{ data }] },
-      options:{ responsive:true, maintainAspectRatio:false, plugins:{ legend:{position:'bottom'} } }});
-  }
-  function renderTable(rows){
-    const tb=$('facProfTBody');
-    tb.innerHTML = rows.map(r=>{
-      const title = r.url ? `<a href="${esc(r.url)}" class="text-indigo-600 hover:underline" target="_blank">${esc(r.title)}</a>` : esc(r.title);
-      const doi   = r.doi ? `<a href="https://doi.org/${esc(r.doi)}" class="text-indigo-600 hover:underline" target="_blank">${esc(r.doi)}</a>` : '';
-      return `<tr class="border-b border-slate-100 hover:bg-slate-50">
-        <td class="px-4 py-2">${esc(r.year)}</td>
-        <td class="px-4 py-2">${title}</td>
-        <td class="px-4 py-2">${esc(r.journal)}</td>
-        <td class="px-4 py-2">${esc(r.typeL)}</td>
-        <td class="px-4 py-2">${doi}</td></tr>`;
-    }).join('');
-  }
-  function exportCSV(){
-    if (!fullRows.length) return;
-    const header=['Year','Title','Journal','Type','DOI','URL'];
-    const lines=[header.join(',')].concat(
-      fullRows.map(r=>[r.year,r.title,r.journal,r.typeL,r.doi,r.url].map(v=>`"${String(v||'').replace(/"/g,'""')}"`).join(',')));
-    const blob=new Blob([lines.join('\n')],{type:'text/csv'});
-    const a=document.createElement('a'); a.href=URL.createObjectURL(blob);
-    a.download=`${($('facProfName').textContent||'faculty').replace(/\s+/g,'_')}_publications.csv`; a.click(); URL.revokeObjectURL(a.href);
-  }
-  $('facProfSearch')?.addEventListener('input',(e)=>{
-    const q=(e.target.value||'').toLowerCase().trim();
-    if (!q){ visibleRows=[...fullRows]; renderTable(visibleRows); return; }
-    visibleRows = fullRows.filter(r =>
-      (r.title||'').toLowerCase().includes(q) || (r.journal||'').toLowerCase().includes(q) ||
-      (r.doi||'').toLowerCase().includes(q) || String(r.year||'').includes(q));
-    renderTable(visibleRows);
-  });
-  $('facProfClose')?.addEventListener('click',()=>$('facProfileOverlay').classList.add('hidden'));
-  $('facProfExportBtn')?.addEventListener('click', exportCSV);
-
-  // search + optional app event
-  $('facSearch')?.addEventListener('input', renderList);
+  // respond to outer filter changes
   document.addEventListener('app:filters-applied', refreshUI);
 
-  // hint
+  // first hint
   setStatus('Upload the faculty Excel to begin.');
 })();
 </script>
+<!-- =================== /FACULTY (standalone) =================== -->
 
   </div>
 
