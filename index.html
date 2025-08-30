@@ -9,75 +9,63 @@
   <script src="https://cdn.tailwindcss.com"></script>
   
 <script>
-/* ============== FACULTY MAPPING — v2.4 (robust dataset + fallback) ==============
-   - Maps ONLY home (UPES) authors to your faculty Excel
-   - Works whether `filtered` is ready or not (falls back to `all`)
-   - Fuzzy matching (Jaro–Winkler, initials, token overlap)
-   - Recomputes on: Excel upload, every `applyFilters()` call, and once on load
-   - Exports JSON + CSV (optional CSV button id: facExportCsvBtn)
-=============================================================================== */
-(() => {
-  /* ---------------- state ---------------- */
-  let facultyRows = [];
-  const facBuckets1 = new Map(), facBuckets2 = new Map(), facBuckets12 = new Map(), facFullMap = new Map();
-  const facultyStats = new Map();
-  let authorMappings = [];
-  let FACULTY_SCORE_MIN = 0.80;
+/* ================= FACULTY MAPPING — v2.3 (fuzzy & robust) =================
+   - Works with your existing table & IDs:
+       facFile, facExportBtn, facStatus, facSummary, facTop, facList, facSearch
+   - Reads Excel and matches to *home* authors from publications
+   - Accepts home_authors as Array OR string split on , ; NEWLINE | <br>
+   - Falls back to OpenAlex authorships (ROR + keywords) if needed
+   - Buckets by last name; uses Jaro–Winkler + initial + token overlap
+   - Recomputes after filters (wraps window.applyFilters if present)
+   ========================================================================== */
+;(() => {
+  const FAC_VERSION = '2.3';
+  // Public knobs
+  let FACULTY_SCORE_MIN = 0.80;   // tweak with window.setFacultyThreshold(0.78)
 
-  let facCardPage = 1, facCardPageSize = 20, facCardRows = [];
+  // State
+  let facultyRows = [];           // normalized Excel rows
+  const facBuckets  = new Map();  // last-name buckets
+  const facultyStats= new Map();  // emp/name -> {fac, pubs, patents, dpatents}
+  const authorMappings = [];      // detailed matches (for export/debug)
 
-  const FACULTY_LINK = {
-    byEmpPrefix: null, // e.g. "https://rims.upes.ac.in/profile?empId="
-    searchPrefix: "https://www.google.com/search?q=UPES+RIMS+",
-  };
-  const buildFacultyLink = (fac) =>
-    fac.profile_url || (FACULTY_LINK.byEmpPrefix && fac.emp
-      ? FACULTY_LINK.byEmpPrefix + encodeURIComponent(fac.emp)
-      : FACULTY_LINK.searchPrefix + encodeURIComponent((fac.name||'') + ' ' + (fac.emp||'')));
+  // ---- utils (scoped; no global collisions) ----
+  const _num = n => (n||0).toLocaleString();
+  const _esc = s => String(s).replace(/[&<>"']/g,m=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m]));
+  const _deacc = s => String(s||'').normalize('NFKD').replace(/[\u0300-\u036f]/g,'');
+  const _normName = s => _deacc(s).toLowerCase()
+                          .replace(/[\.\(\)\[\]\{\}]/g,' ')
+                          .replace(/[^a-z\s-]/g,' ')
+                          .replace(/\s+/g,' ')
+                          .trim();
 
-  /* ---------------- utils ---------------- */
-  const num = n => (n||0).toLocaleString();
-  const esc = s => String(s).replace(/[&<>"']/g, m=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m]));
-  const deacc = s => String(s||'').normalize('NFKD').replace(/[\u0300-\u036f]/g,'');
-  const _normName = s => deacc(s).toLowerCase().replace(/[\.\(\)\[\]\{\}]/g,' ')
-    .replace(/[^a-z\s-]/g,' ').replace(/\s+/g,' ').trim();
-  const qcsv = s => `"${String(s??'').replace(/"/g,'""')}"`;
-
-  /* ---------------- names ---------------- */
   function parsePerson(s){
-    const raw = String(s || '');
-    if (!raw.trim()) return { raw:s, tokens:[], last:'', first:'', fin:'', last2:'' };
-
-    if (raw.includes(',')) {
-      const [left, right] = raw.split(',', 2);
-      const leftN  = _normName(left);
-      const rightN = _normName(right);
-      const lt = leftN.split(' ').filter(Boolean);
-      const rt = rightN.split(' ').filter(Boolean);
+    const raw = String(s||'').trim();
+    if (!raw) return { raw:s, tokens:[], last:'', first:'', fin:'' };
+    if (raw.includes(',')){                 // "Last, First ..."
+      const [left, right] = raw.split(',',2);
+      const L = _normName(left), R = _normName(right);
+      const lt = L.split(' ').filter(Boolean);
       const last  = lt[lt.length-1] || '';
-      const first = (rt[0] || '');
-      const tokens= (leftN + ' ' + rightN).trim().split(/\s+/).filter(Boolean);
-      const last2 = lt.length>=2 ? (lt[lt.length-2]+' '+lt[lt.length-1]) : last;
-      return { raw:s, tokens, last, first, fin:first ? first[0] : '', last2 };
+      const first = (R.split(' ').filter(Boolean)[0]||'');
+      const tokens= (L+' '+R).trim().split(/\s+/).filter(Boolean);
+      return { raw:s, tokens, last, first, fin:first?first[0]:'' };
     }
-
-    const n = _normName(raw);
+    const n = _normName(raw);               // "First ... Last"
     const tokens = n.split(' ').filter(Boolean);
-    if (!tokens.length) return { raw:s, tokens:[], last:'', first:'', fin:'', last2:'' };
     const first = tokens[0] || '';
     const last  = tokens[tokens.length-1] || '';
-    const last2 = tokens.length>=2 ? (tokens[tokens.length-2]+' '+tokens[tokens.length-1]) : last;
-    return { raw:s, tokens, last, first, fin:first ? first[0] : '', last2 };
+    return { raw:s, tokens, last, first, fin:first?first[0]:'' };
   }
 
-  /* --------------- jaro–winkler --------------- */
-  function jaro(s1, s2){
-    if (s1===s2) return 1;
-    const a=s1,b=s2, la=a.length, lb=b.length;
-    if (!la || !lb) return 0;
+  // Jaro/Jaro–Winkler (names)
+  function jaro(a,b){
+    if (a===b) return 1;
+    const la=a.length, lb=b.length;
+    if (!la||!lb) return 0;
     const md = Math.max(0, Math.floor(Math.max(la,lb)/2)-1);
     const am=new Array(la).fill(false), bm=new Array(lb).fill(false);
-    let m=0,t=0;
+    let m=0, t=0;
     for (let i=0;i<la;i++){
       const from=Math.max(0,i-md), to=Math.min(i+md+1,lb);
       for (let j=from;j<to;j++){
@@ -95,10 +83,14 @@
     t/=2;
     return (m/la + m/lb + (m-t)/m)/3;
   }
-  const jaroW = (s1,s2)=>{ const j=jaro(s1,s2); let l=0; const L=4;
-    while(l<Math.min(s1.length,s2.length,L) && s1[l]===s2[l]) l++; return j + l*0.1*(1-j); };
+  const jaroWinkler = (a,b) => {
+    const j=jaro(a,b);
+    let l=0; const maxL=4;
+    while (l<Math.min(a.length,b.length,maxL) && a[l]===b[l]) l++;
+    return j + l*0.1*(1-j);
+  };
 
-  /* --------------- Excel normalize --------------- */
+  // -------- Excel normalization --------
   function normalizeFacultyRows(rows){
     const key = s => String(s||'').toLowerCase().trim();
     const grab = (row, keys)=> {
@@ -117,48 +109,40 @@
       const school= grab(r, ['SCHOOL']);
       const status= grab(r, ['STATUS']);
       const type  = grab(r, ['TYPE','ROLE']);
-      const profile_url = grab(r, ['PROFILE URL','PROFILE','URL','LINK']);
+      const profile= grab(r, ['PROFILE URL','URL','LINK']); // optional
       const p = parsePerson(name);
-      return { emp, name, dept, inst, school, status, type, profile_url, _p:p };
+      return { emp, name, dept, inst, school, status, type, profile_url: profile, _p:p };
     }).filter(x=>x.name);
   }
 
   function buildFacultyBuckets(arr){
-    facBuckets1.clear(); facBuckets2.clear(); facBuckets12.clear(); facFullMap.clear();
+    facBuckets.clear();
     for (const row of arr){
-      const { last, last2 } = row._p;
-      if (last)   (facBuckets1.get(last)  || facBuckets1.set(last,[]).get(last)).push(row);
-      const l2 = last2 && _normName(last2);
-      if (l2)    (facBuckets12.get(l2)    || facBuckets12.set(l2,[]).get(l2)).push(row);
-      const toks = row._p.tokens;
-      if (toks.length>=2){
-        const secondLast = toks[toks.length-2];
-        (facBuckets2.get(secondLast) || facBuckets2.set(secondLast,[]).get(secondLast)).push(row);
-      }
-      const full = _normName(row.name);
-      (facFullMap.get(full) || facFullMap.set(full,[]).get(full)).push(row);
+      const last = row._p.last;
+      if (!last) continue;
+      const b = facBuckets.get(last) || [];
+      b.push(row);
+      facBuckets.set(last, b);
     }
   }
 
-  /* --------------- scoring / candidates --------------- */
+  // -------- Matching --------
   function scoreAuthorToFaculty(authorName, facRow){
     const a = parsePerson(authorName);
     const f = facRow._p;
     if (!a.last || !f.last) return 0;
 
     const lastExact = a.last===f.last ? 1 : 0;
-    const lastSim   = jaroW(a.last, f.last);
-    const last2Sim  = a.last2 && f.last ? jaroW(a.last2, (f.tokens?.slice(-2)||[]).join(' ')) : 0;
-
-    const firstSim  = jaroW(a.first, f.first);
+    const lastSim   = jaroWinkler(a.last, f.last);
+    const firstSim  = jaroWinkler(a.first, f.first);
     const initialHit= (a.fin && f.fin && a.fin===f.fin) ? 1 : 0;
+    const fullSim   = jaroWinkler(_normName(authorName), _normName(facRow.name));
 
-    const fullSim   = jaroW(_normName(authorName), _normName(facRow.name));
-
-    let score = 0.42*(lastExact ? 1 : Math.max(last2Sim, lastSim))
-              + 0.23*Math.max(firstSim, initialHit*0.95)
+    let score = 0.42*(lastExact ? 1 : lastSim)
+              + 0.23*Math.max(firstSim, initialHit?0.95:0)
               + 0.27*fullSim;
 
+    // token overlap boost
     const aTok = new Set(a.tokens), fTok = new Set(f.tokens);
     let overlap=0; for (const t of aTok) if (fTok.has(t)) overlap++;
     score += Math.min(0.08, overlap*0.02);
@@ -166,120 +150,111 @@
     return Math.min(1, score);
   }
 
-  function candidateRowsFor(authorName){
+  function matchFaculty(authorName){
     const a = parsePerson(authorName);
-    if (!a.last) return [];
+    if (!a.last) return null;
 
-    const set = new Set();
-    const pushAll = (arr)=>{ if (!arr) return; for (const r of arr) set.add(r); };
+    let candidates = facBuckets.get(a.last) || [];
 
-    pushAll(facFullMap.get(_normName(authorName)));
-    pushAll(facBuckets1.get(a.last));
-
-    const toks = a.tokens;
-    if (toks.length>=2) pushAll(facBuckets2.get(toks[toks.length-2]));
-    pushAll(facBuckets12.get(_normName(a.last2)));
-
-    if (set.size < 1){
-      for (const [key, arr] of facBuckets1){ if (jaroW(a.last,key) >= 0.92) pushAll(arr); }
+    if (!candidates.length){
+      // allow near last-name buckets (diacritics / minor variants)
+      for (const [last, arr] of facBuckets){
+        if (jaroWinkler(a.last, last) >= 0.92) { candidates = candidates.concat(arr); }
+      }
     }
-    return [...set];
-  }
+    if (!candidates.length) return null;
 
-  function matchFacultyWithScore(authorName){
-    const cand = candidateRowsFor(authorName);
-    if (!cand.length) return null;
     let best=null, bestScore=0;
-    for (const fac of cand){
+    for (const fac of candidates){
       const s = scoreAuthorToFaculty(authorName, fac);
       if (s>bestScore){ bestScore=s; best=fac; }
     }
     return (best && bestScore>=FACULTY_SCORE_MIN) ? { fac:best, score:bestScore } : null;
   }
 
-  /* --------------- dataset helper (✓ FIX) --------------- */
-  function getCurrentPubs(){
-    // Prefer filtered; fall back to all
+  // -------- Publications access + home-author detection --------
+  function currentPubs(){
     if (Array.isArray(window.filtered) && window.filtered.length) return window.filtered;
     if (Array.isArray(window.all) && window.all.length) return window.all;
     return [];
   }
 
-  /* --------------- stats (uses home-authors + fallback) --------------- */
-  function computeFacultyStats(){
+  const UPES_ROR = '04q2jes40';
+  const UPES_KW  = /(university of petroleum|energy studies|^upes\b)/i;
+
+  // Accepts: array OR string (comma/semicolon/NEWLINE/|/<br>)
+  function homesFromAny(p){
+    if (Array.isArray(p.home_authors) && p.home_authors.length){
+      return p.home_authors.map(s => String(s).trim()).filter(Boolean);
+    }
+    if (typeof p.home_authors === 'string' && p.home_authors.trim()){
+      const s = p.home_authors.replace(/<br\s*\/?>/gi,'\n').replace(/[，、]/g, ',');
+      return s.split(/[,;\n\r|]+/)
+              .map(t => t.replace(/\s+/g,' ').replace(/^[\s.'"-]+|[\s.'"-]+$/g,''))
+              .filter(Boolean);
+    }
+    // Fallback: infer from OpenAlex authorships
+    const out = [];
+    const A = Array.isArray(p.authorships) ? p.authorships : [];
+    for (const a of A){
+      const nm = a?.author?.display_name || a?.display_name;
+      if (!nm) continue;
+      const insts = Array.isArray(a?.institutions) ? a.institutions : [];
+      const isHome = insts.some(i => {
+        const r = (i?.ror||'').split('/').pop()?.toLowerCase();
+        const n = (i?.display_name||'').toLowerCase();
+        return (r===UPES_ROR) || UPES_KW.test(n);
+      });
+      if (isHome) out.push(nm);
+    }
+    return [...new Set(out)];
+  }
+
+  // -------- Compute & render --------
+  function computeFacultyStatsFromHomeAuthors(){
     facultyStats.clear();
-    authorMappings = [];
+    authorMappings.length = 0;
 
-    const pubs = getCurrentPubs();
-    if (!pubs.length || !facultyRows.length) return;
+    const pubs = currentPubs();
+    if (!pubs.length || !facBuckets.size) return;
 
-    const getHomes = (p) => {
-      let homes = p.home_authors;
-      if (Array.isArray(homes)) return homes.filter(Boolean);
-      if (typeof homes === 'string') return homes.split(/[,;]\s*/).filter(Boolean);
-      if (typeof window.deriveHomeAuthors === 'function') {
-        const derived = window.deriveHomeAuthors(p) || [];
-        return Array.isArray(derived) ? derived.filter(Boolean) : [];
-      }
-      return [];
-    };
-
-    const seen = new Set();
     for (const p of pubs){
-      const homes = getHomes(p);
+      const homes = homesFromAny(p);
       if (!homes.length) continue;
 
       for (const author of homes){
-        const dedupKey = `${(p.id||p.work_id||p.openalex||p.doi||p.title||'')}\u241F${author}`;
-        if (seen.has(dedupKey)) continue;
+        const hit = matchFaculty(author);
+        if (!hit) continue;
 
-        const match = matchFacultyWithScore(author);
-        if (!match) continue;
-
-        const { fac, score } = match;
-        seen.add(dedupKey);
-
+        const fac = hit.fac;
         const key = fac.emp || fac.name;
         const stat = facultyStats.get(key) || { fac, pubs:0, patents:0, dpatents:0 };
         stat.pubs += 1;
+
         const t = String(p.type || p.type_crossref || '').toLowerCase();
         if (t.includes('design') && t.includes('patent')) stat.dpatents += 1;
         else if (t.includes('patent')) stat.patents += 1;
+
         facultyStats.set(key, stat);
 
         authorMappings.push({
           home_author: author,
-          match_score: Number(score.toFixed(4)),
-          matched: {
-            emp: fac.emp || null,
-            name: fac.name || '',
-            department: fac.dept || '',
-            school: fac.school || '',
-            institute: fac.inst || '',
-            status: fac.status || '',
-            type: fac.type || '',
-            profile_url: fac.profile_url || buildFacultyLink(fac)
-          },
+          match_score: +hit.score.toFixed(4),
+          matched: { emp:fac.emp, name:fac.name, dept:fac.dept, school:fac.school, inst:fac.inst, profile_url:fac.profile_url||'' },
           publication: {
-            id: p.id || p.work_id || p.openalex || null,
-            doi: p.doi || null,
-            title: p.title || '',
             year: p.year ?? null,
+            title: p.title || '',
             journal: p.journal || '',
-            type: p.type || p.type_crossref || '',
-            url: p.url || ''
+            doi: p.doi || '',
+            url: p.url || '',
+            type: p.type || p.type_crossref || ''
           }
         });
       }
     }
-
-    facCardRows = [...facultyStats.values()]
-      .sort((a,b)=> b.pubs - a.pubs || (a.fac.name||'').localeCompare(b.fac.name||''));
-    facCardPage = 1;
   }
 
-  /* --------------- UI --------------- */
-  function renderSummary(){
+  function renderFacultySummary(){
     const el = document.getElementById('facSummary'); if (!el) return;
     const total = facultyRows.length;
     const matched = facultyStats.size;
@@ -287,59 +262,64 @@
     const pats = [...facultyStats.values()].reduce((s,x)=>s+x.patents,0);
     const dpats= [...facultyStats.values()].reduce((s,x)=>s+x.dpatents,0);
     el.innerHTML = `
-      <div>Faculty in file: <b>${num(total)}</b></div>
-      <div>Faculty with at least 1 publication in current view: <b>${num(matched)}</b></div>
-      <div>Publications attributed (view): <b>${num(pubs)}</b></div>
-      <div>Patents: <b>${num(pats)}</b> · Design patents: <b>${num(dpats)}</b></div>
+      <div>Faculty in file: <b>${_num(total)}</b></div>
+      <div>Faculty with at least 1 publication in current view: <b>${_num(matched)}</b></div>
+      <div>Publications attributed (view): <b>${_num(pubs)}</b></div>
+      <div>Patents: <b>${_num(pats)}</b> · Design patents: <b>${_num(dpats)}</b></div>
     `;
   }
 
-  function renderTop(){
+  function renderFacultyTop(){
     const el = document.getElementById('facTop'); if (!el) return;
     const rows = [...facultyStats.values()].sort((a,b)=>b.pubs-a.pubs).slice(0,10);
     if (!rows.length){ el.textContent = '—'; return; }
     el.innerHTML = rows.map(x=>{
-      const href = buildFacultyLink(x.fac);
+      const name = _esc(x.fac.name);
+      const right = `<div class="text-2xl font-semibold">${x.pubs}</div>
+                     <div class="text-xs text-slate-500">Publications</div>
+                     <div class="mt-1 text-xs">
+                       <span class="badge">Patents: ${x.patents}</span>
+                       <span class="badge">Design: ${x.dpatents}</span>
+                     </div>`;
+      const linkStart = x.fac.profile_url ? `<a class="text-indigo-600 hover:underline" href="${_esc(x.fac.profile_url)}" target="_blank">` : '';
+      const linkEnd   = x.fac.profile_url ? `</a>` : '';
       return `
         <div class="flex items-center justify-between border-b last:border-0 py-2">
-          <div class="font-medium"><a href="${esc(href)}" target="_blank" class="text-indigo-600 hover:underline">${esc(x.fac.name)}</a></div>
-          <div class="text-slate-600 text-sm">Pubs: <b>${x.pubs}</b></div>
-        </div>`;
+          <div class="font-medium">${linkStart}${name}${linkEnd}</div>
+          <div class="text-slate-600 text-sm">${right}</div>
+        </div>
+      `;
     }).join('');
-    if (window.lucide) window.lucide.createIcons();
   }
 
-  function renderCards(){
-    const wrap = document.getElementById('facList'); if (!wrap) return;
+  function renderFacultyList(){
+    const el = document.getElementById('facList'); if (!el) return;
     const q = (document.getElementById('facSearch')?.value || '').toLowerCase().trim();
-
-    let rows = facCardRows;
+    let rows = [...facultyStats.values()];
     if (q){
       rows = rows.filter(x=>{
         const hay = `${x.fac.name} ${x.fac.dept} ${x.fac.school} ${x.fac.inst}`.toLowerCase();
         return hay.includes(q);
       });
     }
-
-    const total = rows.length;
-    const start = (facCardPage-1)*facCardPageSize;
-    const pageRows = rows.slice(start, start+facCardPageSize);
-
-    if (!pageRows.length){ wrap.innerHTML = '<div class="text-sm text-slate-500">No matches.</div>'; return; }
-
-    wrap.innerHTML = pageRows.map(x=>{
-      const href = buildFacultyLink(x.fac);
+    rows.sort((a,b)=> b.pubs - a.pubs);
+    if (!rows.length){ el.innerHTML = '<div class="text-sm text-slate-500">No matches.</div>'; return; }
+    el.innerHTML = rows.map(x=>{
+      const prof = x.fac.profile_url ? `<a class="text-indigo-600 hover:underline" href="${_esc(x.fac.profile_url)}" target="_blank">Profile</a>` : '';
       return `
       <div class="border rounded-xl p-3 hover:bg-slate-50">
         <div class="flex items-center gap-3">
           <div class="h-12 w-12 rounded-full bg-slate-200 grid place-content-center"><i data-lucide="user"></i></div>
           <div class="flex-1">
-            <div class="font-semibold"><a href="${esc(href)}" target="_blank" class="text-indigo-600 hover:underline">${esc(x.fac.name || '—')}</a></div>
-            <div class="text-xs text-slate-500">${esc(x.fac.school || '')}${x.fac.school ? ' · ' : ''}${esc(x.fac.dept || '')}</div>
-            <div class="text-xs text-slate-500">${esc(x.fac.inst || '')}</div>
-            <div class="text-xs text-slate-500">${x.fac.emp ? 'EMP ID: '+esc(x.fac.emp) : ''}</div>
+            <div class="font-semibold">${_esc(x.fac.name || '—')}</div>
+            <div class="text-xs text-slate-500">
+              ${_esc(x.fac.school || '')}${x.fac.school ? ' · ' : ''}${_esc(x.fac.dept || '')}
+            </div>
+            <div class="text-xs text-slate-500">${_esc(x.fac.inst || '')}</div>
+            <div class="text-xs text-slate-500">${x.fac.emp ? 'EMP ID: '+_esc(x.fac.emp) : ''}</div>
+            ${prof ? `<div class="text-xs mt-1">${prof}</div>` : ''}
           </div>
-          <div class="text-right min-w-[140px]">
+          <div class="text-right">
             <div class="text-2xl font-semibold">${x.pubs}</div>
             <div class="text-xs text-slate-500">Publications</div>
             <div class="mt-1 text-xs">
@@ -350,131 +330,112 @@
         </div>
       </div>`;
     }).join('');
-
-    const pagerId = 'facPager';
-    let pager = document.getElementById(pagerId);
-    if (!pager){
-      pager = document.createElement('div');
-      pager.id = pagerId;
-      pager.className = 'mt-3 flex items-center justify-between text-xs text-slate-600';
-      wrap.after(pager);
-    }
-    const pages = Math.max(1, Math.ceil(total / facCardPageSize));
-    if (facCardPage > pages) facCardPage = pages;
-
-    pager.innerHTML = `
-      <div>Showing ${num(Math.min(start+1, total))}–${num(Math.min(start+pageRows.length, total))} of ${num(total)}</div>
-      <div class="flex gap-2">
-        <button class="px-2 py-1 rounded-lg border" ${facCardPage<=1?'disabled':''} onclick="window._facNav('first')">« First</button>
-        <button class="px-2 py-1 rounded-lg border" ${facCardPage<=1?'disabled':''} onclick="window._facNav('prev')">‹ Prev</button>
-        <button class="px-2 py-1 rounded-lg border" ${facCardPage>=pages?'disabled':''} onclick="window._facNav('next')">Next ›</button>
-        <button class="px-2 py-1 rounded-lg border" ${facCardPage>=pages?'disabled':''} onclick="window._facNav('last')">Last »</button>
-      </div>`;
-    if (window.lucide) window.lucide.createIcons();
+    if (window.lucide) lucide.createIcons();
   }
-  window._facNav = (w)=>{ const rows = facCardRows.length; const pages = Math.max(1, Math.ceil(rows / facCardPageSize));
-    if (w==='first') facCardPage=1; else if (w==='prev' && facCardPage>1) facCardPage--; else if (w==='next' && facCardPage<pages) facCardPage++; else if (w==='last') facCardPage=pages;
-    renderCards();
-  };
 
-  /* --------------- IO + wiring --------------- */
+  // -------- File reading / wiring --------
   async function readWorkbook(file){
     const data = await file.arrayBuffer();
-    return window.XLSX.read(new Uint8Array(data), {type:'array'});
+    return XLSX.read(new Uint8Array(data), {type:'array'});
   }
-  const setFacStatus = txt => { const el=document.getElementById('facStatus'); if (el) el.textContent = txt||''; };
+  function setFacStatus(txt){
+    const el=document.getElementById('facStatus');
+    if (el) el.textContent = txt||'';
+  }
 
-  function exportJSON(){
-    const faculty_summary = [...facultyStats.values()].map(x => ({
-      emp: x.fac.emp || null, name: x.fac.name || '', department: x.fac.dept || '',
-      school: x.fac.school || '', institute: x.fac.inst || '', status: x.fac.status || '',
-      type: x.fac.type || '', publications: x.pubs || 0, patents: x.patents || 0, design_patents: x.dpatents || 0,
-      profile_url: x.fac.profile_url || buildFacultyLink(x.fac)
+  function exportFacultyJSON(){
+    if (!facultyStats.size) return;
+    const rows=[...facultyStats.values()].map(s=>({
+      emp: s.fac.emp, name: s.fac.name, dept: s.fac.dept, school: s.fac.school, institute: s.fac.inst,
+      status: s.fac.status, type: s.fac.type, profile_url: s.fac.profile_url||'',
+      pubs: s.pubs, patents: s.patents, design_patents: s.dpatents
     }));
-    const payload = { generated: new Date().toISOString(), faculty_summary, author_mappings: authorMappings };
-    const blob = new Blob([JSON.stringify(payload, null, 2)], { type: 'application/json' });
-    const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = 'faculty_mapping.json'; a.click(); URL.revokeObjectURL(a.href);
+    const out = {
+      version: FAC_VERSION,
+      threshold: FACULTY_SCORE_MIN,
+      matched_faculty: rows,
+      author_mappings: authorMappings
+    };
+    const blob = new Blob([JSON.stringify(out,null,2)], {type:'application/json'});
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(blob);
+    a.download = 'faculty_mapping.json';
+    a.click();
+    URL.revokeObjectURL(a.href);
   }
 
-  function exportCSV(){
-    if (!authorMappings.length) return;
-    const header = ['home_author','match_score','emp','name','department','school','institute','status','type','profile_url','pub_id','doi','title','year','journal','type_pub','url'];
-    const rows = authorMappings.map(m=>[
-      m.home_author, m.match_score,
-      m.matched.emp, m.matched.name, m.matched.department, m.matched.school, m.matched.institute, m.matched.status, m.matched.type, m.matched.profile_url,
-      m.publication.id, m.publication.doi, m.publication.title, m.publication.year, m.publication.journal, m.publication.type, m.publication.url
-    ]);
-    const csv = [header.map(qcsv).join(',')].concat(rows.map(r=>r.map(qcsv).join(','))).join('\n');
-    const a = document.createElement('a'); a.href = URL.createObjectURL(new Blob([csv],{type:'text/csv'})); a.download='author_mappings.csv'; a.click(); URL.revokeObjectURL(a.href);
-  }
-
-  function recomputeAndRender(){
-    computeFacultyStats();
-    renderSummary();
-    renderTop();
-    renderCards();
-  }
-
+  // -------- Bootstrap --------
   document.addEventListener('DOMContentLoaded', () => {
+    // Upload Excel
     const input = document.getElementById('facFile');
     if (input){
       input.addEventListener('change', async (e) => {
-        const file = e.target.files[0]; if (!file) return;
+        const file = e.target.files[0];
+        if (!file) return;
         setFacStatus('Reading file…');
         try{
           const wb = await readWorkbook(file);
           const sheetName = wb.SheetNames[0];
-          const rows = window.XLSX.utils.sheet_to_json(wb.Sheets[sheetName], {defval:''});
+          const rows = XLSX.utils.sheet_to_json(wb.Sheets[sheetName], {defval:''});
           facultyRows = normalizeFacultyRows(rows);
           buildFacultyBuckets(facultyRows);
           document.getElementById('facExportBtn')?.classList.remove('hidden');
-          document.getElementById('facExportCsvBtn')?.classList.remove('hidden');
           setFacStatus(`Loaded ${facultyRows.length} faculty rows.`);
-          recomputeAndRender(); // run immediately using filtered OR all
+          computeFacultyStatsFromHomeAuthors();
+          renderFacultySummary(); renderFacultyTop(); renderFacultyList();
         }catch(err){
           setFacStatus('Failed: ' + err.message);
           console.error(err);
         }
       });
     }
+    // Export button (if present)
+    const exp = document.getElementById('facExportBtn');
+    if (exp) exp.addEventListener('click', exportFacultyJSON);
 
-    // Recompute after every filter application
-    const hook = () => { if (!facultyRows.length) return; recomputeAndRender(); };
+    // Recompute after every filter application (when `filtered` changes)
+    const hook = () => {
+      if (!facBuckets.size) return;            // need uploaded faculty
+      computeFacultyStatsFromHomeAuthors();
+      renderFacultySummary(); renderFacultyTop(); renderFacultyList();
+    };
+
+    // If applyFilters already exists, wrap it; else wrap later.
     const wrapApply = () => {
       if (typeof window.applyFilters === 'function' && !window.applyFilters.__facWrapped){
         const orig = window.applyFilters;
         window.applyFilters = function(goToPage=1){ orig(goToPage); hook(); };
         window.applyFilters.__facWrapped = true;
+      } else {
+        // if user never visits Publications/filters, still try once
+        hook();
       }
     };
-    wrapApply(); setTimeout(wrapApply, 0);
+    wrapApply();
+    setTimeout(wrapApply, 0);
 
-    // Wire exports
-    document.getElementById('facExportBtn')?.addEventListener('click', exportJSON);
-    document.getElementById('facExportCsvBtn')?.addEventListener('click', exportCSV);
-
-    // Live search
-    document.getElementById('facSearch')?.addEventListener('input', ()=>{ facCardPage=1; renderCards(); });
-
-    // Run once on load (will use `all` until user filters)
-    setTimeout(()=>{ if (facultyRows.length) recomputeAndRender(); }, 0);
+    // live search in list
+    const s = document.getElementById('facSearch');
+    if (s) s.addEventListener('input', renderFacultyList);
   });
 
-  /* --------------- console helpers --------------- */
+  // -------- Small public helpers --------
   window.setFacultyThreshold = (x)=>{
     const v = Number(x);
-    if (!Number.isFinite(v) || v<=0 || v>1) { console.warn('Threshold must be (0,1]. Keeping', FACULTY_SCORE_MIN); return; }
-    FACULTY_SCORE_MIN = v; console.log('Faculty threshold set to', v); recomputeAndRender();
+    if (!isNaN(v) && v>0 && v<=1){ FACULTY_SCORE_MIN = v; console.log('Faculty threshold set to', v); computeFacultyStatsFromHomeAuthors(); renderFacultySummary(); renderFacultyTop(); renderFacultyList(); }
   };
-  window.fac = window.fac || {};
-  window.fac.debug = (name)=>{
-    const cand = candidateRowsFor(name).map(f=>({candidate: f.name, score: scoreAuthorToFaculty(name,f)}))
-                  .sort((a,b)=>b.score-a.score).slice(0,12);
-    console.table(cand.map(x=>({candidate:x.candidate, score:x.score.toFixed(3)})));
-    return cand;
+  // quick debug: fac.debug("First Last")
+  window.fac = {
+    version: FAC_VERSION,
+    debug(name){
+      const a = parsePerson(name);
+      const cands = (a.last && facBuckets.get(a.last)) ? facBuckets.get(a.last) : [];
+      const scored = cands.map(f=>({candidate:f.name, emp:f.emp, score:scoreAuthorToFaculty(name,f)}))
+                          .sort((p,q)=>q.score-p.score).slice(0,10);
+      console.table(scored.map(x=>({candidate:x.candidate, emp:x.emp, score:x.score.toFixed(3)})));
+      return scored;
+    }
   };
-  // Force compute over ALL publications, ignoring current filters:
-  window.fac.forceAll = ()=>{ const keep = window.filtered; window.filtered = Array.isArray(window.all)?window.all.slice():[]; recomputeAndRender(); window.filtered = keep; };
 })();
 </script>
 
