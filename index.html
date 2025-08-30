@@ -368,8 +368,7 @@
     </section>
       <!-- FACULTY -->
     
-<!-- ===================== FACULTY (safe, namespaced) ===================== -->
-    <script>
+<!-- ===================== FACULTY (final, namespaced) ===================== -->
 <section id="view-faculty" class="hidden space-y-4">
   <div class="card p-4">
     <div class="flex items-start justify-between gap-4">
@@ -424,16 +423,17 @@
 
 <script>
 (() => {
-  // ——— helpers (scoped, no globals) ———
+  // ---------- helpers (scoped) ----------
   const $ = id => document.getElementById(id);
   const esc = s => String(s).replace(/[&<>"']/g, m => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m]));
   const num = n => (n||0).toLocaleString();
   const deacc = s => String(s||'').normalize('NFKD').replace(/[\u0300-\u036f]/g,'');
   const normName = s => deacc(s).toLowerCase().replace(/[\.\(\)\[\]\{\}]/g,' ').replace(/[^a-z\s-]/g,' ').replace(/\s+/g,' ').trim();
+
   const HOME_ROR = '04q2jes40';
   const HOME_KW  = /(university of petroleum|energy studies|^upes\b)/i;
 
-  const parsePerson = (s) => {
+  function parsePerson(s){
     const raw = String(s||'').trim();
     if (!raw) return { raw:s, tokens:[], last:'', first:'', fin:'' };
     if (raw.includes(',')){
@@ -445,10 +445,10 @@
       const tokens=(L+' '+R).trim().split(/\s+/).filter(Boolean);
       return { raw, tokens, last, first, fin:first?first[0]:'' };
     }
-    const n = normName(raw), t=n.split(' ').filter(Boolean);
+    const n = normName(raw), t = n.split(' ').filter(Boolean);
     const first=t[0]||'', last=t[t.length-1]||'';
     return { raw, tokens:t, last, first, fin:first?first[0]:'' };
-  };
+  }
 
   function jaro(a,b){
     if (a===b) return 1;
@@ -469,18 +469,18 @@
   }
   const jw = (a,b)=>{ const j=jaro(a,b); let l=0; const max=4; while(l<Math.min(a.length,b.length,max)&&a[l]===b[l]) l++; return j + l*0.1*(1-j); };
 
-  // ——— local state ———
+  // ---------- local state ----------
   let facultyRows = [];                 // normalized rows from Excel
   const facBuckets = new Map();         // last-name -> rows
   const facultyStats = new Map();       // key -> { fac, pubs, patents, dpatents }
-  const authorMappings = [];            // export detail for QA
+  const authorMappings = [];            // export details
   const MIN_SCORE = 0.80;
 
-  // Pull publications from your app safely (current view first)
+  // publications from the app (prefer current filtered view if present)
   const currentPubs = () => (Array.isArray(window.filtered) && window.filtered.length ? window.filtered
                            : Array.isArray(window.all) ? window.all : []);
 
-  // Fallback author extractors (avoid colliding with page helpers)
+  // fallback author extractors (avoid clashing with page helpers)
   function facAuthors(p){
     if (Array.isArray(p.authors)) return p.authors;
     const out=[];
@@ -516,15 +516,15 @@
     const key=s=>String(s||'').toLowerCase().trim();
     const grab=(row,keys)=>{ for(const k of keys){ for(const rk of Object.keys(row)){ if(key(rk)===key(k)) return String(row[rk]??'').trim(); } } return ''; };
     return rows.map(r=>{
-      const name  = grab(r,['FACULTY NAME','NAME','EMPLOYEE NAME']);
-      const emp   = grab(r,['EMP NO','EMP ID','EMPLOYEE ID','EMPID','EMP_NO','EMP']);
-      const dept  = grab(r,['DEPARTMENT','DEPT']);
-      const inst  = grab(r,['INSTITUTE','INSTITUTION']);
-      const school= grab(r,['SCHOOL']);
-      const status= grab(r,['STATUS']);
-      const type  = grab(r,['TYPE','ROLE']);
-      const profile= grab(r,['PROFILE URL','URL','LINK']);
-      const p=parsePerson(name);
+      const name   = grab(r, ['FACULTY NAME','NAME','EMPLOYEE NAME']);
+      const emp    = grab(r, ['EMP NO','EMP ID','EMPLOYEE ID','EMPID','EMP_NO','EMP']);
+      const dept   = grab(r, ['DEPARTMENT','DEPT']);
+      const inst   = grab(r, ['INSTITUTE','INSTITUTION']);
+      const school = grab(r, ['SCHOOL']);
+      const status = grab(r, ['STATUS']);              /* ✅ fixed */
+      const type   = grab(r, ['TYPE','ROLE']);
+      const profile= grab(r, ['PROFILE URL','URL','LINK']);
+      const p = parsePerson(name);
       return { emp,name,dept,inst,school,status,type,profile_url:profile,_p:p };
     }).filter(x=>x.name);
   }
@@ -687,6 +687,12 @@
       facultyRows = normalizeFacultyRows(rows);
       buildBuckets(facultyRows);
       setStatus(`Loaded ${facultyRows.length} faculty rows.`);
+      // warm authors/home_authors once to avoid repeated parsing
+      const pubs=currentPubs();
+      for (const p of pubs){
+        if (!Array.isArray(p.authors)) p.authors = facAuthors(p);
+        if (!Array.isArray(p.home_authors)) p.home_authors = facHomeAuthors(p);
+      }
       refreshUI();
     }catch(err){
       console.error(err);
@@ -694,7 +700,7 @@
     }
   }
 
-  // Expose tiny API for buttons
+  // ---------- tiny public API ----------
   window.faculty = {
     exportJSON(){
       if (!facultyStats.size) return;
@@ -710,27 +716,16 @@
     renderList
   };
 
-  // Wire events
+  // ---------- wire events ----------
   $('facFile')?.addEventListener('change', onFile);
 
-  // Recompute when your main filters refresh (if you call applyFilters, also call this event)
+  // Recompute when your main filters finish applying (emit this from your app after applyFilters)
   document.addEventListener('app:filters-applied', refreshUI);
 
-  // If publications are already loaded globally, pre-warm authors arrays
-  (function warm(){
-    const pubs=currentPubs();
-    if (!pubs.length) return;
-    for (const p of pubs){
-      if (!Array.isArray(p.authors)) p.authors = facAuthors(p);
-      if (!Array.isArray(p.home_authors)) p.home_authors = facHomeAuthors(p);
-    }
-  })();
-
-  // First hint
   setStatus('Upload the faculty Excel to begin.');
 })();
 </script>
-<!-- =================== /FACULTY (safe, namespaced) =================== -->
+<!-- =================== /FACULTY (final) =================== -->
 
 
   </div>
