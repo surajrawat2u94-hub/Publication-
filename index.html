@@ -8,278 +8,122 @@
   <!-- Tailwind -->
   <script src="https://cdn.tailwindcss.com"></script>
 <script>
-/* =========================
-   FACULTY MAPPING MODULE
-   ========================= */
-(function(){
-  const STORAGE_KEY = 'faculty_mapping_v1';
+async function autoLoad(){
+  try{
+    const res = await fetch('institution_data.json', { cache:'no-store' });
+    if (!res.ok) throw new Error('institution_data.json not found');
+    const j = await res.json();
 
-  const fac = {
-    rows: [],
-    idxExact: new Map(),
-    idxLoose: new Map(),
+    document.getElementById('lastSynced').textContent =
+      j.updated ? `Last synced: ${dayjs(j.updated).format('DD MMM YYYY, HH:mm')}` : '';
 
-    init(){
-      // wire upload
-      const inp = document.getElementById('facFile');
-      if (inp) inp.addEventListener('change', (e)=>{
-        const f = e.target.files?.[0];
-        if (!f) return;
-        this.readFile(f);
-      });
+    all = Array.isArray(j.items) ? j.items : [];
 
-      // export button
-      const btn = document.getElementById('facExportBtn');
-      if (btn) btn.addEventListener('click', ()=> this.exportJSON());
+    // ✅ Preserve any home authors already present in JSON; only derive if missing
+    for (const p of all){
+      if (!Array.isArray(p.authors)) p.authors = deriveAuthors(p);
 
-      // restore from localStorage
-      try{
-        const saved = localStorage.getItem(STORAGE_KEY);
-        if (saved){
-          const data = JSON.parse(saved);
-          if (Array.isArray(data.rows) && data.rows.length){
-            this.rows = data.rows;
-            this.buildIndex();
-            this.showStatus();
-            this.toggleExport(true);
-          }
-        }
-      }catch{}
+      const existing =
+          p.home_authors ??
+          p['Home authors'] ??
+          p['home authors'] ??
+          null;
 
-      // initial compute once publications load
-      setTimeout(()=>this.recompute(), 0);
-    },
-
-    /* ---------- File ingest ---------- */
-    async readFile(file){
-      const name = (file.name||'').toLowerCase();
-      try{
-        let rows = [];
-        if (name.endsWith('.csv')){
-          const txt = await file.text();
-          rows = this.parseRowsFromArray(this.csvToObjects(txt));
-        } else {
-          const buf = await file.arrayBuffer();
-          const wb = XLSX.read(buf, { type:'array' });
-          const sheet = wb.Sheets[wb.SheetNames[0]];
-          const raw = XLSX.utils.sheet_to_json(sheet, { defval:'' });
-          rows = this.parseRowsFromArray(raw);
-        }
-        this.rows = rows;
-        this.buildIndex();
-        localStorage.setItem(STORAGE_KEY, JSON.stringify({rows:this.rows}));
-        this.showStatus();
-        this.toggleExport(true);
-        this.recompute();
-      }catch(err){
-        this.setStatus('Failed to read file: '+ err.message);
+      if (existing && (
+            (Array.isArray(existing) && existing.length) ||
+            (typeof existing === 'string' && existing.trim())
+          )) {
+        p.home_authors = (typeof existing === 'string'
+          ? existing.replace(/<br\s*\/?>/gi, '\n').split(/[,;\n\r|]+/)
+          : existing
+        ).map(s => String(s).trim()).filter(Boolean);
+      } else {
+        const derived = deriveHomeAuthors(p);
+        p.home_authors = derived.length ? derived : [];
       }
-    },
-
-    csvToObjects(text){
-      const lines = text.split(/\r?\n/).filter(l=>l.trim().length);
-      if (!lines.length) return [];
-      const delim = (lines[0].match(/;/g)||[]).length > (lines[0].match(/,/g)||[]).length ? ';' : ',';
-      const split = (line)=>{
-        const out=[]; let cur=''; let q=false;
-        for (let i=0;i<line.length;i++){
-          const ch=line[i];
-          if (ch === '"'){ q=!q; continue; }
-          if (ch === delim && !q){ out.push(cur); cur=''; continue; }
-          cur+=ch;
-        }
-        out.push(cur);
-        return out.map(s=>s.trim());
-      };
-      const hdr = split(lines.shift());
-      return lines.map(l=>{
-        const cols = split(l);
-        const obj={};
-        hdr.forEach((h,i)=> obj[h]=cols[i]??'');
-        return obj;
-      });
-    },
-
-    parseRowsFromArray(arr){
-      const pick = (row, keys)=> {
-        for (const k of keys){
-          if (row[k] != null && String(row[k]).trim()) return String(row[k]).trim();
-        }
-        return '';
-      };
-      const rows = [];
-      for (const r of arr){
-        const name = pick(r, ['FACULTY NAME','Faculty Name','FACULTY','Faculty','FULL NAME','Name']);
-        if (!name) continue;
-        rows.push({
-          emp_no: pick(r, ['EMP NO','EMP NO.','EMPLOYEE ID','Employee ID','EMP_NO','EMPID','ID']),
-          name,
-          department: pick(r, ['DEPARTMENT','Department']),
-          institute:  pick(r, ['INSTITUTE','Institute']),
-          school:     pick(r, ['SCHOOL','School']),
-          status:     pick(r, ['STATUS','Status']),
-          type:       pick(r, ['TYPE','Type']),
-        });
-      }
-      return rows;
-    },
-
-    /* ---------- Index & keys ---------- */
-    buildIndex(){
-      this.idxExact = new Map();
-      this.idxLoose = new Map();
-      const add = (map, key, i)=>{
-        if (!key) return;
-        const prev = map.get(key);
-        if (prev == null) map.set(key, i);
-        else if (Array.isArray(prev)) prev.push(i);
-        else map.set(key, [prev, i]);
-      };
-      for (let i=0;i<this.rows.length;i++){
-        const nm = this.normName(this.rows[i].name);
-        add(this.idxExact, this.keyExact(nm), i);
-        add(this.idxLoose, this.keyLoose(nm), i);
-      }
-    },
-    normName(s){ return String(s||'').replace(/\./g,'').replace(/\s+/g,' ').trim(); },
-    keyExact(nm){ return nm.toLowerCase(); },
-    keyLoose(nm){
-      const parts = nm.split(' ').filter(Boolean);
-      if (!parts.length) return '';
-      const first = parts[0], last = parts[parts.length-1];
-      const fi = first ? first[0].toLowerCase() : '';
-      return `${last.toLowerCase()},${fi}`;
-    },
-
-    /* ---------- Compute against current filtered publications ---------- */
-    recompute(){
-      const summaryBox = document.getElementById('facSummary');
-      const topBox     = document.getElementById('facTop');
-      const listBox    = document.getElementById('facList');
-
-      if (!summaryBox || !topBox || !listBox) return;
-      if (!Array.isArray(window.filtered)) { summaryBox.textContent='—'; topBox.textContent='—'; listBox.textContent='No matches.'; return; }
-      if (!this.rows.length){ summaryBox.textContent='—'; topBox.textContent='—'; listBox.textContent='No matches.'; return; }
-
-      // Count matched pubs per faculty
-      const counts = new Map(); // facultyIndex -> pubs in current view
-      for (const p of window.filtered){
-        const authors = Array.isArray(p.home_authors) && p.home_authors.length
-          ? p.home_authors
-          : (Array.isArray(p.authors) ? p.authors : deriveAuthors(p));
-        if (!authors || !authors.length) continue;
-
-        const keys = new Set();
-        for (const a of authors){
-          const nm = this.normName(a);
-          if (!nm) continue;
-          keys.add(this.keyExact(nm));
-          keys.add(this.keyLoose(nm));
-        }
-
-        const matched = new Set();
-        for (const k of keys){
-          const exact = this.idxExact.get(k);
-          const loose = this.idxLoose.get(k);
-          const push = (idx)=>{ if(idx==null) return; if(Array.isArray(idx)) idx.forEach(i=>matched.add(i)); else matched.add(idx); };
-          push(exact); push(loose);
-        }
-        matched.forEach(i => counts.set(i, (counts.get(i)||0)+1));
-      }
-
-      // Summary
-      const facWithPub = counts.size;
-      const pubsAttr = [...counts.values()].reduce((a,b)=>a+b,0);
-      summaryBox.innerHTML = `
-        Faculty in file: <strong>${num(this.rows.length)}</strong><br>
-        Faculty with at least 1 publication in current view: <strong>${num(facWithPub)}</strong><br>
-        Publications attributed (view): <strong>${num(pubsAttr)}</strong><br>
-        Patents: <strong>0</strong> · Design patents: <strong>0</strong>
-      `;
-
-      // Top list
-      const top = [...counts.entries()]
-        .sort((a,b)=>b[1]-a[1])
-        .slice(0,12)
-        .map(([i,c])=>({row:this.rows[i], count:c}));
-      topBox.innerHTML = top.length
-        ? top.map(t=>`
-            <div class="flex items-center justify-between border-b border-slate-100 py-2">
-              <div>
-                <div class="font-medium">${esc(t.row.name)}</div>
-                <div class="text-xs text-slate-500">${esc([t.row.department,t.row.school,t.row.institute].filter(Boolean).join(' · '))}</div>
-              </div>
-              <div class="text-right">
-                <div class="text-xl font-semibold">${num(t.count)}</div>
-                <div class="text-xs text-slate-500">Publications</div>
-              </div>
-            </div>
-          `).join('')
-        : '—';
-
-      // Full list (searchable)
-      this.renderList(counts);
-    },
-
-    renderList(counts){
-      const q = (document.getElementById('facSearch')?.value || '').toLowerCase().trim();
-      const listBox = document.getElementById('facList');
-      if (!listBox) return;
-
-      const rows = this.rows.map((r,i)=>({i,r,count:counts.get(i)||0}))
-        .filter(x=>{
-          if (!q) return true;
-          const hay = `${x.r.name} ${x.r.department||''} ${x.r.school||''} ${x.r.institute||''}`.toLowerCase();
-          return hay.includes(q);
-        })
-        .sort((a,b)=> b.count - a.count || a.r.name.localeCompare(b.r.name));
-
-      listBox.innerHTML = rows.length
-        ? rows.map(x=>`
-            <div class="flex items-center justify-between border border-slate-200 rounded-xl p-3">
-              <div>
-                <div class="font-medium">${esc(x.r.name)}</div>
-                <div class="text-xs text-slate-500">${esc([x.r.department,x.r.school,x.r.institute].filter(Boolean).join(' · '))}</div>
-              </div>
-              <div class="text-sm flex flex-wrap gap-2">
-                <span class="badge">Pubs: ${num(x.count)}</span>
-                ${x.r.status ? `<span class="badge">Status: ${esc(x.r.status)}</span>`:''}
-                ${x.r.type   ? `<span class="badge">Type: ${esc(x.r.type)}</span>`  :''}
-              </div>
-            </div>
-          `).join('')
-        : 'No matches.';
-    },
-
-    /* ---------- Status / export ---------- */
-    setStatus(txt){ const el=document.getElementById('facStatus'); if (el) el.textContent = txt; },
-    showStatus(){ this.setStatus(`Loaded ${num(this.rows.length)} faculty rows.`); },
-    toggleExport(show){ const b=document.getElementById('facExportBtn'); if (b) b.classList.toggle('hidden', !show); },
-    exportJSON(){
-      const data = { rows: this.rows };
-      const blob = new Blob([JSON.stringify(data,null,2)], {type:'application/json'});
-      const a = document.createElement('a');
-      a.href = URL.createObjectURL(blob);
-      a.download = 'faculty_mapping.json';
-      a.click();
-      URL.revokeObjectURL(a.href);
     }
-  };
 
-  // expose + wire search
-  window.fac = fac;
-  document.addEventListener('DOMContentLoaded', ()=>{
-    fac.init();
-    const s = document.getElementById('facSearch');
-    if (s) s.addEventListener('input', ()=> fac.recompute());
-  });
+    // Retraction links + SDGs
+    buildRetractionIndex(all);
+    for (const p of all) p.sdg_tags = guessSDGs(p);
 
-  // helper reused from your main script
-  const esc = s => String(s).replace(/[&<>"']/g, m=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m]));
-  const num = n => (n||0).toLocaleString();
-})();
+    document.getElementById('kpiTotal').textContent = num(all.length);
+
+    // Year options
+    const years = [...new Set(all.map(x=>x.year).filter(y=>y!=null))].sort((a,b)=>a-b);
+    const opts = (arr) => ['<option value="">All</option>'].concat(arr.map(y=>`<option value="${y}">${y}</option>`)).join('');
+    document.getElementById('yearFrom').innerHTML = opts(years);
+    document.getElementById('yearTo').innerHTML   = opts(years);
+
+    // SDG options
+    buildSDGOptions();
+
+    // Types
+    computeKnownTypes();
+    buildTypePanel();
+
+    pageSize = parseInt(document.getElementById('pageSize').value,10) || 50;
+
+    buildColumnsPanel();
+    buildSDGLegend();
+    applyFilters(1);
+
+    // Ensure Faculty tab can compute immediately
+    setTimeout(()=>window.fac?.recompute?.(),0);
+  }catch(e){
+    document.getElementById('lastSynced').textContent = 'Error: '+e.message;
+    console.error(e);
+  }
+}
 </script>
 
+  <!-- SheetJS – reads Excel in browser -->
+<script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
+
+  <!-- Icons -->
+  <script src="https://unpkg.com/lucide@latest/dist/umd/lucide.js"></script>
+  <!-- Day.js + Chart.js -->
+  <script src="https://cdn.jsdelivr.net/npm/dayjs@1/dayjs.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+  <!-- Matrix (kept for IF heatmap) -->
+  <script src="https://cdn.jsdelivr.net/npm/chartjs-chart-matrix@2.0.1"></script>
+
+  <style>
+    .card{ background:rgba(255,255,255,.92); border:1px solid rgba(226,232,240,.92);
+           border-radius:16px; box-shadow:0 12px 24px rgba(15,23,42,.08) }
+    .thin-scrollbar::-webkit-scrollbar{height:8px;width:8px}
+    .thin-scrollbar::-webkit-scrollbar-thumb{background:#CBD5E1;border-radius:6px}
+    .thin-scrollbar::-webkit-scrollbar-track{background:#F8FAFC}
+    .tab-active{color:#111827;border-color:#7c3aed;background:linear-gradient(180deg,#fff,#f8fafc)}
+    .tab-inactive{color:#6B7280;border-color:transparent}
+    .dropdown{position:relative}
+    .dropdown-panel{position:absolute;right:0;top:100%;z-index:40}
+    .badge{display:inline-flex;align-items:center;gap:.35rem;padding:.2rem .5rem;border-radius:999px;font-size:.72rem;border:1px solid #e2e8f0;background:#f8fafc}
+    .muted{ color:#64748b }
+    .icon-btn{display:inline-flex;align-items:center;gap:.35rem;padding:.25rem .5rem;
+      border:1px solid #e5e7eb;border-radius:10px;background:#f8fafc}
+    .icon-btn:hover{background:#eef2ff;border-color:#c7d2fe}
+    .focus-overlay{position:fixed;inset:0;background:rgba(2,6,23,.7);backdrop-filter:blur(2px);z-index:60}
+  </style>
+</head>
+<body class="bg-gradient-to-b from-slate-50 to-slate-100 text-slate-900">
+
+  <!-- Header -->
+  <header class="sticky top-0 z-30 bg-gradient-to-r from-indigo-600/90 via-fuchsia-600/90 to-sky-600/90 text-white backdrop-blur">
+    <div class="max-w-7xl mx-auto px-4 py-4 flex items-center justify-between">
+      <div class="flex items-center gap-3">
+        <div class="h-10 w-10 rounded-2xl bg-white/15 grid place-content-center shadow-inner">
+          <i data-lucide="panel-top" class="text-white"></i>
+        </div>
+        <div>
+          <h1 class="text-lg font-semibold tracking-tight">AI Publications Portal</h1>
+          <div id="lastSynced" class="text-xs text-white/80">Loading…</div>
+        </div>
+      </div>
+      <div class="hidden md:flex items-center gap-2 text-xs">
+        <span class="px-2 py-1 rounded-lg bg-white/10 border border-white/20">Static JSON · No live API</span>
+      </div>
+    </div>
 
     <!-- Tabs -->
     <div class="bg-white">
