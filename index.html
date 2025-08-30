@@ -9,14 +9,14 @@
   <script src="https://cdn.tailwindcss.com"></script>
   
 <script>
-/* ================= FACULTY MAPPING — v2.3 (fuzzy, robust, RIMS-style) =================
-   WHAT'S NEW
-   - Stronger candidate search: buckets by last token, 2nd-last token, last-two bigram + token-overlap prefilter
-   - Keeps precomputed p.home_authors (no overwrite)
-   - Per-faculty cards like RIMS (name → profile link), summary, search, paging
-   - Row-level author→faculty join; Export JSON & CSV
-   - Console: fac.debug("Name"), setFacultyThreshold(0.74)
-========================================================================================= */
+/* ================= FACULTY MAPPING — v2.3 (fuzzy, robust, with fallback) =================
+   - Robust to “First Last”, “Last, First”, initials, multi-surnames
+   - Buckets (last, second-last, last-two) + token-overlap prefilter
+   - Uses p.home_authors OR falls back to deriveHomeAuthors(p) if needed  ✅ KEY FIX
+   - RIMS-style faculty cards (name clickable) + summary + search + paging
+   - Exports: mapping JSON (summary + rows) and CSV (row-level author → faculty)
+   - Console: setFacultyThreshold(0.74), fac.debug("Some Name")
+============================================================================================ */
 (() => {
   /* ---------------------- Local state ---------------------- */
   let facultyRows = [];                        // from Excel (normalized)
@@ -33,7 +33,7 @@
 
   /* ---------------------- Link behavior ---------------------- */
   const FACULTY_LINK = {
-    byEmpPrefix: null,  // e.g. "https://rims.upes.ac.in/profile?empId="
+    byEmpPrefix: null,  // e.g. "https://rims.upes.ac.in/profile?empId="  (keep null if unknown)
     searchPrefix: "https://www.google.com/search?q=UPES+RIMS+",
   };
   const buildFacultyLink = (fac) =>
@@ -161,7 +161,7 @@
 
     const fullSim   = jaroW(_normName(authorName), _normName(facRow.name));
 
-    // Weighted blend (slightly favors last-two match for Indian double-surnames)
+    // Slightly favor double-surname alignment
     let score = 0.42*(lastExact ? 1 : Math.max(last2Sim, lastSim))
               + 0.23*Math.max(firstSim, initialHit*0.95)
               + 0.27*fullSim;
@@ -190,13 +190,12 @@
     if (toks.length>=2) pushAll(facBuckets2.get(toks[toks.length-2]));
     pushAll(facBuckets12.get(_normName(a.last2)));
 
-    // If few cands, prefilter by any token overlap
+    // If few cands, allow near-last
     if (set.size < 1){
       for (const [key, arr] of facBuckets1){ if (jaroW(a.last,key) >= 0.92) pushAll(arr); }
     }
-    // If still weak, scan by overlap (limited)
+    // If still weak, prefilter by token overlap (limited)
     if (set.size < 3){
-      // Cheap prefilter: any shared token
       const shared = [];
       for (const r of facultyRows){
         const ft = r._p.tokens;
@@ -221,31 +220,41 @@
     return (best && bestScore>=FACULTY_SCORE_MIN) ? { fac:best, score:bestScore } : null;
   }
 
-  /* ---------------------- Stats + Row-level join ---------------------- */
+  /* ---------------------- Stats + Row-level join (with fallback) ---------------------- */
   function computeFacultyStatsFromHomeAuthors(){
     facultyStats.clear();
     authorMappings = [];
 
-    const filtered = Array.isArray(window.filtered) ? window.filtered : [];
-    if (!filtered.length || !facultyRows.length) return;
+    const filteredArr = Array.isArray(window.filtered) ? window.filtered : [];
+    if (!filteredArr.length || !facultyRows.length) return;
 
-    const seen = new Set(); // avoid duplicate rows (same pub + same author)
-    for (const p of filtered){
+    const getHomes = (p) => {
       let homes = p.home_authors;
-      if (typeof homes === 'string') homes = homes.split(/[,;]\s*/).filter(Boolean);
-      if (!Array.isArray(homes) || !homes.length) continue;
+      if (Array.isArray(homes)) return homes.filter(Boolean);
+      if (typeof homes === 'string') return homes.split(/[,;]\s*/).filter(Boolean);
+      if (typeof window.deriveHomeAuthors === 'function') {
+        const derived = window.deriveHomeAuthors(p) || [];
+        return Array.isArray(derived) ? derived.filter(Boolean) : [];
+      }
+      return [];
+    };
+
+    const seen = new Set();
+    for (const p of filteredArr){
+      const homes = getHomes(p);
+      if (!homes.length) continue;
 
       for (const author of homes){
-        const keyRow = `${(p.id||p.work_id||p.openalex||p.doi||p.title||'')}\u241F${author}`;
-        if (seen.has(keyRow)) continue;
+        const dedupKey = `${(p.id||p.work_id||p.openalex||p.doi||p.title||'')}\u241F${author}`;
+        if (seen.has(dedupKey)) continue;
 
-        const m = matchFacultyWithScore(author);
-        if (!m) continue;
+        const match = matchFacultyWithScore(author);
+        if (!match) continue;
 
-        const { fac, score } = m;
-        seen.add(keyRow);
+        const { fac, score } = match;
+        seen.add(dedupKey);
 
-        // Aggregate per-faculty stats
+        // aggregate per-faculty stats
         const facKey = fac.emp || fac.name;
         const stat = facultyStats.get(facKey) || { fac, pubs:0, patents:0, dpatents:0 };
         stat.pubs += 1;
@@ -254,7 +263,7 @@
         else if (t.includes('patent')) stat.patents += 1;
         facultyStats.set(facKey, stat);
 
-        // Row-level mapping
+        // row-level mapping for export
         authorMappings.push({
           home_author: author,
           match_score: Number(score.toFixed(4)),
@@ -350,7 +359,7 @@
       </div>`;
     }).join('');
 
-    // simple pager under list
+    // simple pager
     const pagerId = 'facPager';
     let pager = document.getElementById(pagerId);
     if (!pager){
@@ -480,11 +489,11 @@
     };
     wrapApply(); setTimeout(wrapApply, 0);
 
-    // Wire export buttons (add a CSV button in your HTML near JSON if you want)
+    // Wire export buttons
     document.getElementById('facExportBtn')?.addEventListener('click', exportJSON);
     document.getElementById('facExportCsvBtn')?.addEventListener('click', exportCSV);
 
-    // Search live
+    // Live search
     document.getElementById('facSearch')?.addEventListener('input', ()=>{ facCardPage=1; renderFacultyCards(); });
   });
 
@@ -507,7 +516,6 @@
   };
 })();
 </script>
-
 
 
   <!-- SheetJS – reads Excel in browser -->
