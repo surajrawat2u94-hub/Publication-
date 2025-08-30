@@ -7,7 +7,54 @@
 
   <!-- Tailwind -->
   <script src="https://cdn.tailwindcss.com"></script>
-<script>
+  <!-- SheetJS – reads Excel in browser -->
+<script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
+
+  <!-- Icons -->
+  <script src="https://unpkg.com/lucide@latest/dist/umd/lucide.js"></script>
+  <!-- Day.js + Chart.js -->
+  <script src="https://cdn.jsdelivr.net/npm/dayjs@1/dayjs.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+  <!-- Matrix (kept for IF heatmap) -->
+  <script src="https://cdn.jsdelivr.net/npm/chartjs-chart-matrix@2.0.1"></script>
+
+  <style>
+    .card{ background:rgba(255,255,255,.92); border:1px solid rgba(226,232,240,.92);
+           border-radius:16px; box-shadow:0 12px 24px rgba(15,23,42,.08) }
+    .thin-scrollbar::-webkit-scrollbar{height:8px;width:8px}
+    .thin-scrollbar::-webkit-scrollbar-thumb{background:#CBD5E1;border-radius:6px}
+    .thin-scrollbar::-webkit-scrollbar-track{background:#F8FAFC}
+    .tab-active{color:#111827;border-color:#7c3aed;background:linear-gradient(180deg,#fff,#f8fafc)}
+    .tab-inactive{color:#6B7280;border-color:transparent}
+    .dropdown{position:relative}
+    .dropdown-panel{position:absolute;right:0;top:100%;z-index:40}
+    .badge{display:inline-flex;align-items:center;gap:.35rem;padding:.2rem .5rem;border-radius:999px;font-size:.72rem;border:1px solid #e2e8f0;background:#f8fafc}
+    .muted{ color:#64748b }
+    .icon-btn{display:inline-flex;align-items:center;gap:.35rem;padding:.25rem .5rem;
+      border:1px solid #e5e7eb;border-radius:10px;background:#f8fafc}
+    .icon-btn:hover{background:#eef2ff;border-color:#c7d2fe}
+    .focus-overlay{position:fixed;inset:0;background:rgba(2,6,23,.7);backdrop-filter:blur(2px);z-index:60}
+  </style>
+</head>
+<body class="bg-gradient-to-b from-slate-50 to-slate-100 text-slate-900">
+
+  <!-- Header -->
+  <header class="sticky top-0 z-30 bg-gradient-to-r from-indigo-600/90 via-fuchsia-600/90 to-sky-600/90 text-white backdrop-blur">
+    <div class="max-w-7xl mx-auto px-4 py-4 flex items-center justify-between">
+      <div class="flex items-center gap-3">
+        <div class="h-10 w-10 rounded-2xl bg-white/15 grid place-content-center shadow-inner">
+          <i data-lucide="panel-top" class="text-white"></i>
+        </div>
+        <div>
+          <h1 class="text-lg font-semibold tracking-tight">AI Publications Portal</h1>
+          <div id="lastSynced" class="text-xs text-white/80">Loading…</div>
+        </div>
+      </div>
+      <div class="hidden md:flex items-center gap-2 text-xs">
+        <span class="px-2 py-1 rounded-lg bg-white/10 border border-white/20">Static JSON · No live API</span>
+      </div>
+    </div>
+    <script>
 /* =====================================================================
    Faculty Mapping (v2.5 adapter for the main portal)
    - Uses the existing global arrays: `all` and `filtered`
@@ -309,54 +356,6 @@
 })();
 </script>
 
-
-  <!-- SheetJS – reads Excel in browser -->
-<script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
-
-  <!-- Icons -->
-  <script src="https://unpkg.com/lucide@latest/dist/umd/lucide.js"></script>
-  <!-- Day.js + Chart.js -->
-  <script src="https://cdn.jsdelivr.net/npm/dayjs@1/dayjs.min.js"></script>
-  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
-  <!-- Matrix (kept for IF heatmap) -->
-  <script src="https://cdn.jsdelivr.net/npm/chartjs-chart-matrix@2.0.1"></script>
-
-  <style>
-    .card{ background:rgba(255,255,255,.92); border:1px solid rgba(226,232,240,.92);
-           border-radius:16px; box-shadow:0 12px 24px rgba(15,23,42,.08) }
-    .thin-scrollbar::-webkit-scrollbar{height:8px;width:8px}
-    .thin-scrollbar::-webkit-scrollbar-thumb{background:#CBD5E1;border-radius:6px}
-    .thin-scrollbar::-webkit-scrollbar-track{background:#F8FAFC}
-    .tab-active{color:#111827;border-color:#7c3aed;background:linear-gradient(180deg,#fff,#f8fafc)}
-    .tab-inactive{color:#6B7280;border-color:transparent}
-    .dropdown{position:relative}
-    .dropdown-panel{position:absolute;right:0;top:100%;z-index:40}
-    .badge{display:inline-flex;align-items:center;gap:.35rem;padding:.2rem .5rem;border-radius:999px;font-size:.72rem;border:1px solid #e2e8f0;background:#f8fafc}
-    .muted{ color:#64748b }
-    .icon-btn{display:inline-flex;align-items:center;gap:.35rem;padding:.25rem .5rem;
-      border:1px solid #e5e7eb;border-radius:10px;background:#f8fafc}
-    .icon-btn:hover{background:#eef2ff;border-color:#c7d2fe}
-    .focus-overlay{position:fixed;inset:0;background:rgba(2,6,23,.7);backdrop-filter:blur(2px);z-index:60}
-  </style>
-</head>
-<body class="bg-gradient-to-b from-slate-50 to-slate-100 text-slate-900">
-
-  <!-- Header -->
-  <header class="sticky top-0 z-30 bg-gradient-to-r from-indigo-600/90 via-fuchsia-600/90 to-sky-600/90 text-white backdrop-blur">
-    <div class="max-w-7xl mx-auto px-4 py-4 flex items-center justify-between">
-      <div class="flex items-center gap-3">
-        <div class="h-10 w-10 rounded-2xl bg-white/15 grid place-content-center shadow-inner">
-          <i data-lucide="panel-top" class="text-white"></i>
-        </div>
-        <div>
-          <h1 class="text-lg font-semibold tracking-tight">AI Publications Portal</h1>
-          <div id="lastSynced" class="text-xs text-white/80">Loading…</div>
-        </div>
-      </div>
-      <div class="hidden md:flex items-center gap-2 text-xs">
-        <span class="px-2 py-1 rounded-lg bg-white/10 border border-white/20">Static JSON · No live API</span>
-      </div>
-    </div>
 
     <!-- Tabs -->
     <div class="bg-white">
