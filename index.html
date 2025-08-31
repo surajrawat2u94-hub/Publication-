@@ -782,14 +782,27 @@
   let profYearChart=null, profTypeChart=null, fullRows=[], visibleRows=[];
   function normalizeType(t){
     const s=String(t||'').toLowerCase();
-    if (s==='journal-article') return 'article';
-    if (s.includes('proceed')) return 'proceedings-article';
-    if (s.startsWith('book'))  return 'book';
-    return s || 'unknown';
-  }
+    if (s === 'journal-article') return 'article';
+  if (s.includes('conference') || s.includes('proceed')) return 'conference';
+  if (s.includes('book-chapter') || s.includes('book part') ||
+      s.includes('book-part') || s.includes('book section') ||
+      s.includes('book-section') || s === 'chapter') return 'book-chapter';
+  if (s.startsWith('book') || s === 'monograph' || s === 'edited-book' || s === 'reference-book')
+    return 'book';
+  return s || 'unknown';
+}
   const typeLabel = (key) => ({
-    'article':'Article','proceedings-article':'Proceedings','book':'Book/Chapter','dataset':'Dataset','report':'Report',
-    'preprint':'Preprint','letter':'Letter','review':'Review','editorial':'Editorial','unknown':'Other'
+   'article'      : 'Journal',
+  'conference'   : 'Conference',
+  'book'         : 'Book',
+  'book-chapter' : 'Book Chapter',
+  'dataset'      : 'Dataset',
+  'report'       : 'Report',
+  'preprint'     : 'PrePrint',
+  'letter'       : 'Letter',
+  'review'       : 'Review',
+  'editorial'    : 'Editorial',
+  'unknown'      : 'Other'
   }[key] || key.replace(/(^|\-)(\w)/g,(m,_,c)=>' '+c.toUpperCase()).trim());
 
   async function openProfile(key){
@@ -1102,16 +1115,38 @@
   }
 
   /* --------------- Type multi-select --------------- */
-  const normalizeType = t => {
-    const s=String(t||'').toLowerCase();
-    if (s==='journal-article') return 'article';
-    if (s.includes('proceed')) return 'proceedings-article';
-    if (s.startsWith('book'))  return 'book';
-    return s || 'unknown';
-  };
+ // --- Types: normalize + labels (separate Book, Book Chapter, Conference)
+const normalizeType = (t) => {
+  const s = String(t || '').toLowerCase();
+
+  if (s === 'journal-article') return 'article';
+
+  // conference / proceedings
+  if (s.includes('conference') || s.includes('proceed')) return 'conference';
+
+  // book chapter first (before generic 'book')
+  if (s.includes('book-chapter') || s.includes('book part') ||
+      s.includes('book-part') || s.includes('book section') ||
+      s.includes('book-section') || s === 'chapter') return 'book-chapter';
+
+  // plain book/monograph/etc.
+  if (s.startsWith('book') || s === 'monograph' || s === 'edited-book' || s === 'reference-book')
+    return 'book';
+
+  return s || 'unknown';
+};
   const labelForType = key => ({
-    'article':'Article','proceedings-article':'Proceedings','book':'Book/Chapter','dataset':'Dataset','report':'Report',
-    'preprint':'Preprint','letter':'Letter','review':'Review','editorial':'Editorial','unknown':'Other'
+    'article'       : 'Journal',
+  'conference'    : 'Conference',
+  'book'          : 'Book',
+  'book-chapter'  : 'Book Chapter',
+  'dataset'       : 'Dataset',
+  'report'        : 'Report',
+  'preprint'      : 'PrePrint',
+  'letter'        : 'Letter',
+  'review'        : 'Review',
+  'editorial'     : 'Editorial',
+  'unknown'       : 'Other'
   }[key] || key.replace(/(^|\-)(\w)/g,(m,_,c)=>' '+c.toUpperCase()).trim());
 
   function computeKnownTypes(){
