@@ -39,6 +39,42 @@
   </style>
 </head>
 <body class="bg-gradient-to-b from-slate-50 to-slate-100 text-slate-900">
+<script>
+/* Load institution_data.json with a .gz fallback (and LFS-pointer guard) */
+window.loadInstitutionData = async function () {
+  // 1) Try plain JSON first
+  try {
+    const r = await fetch("institution_data.json", { cache: "no-store" });
+    if (r.ok) {
+      const t = await r.clone().text();
+      // If it's not a Git LFS pointer, parse it
+      if (!/^version https:\/\/git-lfs.github.com\/spec\/v1/m.test(t)) {
+        return JSON.parse(t);
+      }
+    }
+  } catch {}
+
+  // 2) Fallback to .gz
+  const gz = await fetch("institution_data.json.gz", { cache: "no-store" });
+  if (!gz.ok) throw new Error("institution_data.json(.gz) not found");
+
+  // Use native DecompressionStream if available; otherwise load pako on the fly
+  if ("DecompressionStream" in window) {
+    const stream = gz.body.pipeThrough(new DecompressionStream("gzip"));
+    const txt = await new Response(stream).text();
+    return JSON.parse(txt);
+  } else {
+    await new Promise((res, rej) => {
+      const s = document.createElement("script");
+      s.src = "https://cdn.jsdelivr.net/npm/pako@2.1.0/dist/pako.min.js";
+      s.onload = res; s.onerror = rej; document.head.appendChild(s);
+    });
+    const buf = new Uint8Array(await gz.arrayBuffer());
+    const txt = window.pako.ungzip(buf, { to: "string" });
+    return JSON.parse(txt);
+  }
+};
+</script>
 
   <!-- Header -->
   <header class="sticky top-0 z-30 bg-gradient-to-r from-indigo-600/90 via-fuchsia-600/90 to-sky-600/90 text-white backdrop-blur">
@@ -497,10 +533,8 @@
   const FAC_PUBS = []; // private store when app globals are absent
   async function loadPubsOnce(){
     if (FAC_PUBS.length) return;
-    try{
-      const res = await fetch('institution_data.json', { cache:'no-store' });
-      if (!res.ok) return;
-      const j = await res.json();
+    try{const j = await window.loadInstitutionData();
+
       const items = Array.isArray(j.items) ? j.items : [];
       for (const p of items){
         if (!Array.isArray(p.authors))      p.authors      = facAuthors(p);
@@ -1007,9 +1041,8 @@
   /* --------------- Load data --------------- */
   async function autoLoad(){
     try{
-      const res = await fetch('institution_data.json', { cache:'no-store' });
-      if (!res.ok) throw new Error('institution_data.json not found');
-      const j = await res.json();
+      const j = await window.loadInstitutionData();
+
 
       document.getElementById('lastSynced').textContent =
         j.updated ? `Last synced: ${dayjs(j.updated).format('DD MMM YYYY, HH:mm')}` : '';
