@@ -981,26 +981,65 @@ window.loadInstitutionData = async function () {
   const sjrMetaByIssn = new Map(), sjrMetaByTitle = new Map();
   let haveSJR=false; let IFcount=0;
 
-  /* ----- COLUMNS (Publisher added here) ----- */
-  const ALL_COLUMNS = [
-    { key:'year',label:'Year',default:true },
-    { key:'title',label:'Title',default:true },
-    { key:'journal',label:'Journal',default:true },
-    { key:'publisher',label:'Publisher',default:true },              /* ✅ NEW */
-    { key:'home_authors',label:'Home authors',default:true },
-    { key:'authors',label:'Authors',default:false },
-    { key:'citations',label:'Citations',default:true },
-    { key:'quartile',label:'Quartile',default:true },
-    { key:'retraction_info',label:'Retraction Info',default:true },
-    { key:'is_retracted',label:'Retracted (OpenAlex)',default:false },
-    { key:'type',label:'Type',default:false },
-    { key:'doi',label:'DOI',default:false },
-    { key:'url',label:'URL',default:false },
-    { key:'issns',label:'ISSNs',default:false },
-    { key:'subjects',label:'Subject areas',default:false },
-    { key:'sdg_tags',label:'SDGs',default:false },
-  ];
-  let selectedColumns = loadSelectedColumns();
+  /* ----- COLUMNS (Publisher added here) -
+  /* ----- COLUMNS (dynamic) ----- */
+let ALL_COLUMNS = [];
+let selectedColumns = [];
+
+// Humanize keys => labels, e.g. "corresponding_orcid" -> "Corresponding Orcid"
+const humanize = (k) => k.replace(/_/g, ' ').replace(/\b\w/g, m => m.toUpperCase());
+
+// Your known/core columns with friendly labels + defaults
+const KNOWN_COLUMNS = [
+  { key:'year',           label:'Year',                 default:true },
+  { key:'title',          label:'Title',                default:true },
+  { key:'journal',        label:'Journal',              default:true },
+  { key:'publisher',      label:'Publisher',            default:true }, // from your code
+  { key:'home_authors',   label:'Home authors',         default:true },
+  { key:'authors',        label:'Authors',              default:false },
+  { key:'citations',      label:'Citations',            default:true },
+  { key:'quartile',       label:'Quartile',             default:true },
+  { key:'retraction_info',label:'Retraction Info',      default:true },
+  { key:'is_retracted',   label:'Retracted (OpenAlex)', default:false },
+  { key:'type',           label:'Type',                 default:false },
+  { key:'doi',            label:'DOI',                  default:false },
+  { key:'url',            label:'URL',                  default:false },
+  { key:'issns',          label:'ISSNs',                default:false },
+  { key:'subjects',       label:'Subject areas',        default:false },
+  { key:'sdg_tags',       label:'SDGs',                 default:false },
+];
+
+// Build ALL_COLUMNS by scanning the data for any *extra* keys
+function buildDynamicColumnsFromData(items){
+  const base = [...KNOWN_COLUMNS];
+  const seen = new Set(base.map(c => c.key));
+  const sample = (items || []).slice(0, 300); // small sample is enough
+
+  const extraKeys = new Set();
+  for (const p of sample){
+    for (const k of Object.keys(p || {})){
+      if (!seen.has(k)) extraKeys.add(k);
+    }
+  }
+  for (const k of extraKeys){
+    base.push({ key: k, label: humanize(k), default: false });
+  }
+  ALL_COLUMNS = base;
+}
+
+function loadSelectedColumnsDynamic(){
+  try{
+    const s = localStorage.getItem('pub_columns');
+    if (s){
+      const arr = JSON.parse(s);
+      const valid = new Map(ALL_COLUMNS.map(c => [c.key, c.label]));
+      const keep = arr.filter(x => valid.has(x.key));
+      if (keep.length) return keep.map(x => ({ key:x.key, label: valid.get(x.key) }));
+    }
+  }catch{}
+  return ALL_COLUMNS.filter(c => c.default).map(c => ({ key:c.key, label:c.label }));
+}
+
 
   let chartByYear=null,chartTopJournalsC=null,
       chartIFTop=null, chartIFBubble=null, chartTypesYear=null,
