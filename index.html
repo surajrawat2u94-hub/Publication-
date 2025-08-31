@@ -416,7 +416,7 @@
   </div>
 
   <footer class="text-center text-xs text-slate-500 pt-2">
-    Data from <code>institution_data.json</code> · Matching is heuristic/fuzzy
+    Data from <code>institution_data.json.gz</code> · Matching is heuristic/fuzzy
   </footer>
 </section>
 
@@ -498,7 +498,7 @@
   async function loadPubsOnce(){
     if (FAC_PUBS.length) return;
     try{
-      const res = await fetch('institution_data.json', { cache:'no-store' });
+      const res = await fetch('institution_data.json.gz', { cache:'no-store' });
       if (!res.ok) return;
       const j = await res.json();
       const items = Array.isArray(j.items) ? j.items : [];
@@ -507,7 +507,7 @@
         if (!Array.isArray(p.home_authors)) p.home_authors = facHomeAuthors(p);
         FAC_PUBS.push(p);
       }
-    }catch(e){ console.warn('Faculty: could not load institution_data.json', e); }
+    }catch(e){ console.warn('Faculty: could not load institution_data.json.gz', e); }
   }
   const currentPubs = () =>
     (Array.isArray(window.filtered) && window.filtered.length ? window.filtered :
@@ -880,7 +880,7 @@
   </main>
 
   <footer class="text-center text-xs text-slate-500 pb-8">
-    Data from <code>institution_data.json</code> · Quartiles/IF mapped client-side · SDG & Retraction notices are heuristic
+    Data from <code>institution_data.json.gz</code> · Quartiles/IF mapped client-side · SDG & Retraction notices are heuristic
   </footer>
 
   <!-- Focus modal -->
@@ -994,8 +994,8 @@
   /* --------------- Load data --------------- */
   async function autoLoad(){
     try{
-      const res = await fetch('institution_data.json', { cache:'no-store' });
-      if (!res.ok) throw new Error('institution_data.json not found');
+      const res = await fetch('institution_data.json.gz', { cache:'no-store' });
+      if (!res.ok) throw new Error('institution_data.json.gz not found');
       const j = await res.json();
 
       document.getElementById('lastSynced').textContent =
