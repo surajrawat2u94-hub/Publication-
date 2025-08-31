@@ -1087,6 +1087,9 @@ function loadSelectedColumnsDynamic(){
         j.updated ? `Last synced: ${dayjs(j.updated).format('DD MMM YYYY, HH:mm')}` : '';
 
       all = Array.isArray(j.items) ? j.items : [];
+      buildDynamicColumnsFromData(all);
+selectedColumns = loadSelectedColumnsDynamic();
+
 
       // Normalize authors + home authors
       for (const p of all){
