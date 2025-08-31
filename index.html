@@ -39,6 +39,25 @@
   </style>
 </head>
 <body class="bg-gradient-to-b from-slate-50 to-slate-100 text-slate-900">
+<!-- LFS pointer fix: must be before other scripts -->
+<script>
+(function(){
+  const RAW = 'https://raw.githubusercontent.com/surajrawat2u94-hub/Publication-/main/institution_data.json';
+  const origFetch = window.fetch.bind(window);
+  window.fetch = async function(input, init){
+    const url = (typeof input === 'string') ? input : (input && input.url) || '';
+    if (/(^|\/)institution_data\.json(\?|$)/.test(url)){
+      const r = await origFetch(input, {...init, cache:'no-store'});
+      const text = await r.clone().text();
+      if (text.startsWith('version https://git-lfs.github.com/spec/v1')){
+        return origFetch(RAW, {cache:'no-store'});
+      }
+      return new Response(text, {status:r.status, statusText:r.statusText, headers:r.headers});
+    }
+    return origFetch(input, init);
+  };
+})();
+</script>
 
   <!-- Header -->
   <header class="sticky top-0 z-30 bg-gradient-to-r from-indigo-600/90 via-fuchsia-600/90 to-sky-600/90 text-white backdrop-blur">
