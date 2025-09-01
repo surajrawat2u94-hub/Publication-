@@ -20,6 +20,86 @@
   <!-- Matrix (kept for IF heatmap) -->
   <script src="https://cdn.jsdelivr.net/npm/chartjs-chart-matrix@2.0.1"></script>
 <script src="https://cdn.jsdelivr.net/npm/chartjs-chart-geo@4.3.0/build/index.umd.min.js"></script>
+<script>
+  // Register once right after loading chartjs-chart-geo
+  if (window.ChartGeo) {
+    const {
+      ChoroplethController,
+      BubbleMapController,
+      GeoFeature,
+      ProjectionScale,
+      ColorScale
+    } = ChartGeo;
+    Chart.register(
+      ChoroplethController,
+      BubbleMapController,
+      GeoFeature,
+      ProjectionScale,
+      ColorScale
+    );
+  }
+</script>
+<script>
+let __worldTopo, __worldFeatures, __worldChart;
+
+// Helper: turn ISO-2 code -> English country name (built-in browser API)
+const __regionNames = new Intl.DisplayNames(['en'], { type: 'region' });
+
+async function renderWorldMap() {
+  const canvas = document.getElementById('chartWorldMap');
+  if (!canvas) return;
+
+  // Load world geometry once (TopoJSON -> GeoJSON features)
+  if (!__worldFeatures) {
+    __worldTopo = await fetch('https://cdn.jsdelivr.net/npm/world-atlas@2/countries-110m.json').then(r => r.json());
+    __worldFeatures = ChartGeo.topojson.feature(__worldTopo, __worldTopo.objects.countries).features;
+  }
+
+  // Count publications per country NAME (we convert your ISO2 codes to names)
+  const counts = new Map();
+  const rows = Array.isArray(window.filtered) ? window.filtered : [];
+  for (const p of rows) {
+    const codes = (__codesFromPaper(p) || []);       // you already have this helper
+    for (const iso2 of codes) {
+      const name = __regionNames.of(iso2);
+      if (name) counts.set(name, (counts.get(name) || 0) + 1);
+    }
+  }
+
+  // Build dataset matched to Geo features (by feature.properties.name)
+  const data = __worldFeatures.map(f => ({
+    feature: f,
+    value: counts.get(f.properties.name) || 0
+  }));
+
+  // Draw / redraw
+  if (__worldChart) __worldChart.destroy();
+  __worldChart = new Chart(canvas.getContext('2d'), {
+    type: 'choropleth',
+    data: { labels: __worldFeatures.map(f => f.properties.name), datasets: [{ data }] },
+    options: {
+      responsive: true,
+      maintainAspectRatio: false,
+      scales: {
+        projection: {            // provided by chartjs-chart-geo
+          projection: 'equalEarth'
+        },
+        color: {
+          quantize: 7            // number of color steps
+        }
+      },
+      plugins: {
+        legend: { display: false },
+        tooltip: {
+          callbacks: {
+            label: ctx => `${ctx.label}: ${ctx.raw.value || 0}`
+          }
+        }
+      }
+    }
+  });
+}
+</script>
 
   <style>
     .card{ background:rgba(255,255,255,.92); border:1px solid rgba(226,232,240,.92);
