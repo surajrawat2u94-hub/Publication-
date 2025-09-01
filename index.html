@@ -19,6 +19,12 @@
   <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
   <!-- Matrix (kept for IF heatmap) -->
   <script src="https://cdn.jsdelivr.net/npm/chartjs-chart-matrix@2.0.1"></script>
+<!-- Chart.js -->
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+
+<!-- Geo plugin + topojson client (needed to read the world-atlas file) -->
+<script src="https://cdn.jsdelivr.net/npm/chartjs-chart-geo@4.3.0/dist/chartjs-chart-geo.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/topojson-client@3"></script>
 
   <style>
     .card{ background:rgba(255,255,255,.92); border:1px solid rgba(226,232,240,.92);
@@ -2148,42 +2154,19 @@ function switchTab(tab){
   document.addEventListener('DOMContentLoaded', ()=>{ buildSDGLegend(); autoLoad(); });
 </script>
 <script>
-/* ===== Country choropleth — robust final =====
-   Needs Chart.js v4 (already on your page)
-   Exposes window.renderWorldMap()
-*/
+/* ===== Country choropleth (final, simple, reliable) ===== */
 (() => {
-  // --- register geo bits if present
-  function __regGeo(){
-    if (!window.Chart || !window.ChartGeo) return;
-    const { ChoroplethController, BubbleMapController, GeoFeature, ProjectionScale, ColorScale } = ChartGeo;
-    try { Chart.register(ChoroplethController, BubbleMapController, GeoFeature, ProjectionScale, ColorScale); } catch {}
+  // Register geo pieces once the plugin is on the page
+  try {
+    const { ChoroplethController, GeoFeature, ProjectionScale, ColorScale } = ChartGeo;
+    Chart.register(ChoroplethController, GeoFeature, ProjectionScale, ColorScale);
+  } catch (e) {
+    console.error('chartjs-chart-geo not available', e);
   }
 
-  // --- lazy load geo UMD (with fallback)
-  function __ensureGeo(){
-    return new Promise(res => {
-      if (window.ChartGeo) { __regGeo(); return res(); }
-      const tryLoad = (srcs, i=0) => {
-        if (i >= srcs.length) return res();
-        const s = document.createElement('script');
-        s.src = srcs[i];
-        s.onload = () => { __regGeo(); res(); };
-        s.onerror = () => tryLoad(srcs, i+1);
-        document.head.appendChild(s);
-      };
-      tryLoad([
-        'https://cdn.jsdelivr.net/npm/chartjs-chart-geo@4.3.0/build/index.umd.min.js',
-        'https://unpkg.com/chartjs-chart-geo@4.3.0/dist/index.umd.js'
-      ]);
-    });
-  }
-
-  // --- helpers
-  const __norm = s => String(s||'').normalize('NFKD').replace(/[\u0300-\u036f]/g,'')
-    .toLowerCase().replace(/[^a-z0-9\s\-]/g,' ').replace(/\s+/g,' ').trim();
-
-  const __SYN = new Map([
+  const norm = s => String(s||'').normalize('NFKD').replace(/[\u0300-\u036f]/g,'')
+                   .toLowerCase().replace(/[^a-z0-9\s\-]/g,' ').replace(/\s+/g,' ').trim();
+  const SYN = new Map([
     ['united states','united states of america'], ['usa','united states of america'],
     ['uk','united kingdom'], ['russian federation','russia'], ['czech republic','czechia'],
     ['viet nam','vietnam'], ['korea, republic of','south korea'], ['korea, democratic people s republic of','north korea'],
@@ -2195,54 +2178,57 @@ function switchTab(tab){
     ['swaziland','eswatini'], ['macedonia','north macedonia'], ['cape verde','cabo verde'], ['east timor','timor-leste'],
     ['st. kitts and nevis','saint kitts and nevis'], ['st. vincent and the grenadines','saint vincent and the grenadines'],
     ['st. lucia','saint lucia'], ['palestine','state of palestine'],
-    ['inida','india'] // typo guard seen in data
+    ['inida','india'] // typo seen in your data
   ]);
+  const region = new Intl.DisplayNames(['en'], { type: 'region' });
 
-  const __region = new Intl.DisplayNames(['en'], { type: 'region' });
-  const __split = v => Array.isArray(v) ? v.flatMap(__split)
+  const splitList = v => Array.isArray(v) ? v.flatMap(splitList)
                      : (typeof v === 'string' ? v.split(/[,\|;]+/).map(s=>s.trim()).filter(Boolean) : []);
 
-  function __codesFromPaper(p){
+  function codesFromPaper(p){
     const out = new Set();
     const push = v => {
       const s = String(v||'').trim(); if (!s) return;
-      if (/^[A-Za-z]{2}$/.test(s)) out.add(s.toUpperCase()); else out.add('__N__:'+__norm(s));
+      if (/^[A-Za-z]{2}$/.test(s)) out.add(s.toUpperCase()); else out.add('__N__:'+norm(s));
     };
 
-    __split(p.country_codes).forEach(push);
-    __split(p.countries).forEach(push);
-
-    if (Array.isArray(p.author_details)){
-      for (const d of p.author_details){
+    // top-level shortcuts you likely have
+    splitList(p.country_codes).forEach(push);
+    splitList(p.countries).forEach(push);
+    // common places inside your JSON
+    if (Array.isArray(p.author_details)) {
+      for (const d of p.author_details) {
         [d.affiliation_country_code,d.country_code,d.countryCode,d.affiliation_country,d.country].forEach(push);
         (d.affiliations||[]).forEach(af => [af.country_code,af.country].forEach(push));
         (d.institutions||[]).forEach(i  => [i.country_code,i.country].forEach(push));
       }
     }
-    if (Array.isArray(p.authorships)){
+    if (Array.isArray(p.authorships)) {
       for (const a of p.authorships)
         (a.institutions||[]).forEach(i => [i.country_code,i.country].forEach(push));
     }
     (p.institutions||[]).forEach(i => [i.country_code,i.country].forEach(push));
     const src = p?.primary_location?.source;
-    if (src){ [src.country_code, src.host_organization_country_code, src.host_organization_country].forEach(push); }
+    if (src) [src.country_code, src.host_organization_country_code, src.host_organization_country].forEach(push);
+
     return [...out];
   }
 
-  function __countByName(items){
+  function countByCountryName(items){
     const map = new Map();
     const inc = k => map.set(k, (map.get(k)||0)+1);
-    for (const p of items || []){
-      for (const token of __codesFromPaper(p)){
-        if (token.startsWith('__N__:')){
+
+    for (const p of items || []) {
+      for (const token of codesFromPaper(p)) {
+        if (token.startsWith('__N__:')) {
           let nm = token.slice(5);
-          nm = __SYN.get(nm) || nm;
+          nm = SYN.get(nm) || nm;
           inc(nm);
         } else {
-          const name = __region.of(token);
+          const name = region.of(token);
           if (name) {
-            let nm = __norm(name);
-            nm = __SYN.get(nm) || nm;
+            let nm = norm(name);
+            nm = SYN.get(nm) || nm;
             inc(nm);
           }
         }
@@ -2251,62 +2237,58 @@ function switchTab(tab){
     return map;
   }
 
-  let __features = null, __chart = null;
+  let worldFeatures = null, worldChart = null;
 
-  async function __loadFeatures(){
-    if (__features) return __features;
-    await __ensureGeo();
-    const topo = await fetch('https://cdn.jsdelivr.net/npm/world-atlas@2/countries-110m.json').then(r=>r.json());
-    __features = ChartGeo.topojson.feature(topo, topo.objects.countries).features;
-    return __features;
+  async function loadWorld(){
+    if (worldFeatures) return worldFeatures;
+    // world-atlas TopoJSON -> GeoJSON with topojson-client
+    const topo = await fetch('https://cdn.jsdelivr.net/npm/world-atlas@2/countries-110m.json').then(r => r.json());
+    worldFeatures = topojson.feature(topo, topo.objects.countries).features;
+    return worldFeatures;
   }
 
   async function renderWorldMap(){
     const can = document.getElementById('chartWorldMap');
-    if (!can) return;
+    if (!can || !window.ChartGeo) return;
 
-    await __ensureGeo();
-    const features = await __loadFeatures();
-
-    const rows = (Array.isArray(window.filtered) && window.filtered.length) ? window.filtered
+    const features = await loadWorld();
+    const rows = (Array.isArray(window.filtered) && window.filtered.length)
+               ? window.filtered
                : (Array.isArray(window.all) ? window.all : []);
-    const byName = __countByName(rows);
+    const byName = countByCountryName(rows);
 
     const data = features.map(f => {
-      let nm = __norm(f?.properties?.name || '');
-      nm = __SYN.get(nm) || nm;
+      let nm = norm(f.properties.name || '');
+      nm = SYN.get(nm) || nm;
       return { feature:f, value: byName.get(nm) || 0 };
     });
 
-    if (__chart) __chart.destroy();
-    __chart = new Chart(can.getContext('2d'), {
+    if (worldChart) worldChart.destroy();
+    worldChart = new Chart(can.getContext('2d'), {
       type: 'choropleth',
-      data: { labels: features.map(f=>f.properties.name), datasets:[{ data, borderWidth:0.5 }] },
-      options:{
-        responsive:true, maintainAspectRatio:false, showOutline:true, showGraticule:true,
-        plugins:{ legend:{display:false}, tooltip:{ callbacks:{ label:(c)=>`${c.label}: ${c.raw.value||0}` } } },
+      data: { labels: features.map(f => f.properties.name), datasets:[{ data, borderWidth:0.5 }] },
+      options: {
+        responsive:true, maintainAspectRatio:false,
+        showOutline:true, showGraticule:true,
+        plugins:{ legend:{display:false}, tooltip:{ callbacks:{ label: c => `${c.label}: ${c.raw.value||0}` } } },
         scales:{ projection:{ axis:'x', projection:'equalEarth' }, color:{ quantize:7 } }
       }
     });
   }
 
-  // Expose globally
+  // Expose + keep in sync with filters
   window.renderWorldMap = renderWorldMap;
 
-  // Patch applyFilters so the map always updates after filters change
-  if (typeof window.applyFilters === 'function'){
-    const __old = window.applyFilters;
+  if (typeof window.applyFilters === 'function') {
+    const old = window.applyFilters;
     window.applyFilters = function(goToPage=1){
-      const r = __old.apply(this, arguments);
-      try { window.renderWorldMap && window.renderWorldMap(); } catch {}
+      const r = old.apply(this, arguments);
+      try { renderWorldMap(); } catch {}
       return r;
     };
   }
 
-  // First paint safeguard (in case filters haven't run yet)
-  document.addEventListener('DOMContentLoaded', () => {
-    try { window.renderWorldMap && window.renderWorldMap(); } catch {}
-  });
+  document.addEventListener('DOMContentLoaded', () => { try { renderWorldMap(); } catch {} });
 })();
 </script>
 
