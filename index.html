@@ -1091,11 +1091,15 @@ function loadSelectedColumnsDynamic(){
 selectedColumns = loadSelectedColumnsDynamic();
 
 
-      // Normalize authors + home authors
-      for (const p of all){
-        if (!Array.isArray(p.authors)) p.authors = deriveAuthors(p);
-        p.home_authors = deriveHomeAuthors(p);
-      }
+    // Normalize authors + home authors (only derive if missing)
+for (const p of all){
+  if (!Array.isArray(p.authors) || p.authors.length === 0) {
+    p.authors = deriveAuthors(p);
+  }
+  if (!Array.isArray(p.home_authors) || p.home_authors.length === 0) {
+    p.home_authors = deriveHomeAuthors(p);
+  }
+}
 
       // Retraction links + SDGs
       buildRetractionIndex(all);
@@ -1129,18 +1133,32 @@ selectedColumns = loadSelectedColumnsDynamic();
 
   /* --------- Authors helpers --------- */
   function deriveAuthors(p){
-    const out=[];
-    if (Array.isArray(p.authorships)){
-      for (const a of p.authorships){
-        const nm = a?.author?.display_name || a?.display_name;
-        if (nm) out.push(String(nm));
-      }
+  // 1) if API already gave a list, keep it
+  if (Array.isArray(p.authors) && p.authors.length) return p.authors;
+
+  // 2) build from OpenAlex authorships
+  const out = [];
+  if (Array.isArray(p.authorships)){
+    for (const a of p.authorships){
+      const nm = a?.author?.display_name || a?.display_name;
+      if (nm) out.push(String(nm));
     }
-    if (!out.length && typeof p.authors === 'string' && p.authors.trim()){
-      return p.authors.split(/[,;]\s*/).filter(Boolean);
-    }
-    return out;
   }
+
+  // 3) fallback to author_details (our JSON from the harvester)
+  if (!out.length && Array.isArray(p.author_details)){
+    for (const d of p.author_details){
+      if (d?.name) out.push(String(d.name));
+    }
+  }
+
+  // 4) last resort: comma/semicolon string
+  if (!out.length && typeof p.authors === 'string' && p.authors.trim()){
+    return p.authors.split(/[,;]\s*/).filter(Boolean);
+  }
+  return out;
+}
+
   function deriveHomeAuthors(p){
     const out=[];
     if (!Array.isArray(p.authorships)) return out;
