@@ -2141,68 +2141,208 @@ function switchTab(tab){
   document.addEventListener('DOMContentLoaded', ()=>{ buildSDGLegend(); autoLoad(); });
 </script>
 <script>
-/* ... keep everything above as-is ... */
+// --- light normalizer for name matching
+const __norm = s => String(s||'')
+  .normalize('NFKD').replace(/[\u0300-\u036f]/g,'')
+  .toLowerCase().replace(/[^a-z0-9\s\-]/g,' ')
+  .replace(/\s+/g,' ').trim();
 
-/* --- extract unique ISO2 codes for each paper (ROBUST) --- */
+// --- minimal name synonyms so world-atlas names match our data
+const __NAME_SYNONYM = new Map([
+  ['united states','united states of america'],
+  ['usa','united states of america'],
+  ['uk','united kingdom'],
+  ['russian federation','russia'],
+  ['czech republic','czechia'],
+  ['viet nam','vietnam'],
+  ['korea, republic of','south korea'],
+  ['korea, democratic people s republic of','north korea'],
+  ['iran, islamic republic of','iran'],
+  ['moldova, republic of','moldova'],
+  ['tanzania, united republic of','tanzania'],
+  ['bolivia, plurinational state of','bolivia'],
+  ['venezuela, bolivarian republic of','venezuela'],
+  ['syrian arab republic','syria'],
+  ['lao people s democratic republic','laos'],
+  ['brunei darussalam','brunei'],
+  ['cote d ivoire','cote d’ivoire'],
+  ['democratic republic of the congo','congo, democratic republic of the'],
+  ['republic of the congo','congo'],
+  ['swaziland','eswatini'],
+  ['macedonia','north macedonia'],
+  ['cape verde','cabo verde'],
+  ['east timor','timor-leste'],
+  ['st. kitts and nevis','saint kitts and nevis'],
+  ['st. vincent and the grenadines','saint vincent and the grenadines'],
+  ['st. lucia','saint lucia'],
+  ['palestine','state of palestine'],
+  ['ivory coast','cote d’ivoire']
+]);
+
+// --- small ISO2 -> name map for very common codes (fallback only)
+const __ISO2_TO_NAME = new Map(Object.entries({
+  IN:'India', US:'United States of America', GB:'United Kingdom', AE:'United Arab Emirates',
+  SA:'Saudi Arabia', CN:'China', JP:'Japan', KR:'South Korea', DE:'Germany', FR:'France',
+  ES:'Spain', IT:'Italy', NL:'Netherlands', SG:'Singapore', MY:'Malaysia', TH:'Thailand',
+  VN:'Vietnam', PH:'Philippines', ID:'Indonesia', PK:'Pakistan', BD:'Bangladesh', LK:'Sri Lanka',
+  CA:'Canada', AU:'Australia', ZA:'South Africa', RU:'Russia', TR:'Turkey', QA:'Qatar', KW:'Kuwait',
+  OM:'Oman', BH:'Bahrain', IR:'Iran', IQ:'Iraq', IL:'Israel', SE:'Sweden', NO:'Norway', FI:'Finland',
+  DK:'Denmark', BE:'Belgium', CH:'Switzerland', AT:'Austria', PL:'Poland', CZ:'Czechia', SK:'Slovakia',
+  HU:'Hungary', RO:'Romania', BG:'Bulgaria', GR:'Greece', PT:'Portugal', IE:'Ireland', HK:'Hong Kong',
+  TW:'Taiwan', NZ:'New Zealand', MX:'Mexico', BR:'Brazil', AR:'Argentina', CL:'Chile', CO:'Colombia',
+  EG:'Egypt', NG:'Nigeria', KE:'Kenya', MA:'Morocco', TN:'Tunisia', UA:'Ukraine'
+}));
+
+// --- Try to turn various country fields into ISO2 codes (safe: no external maps needed)
 function __codesFromPaper(p){
   const out = new Set();
-  const push = v => {
-    if (!v) return;
-    let c = String(v).trim();
-    if (!c) return;
-    // if it's a 2-letter code, normalize
-    if (/^[A-Za-z]{2}$/.test(c)) { out.add(c.toUpperCase()); return; }
-    // otherwise try to map a country name -> ISO2
-    const m = __NAME_TO_ISO2.get(__normC(c));
-    if (m) out.add(m);
+
+  const pushCode = v => {
+    const s = String(v||'').trim();
+    if (!s) return;
+    if (/^[A-Za-z]{2}$/.test(s)) { out.add(s.toUpperCase()); return; }   // already ISO2
+    // otherwise, treat as a country *name*; keep the name so we can match by name later
+    out.add('__NAME__:' + __norm(s));
   };
 
-  // 1) easy buckets
-  (p.country_codes || []).forEach(push);
-  (p.countries     || []).forEach(push);
+  // generic buckets
+  (p.country_codes||[]).forEach(pushCode);
+  (p.countries||[]).forEach(pushCode);
 
-  // 2) author_details (many harvesters put affiliations here)
-  if (Array.isArray(p.author_details)){
-    for (const d of p.author_details){
-      [d.affiliation_country_code, d.country_code, d.countryCode].forEach(push);
-      [d.affiliation_country, d.country].forEach(push);
-
-      // affiliations list: { country_code, country } or similar
-      for (const af of (d.affiliations || [])){
-        [af.country_code, af.country].forEach(push);
-      }
-
-      // nested institutions, if present
-      for (const inst of (d.institutions || [])){
-        [inst.country_code, inst.country].forEach(push);
-      }
+  // author_details
+  if (Array.isArray(p.author_details)) {
+    for (const d of p.author_details) {
+      [d.affiliation_country_code, d.country_code, d.countryCode, d.affiliation_country, d.country]
+        .forEach(pushCode);
+      (d.affiliations||[]).forEach(af => [af.country_code, af.country].forEach(pushCode));
+      (d.institutions||[]).forEach(i => [i.country_code, i.country].forEach(pushCode));
     }
   }
 
-  // 3) OpenAlex-style authorships -> institutions
-  if (Array.isArray(p.authorships)){
-    for (const a of p.authorships){
-      for (const inst of (a.institutions || [])){
-        [inst.country_code, inst.country].forEach(push);
-      }
+  // OpenAlex authorships → institutions
+  if (Array.isArray(p.authorships)) {
+    for (const a of p.authorships) {
+      (a.institutions||[]).forEach(i => [i.country_code, i.country].forEach(pushCode));
     }
   }
 
-  // 4) Some exports add top-level institutions[]
-  for (const inst of (p.institutions || [])){
-    [inst.country_code, inst.country].forEach(push);
-  }
+  // some exports put top-level institutions[]
+  (p.institutions||[]).forEach(i => [i.country_code, i.country].forEach(pushCode));
 
-  // 5) Source/host info sometimes carries a country
+  // source / host
   const src = p?.primary_location?.source;
-  if (src){
-    [src.country_code, src.host_organization_country_code, src.host_organization_country].forEach(push);
-  }
+  if (src) [src.country_code, src.host_organization_country_code, src.host_organization_country].forEach(pushCode);
 
   return [...out];
 }
 
-/* ... keep everything below as-is ... */
+// --- build counts both by ISO2 and by normalized name (we’ll use whichever matches the map feature)
+function __countCountries(items){
+  const byISO = new Map();
+  const byName = new Map();
+
+  const inc = (map, k) => map.set(k, (map.get(k)||0)+1);
+
+  for (const p of items){
+    for (const token of __codesFromPaper(p)){
+      if (token.startsWith('__NAME__:')){
+        let nm = token.slice(9);
+        // resolve a few synonyms to the world-atlas naming
+        nm = __NAME_SYNONYM.get(nm) || nm;
+        inc(byName, nm);
+      } else {
+        const code = token.toUpperCase();
+        inc(byISO, code);
+        // also keep a name form for when the basemap only gives us names
+        const maybeName = __ISO2_TO_NAME.get(code);
+        if (maybeName) inc(byName, __norm(maybeName));
+      }
+    }
+  }
+  return { byISO, byName };
+}
+
+let __worldMapChart = null;
+
+// --- lazy loader for the geo plugin
+function __ensureGeo(){ return new Promise(res => {
+  if (window.ChartGeo) return res();
+  const s = document.createElement('script');
+  s.src = 'https://cdn.jsdelivr.net/npm/chartjs-chart-geo@4.3.0/build/index.umd.min.js';
+  s.onload = res;
+  document.head.appendChild(s);
+}); }
+
+// --- main renderer (called from applyFilters)
+async function renderWorldMap(){
+  const can = document.getElementById('chartWorldMap');
+  if (!can) return;
+
+  try{
+    await __ensureGeo();
+
+    // fetch basemap
+    const topo = await fetch('https://cdn.jsdelivr.net/npm/world-atlas@2/countries-110m.json').then(r=>r.json());
+    const features = ChartGeo.topojson.feature(topo, topo.objects.countries).features;
+
+    // build counts from current filtered list
+    const { byName } = __countCountries(window.filtered || []);
+
+    // prepare dataset: match each feature by (normalized) country name
+    const data = features.map(f => {
+      let nm = __norm(f.properties && f.properties.name || '');
+      nm = __NAME_SYNONYM.get(nm) || nm; // harmonize
+      const value = byName.get(nm) || 0;
+      return { feature:f, value };
+    });
+
+    const ctx = can.getContext('2d');
+    if (__worldMapChart) __worldMapChart.destroy();
+
+    // if everything is zero, show a helpful bar fallback
+    const total = data.reduce((s,d)=>s+d.value,0);
+    if (!total){
+      // fallback: show top-12 countries as a bar chart in the same canvas
+      const top = [...byName.entries()].sort((a,b)=>b[1]-a[1]).slice(0,12);
+      __worldMapChart = new Chart(ctx, {
+        type:'bar',
+        data:{ labels: top.map(x=>x[0].replace(/\b\w/g,m=>m.toUpperCase())),
+               datasets:[{ label:'Publications', data: top.map(x=>x[1]), borderRadius:12, borderSkipped:false }]},
+        options:{ responsive:true, maintainAspectRatio:false, plugins:{ legend:{display:false} } }
+      });
+      return;
+    }
+
+    __worldMapChart = new Chart(ctx, {
+      type: 'choropleth',
+      data: {
+        labels: features.map(f => f.properties.name),
+        datasets: [{
+          label: 'Publications',
+          data,
+          borderWidth: 0.5
+        }]
+      },
+      options: {
+        showOutline: true,
+        showGraticule: true,
+        plugins: {
+          legend: { display:false },
+          tooltip: {
+            callbacks: {
+              label: (c) => `${c.label}: ${c.raw.value||0}`
+            }
+          }
+        },
+        scales: {
+          projection: { axis: 'x', projection: 'equalEarth' }
+        }
+      }
+    });
+  }catch(err){
+    console.error('World map failed:', err);
+  }
+}
 </script>
 
 </body>
