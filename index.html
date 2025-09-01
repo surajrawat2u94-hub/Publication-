@@ -1342,6 +1342,8 @@ const normalizeType = (t) => {
     renderOverviewCharts();
     renderSDGChart();
     updateCoverage();
+    if (typeof renderWorldMap === 'function') renderWorldMap();
+
   }
 
   function changePageSize(){ pageSize = parseInt(document.getElementById('pageSize').value,10) || 50; currentPage=1; renderTable(); }
