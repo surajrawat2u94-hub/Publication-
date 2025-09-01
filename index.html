@@ -2159,10 +2159,10 @@ function switchTab(tab){
 </script>
 <script>
 /* ===== Country choropleth (robust) =====
-   Requires Chart.js and topojson-client to be loaded BEFORE this script.
+   Assumes Chart.js and topojson-client are already loaded.
 */
 (() => {
-  // Ensure chartjs-chart-geo is available (fallback CDN too)
+  // Load chartjs-chart-geo only if missing
   function ensureGeo() {
     if (window.ChartGeo) return Promise.resolve();
     return new Promise((resolve, reject) => {
@@ -2180,28 +2180,30 @@ function switchTab(tab){
     });
   }
 
-  // Normalization + synonyms to match names from your data to map features
+  // --- name normalization & synonyms (data → map feature) ---
   const norm = s => String(s||'').normalize('NFKD').replace(/[\u0300-\u036f]/g,'')
-                   .toLowerCase().replace(/[^a-z0-9\s\-]/g,' ').replace(/\s+/g,' ').trim();
+                   .toLowerCase().replace(/[^a-z0-9\s-]/g,' ').replace(/\s+/g,' ').trim();
   const SYN = new Map([
-    ['united states','united states of america'], ['usa','united states of america'],
+    ['usa','united states of america'], ['united states','united states of america'],
     ['uk','united kingdom'], ['russian federation','russia'], ['czech republic','czechia'],
-    ['viet nam','vietnam'], ['korea, republic of','south korea'], ['korea, democratic people s republic of','north korea'],
-    ['iran, islamic republic of','iran'], ['moldova, republic of','moldova'], ['tanzania, united republic of','tanzania'],
-    ['bolivia, plurinational state of','bolivia'], ['venezuela, bolivarian republic of','venezuela'],
-    ['syrian arab republic','syria'], ['lao people s democratic republic','laos'], ['brunei darussalam','brunei'],
+    ['viet nam','vietnam'], ['korea, republic of','south korea'],
+    ['korea, democratic people s republic of','north korea'],
+    ['iran, islamic republic of','iran'], ['moldova, republic of','moldova'],
+    ['tanzania, united republic of','tanzania'], ['swaziland','eswatini'],
+    ['macedonia','north macedonia'], ['cape verde','cabo verde'], ['east timor','timor-leste'],
     ['cote d ivoire','cote d’ivoire'], ['ivory coast','cote d’ivoire'],
-    ['democratic republic of the congo','congo, democratic republic of the'], ['republic of the congo','congo'],
-    ['swaziland','eswatini'], ['macedonia','north macedonia'], ['cape verde','cabo verde'], ['east timor','timor-leste'],
-    ['st. kitts and nevis','saint kitts and nevis'], ['st. vincent and the grenadines','saint vincent and the grenadines'],
-    ['st. lucia','saint lucia'], ['palestine','state of palestine'],
-    ['inida','india']
+    ['democratic republic of the congo','congo, democratic republic of the'],
+    ['republic of the congo','congo'],
+    ['st. kitts and nevis','saint kitts and nevis'],
+    ['st. vincent and the grenadines','saint vincent and the grenadines'],
+    ['st. lucia','saint lucia'],
+    ['palestine','state of palestine'],
+    ['inida','india'] // common typo
   ]);
   const region = new Intl.DisplayNames(['en'], { type: 'region' });
   const splitList = v => Array.isArray(v) ? v.flatMap(splitList)
-                     : (typeof v === 'string' ? v.split(/[,\|;]+/).map(s=>s.trim()).filter(Boolean) : []);
+                     : typeof v === 'string' ? v.split(/[,\|;]+/).map(s=>s.trim()).filter(Boolean) : [];
 
-  // Read possible country hints from each publication record
   function codesFromPaper(p){
     const out = new Set();
     const push = v => {
@@ -2210,6 +2212,7 @@ function switchTab(tab){
     };
     splitList(p.country_codes).forEach(push);
     splitList(p.countries).forEach(push);
+
     if (Array.isArray(p.author_details)) {
       for (const d of p.author_details) {
         [d.affiliation_country_code,d.country_code,d.countryCode,d.affiliation_country,d.country].forEach(push);
@@ -2222,8 +2225,10 @@ function switchTab(tab){
         (a.institutions||[]).forEach(i => [i.country_code,i.country].forEach(push));
     }
     (p.institutions||[]).forEach(i => [i.country_code,i.country].forEach(push));
+
     const src = p?.primary_location?.source;
     if (src) [src.country_code, src.host_organization_country_code, src.host_organization_country].forEach(push);
+
     return [...out];
   }
 
@@ -2242,8 +2247,8 @@ function switchTab(tab){
     return map;
   }
 
-  // GeoJSON loader (from world-atlas TopoJSON)
-  let worldFeatures=null, worldChart=null;
+  // --- world features loader (TopoJSON → GeoJSON) ---
+  let worldFeatures = null, worldChart = null;
   async function loadWorld(){
     if (worldFeatures) return worldFeatures;
     const topo = await fetch('https://cdn.jsdelivr.net/npm/world-atlas@2/countries-110m.json').then(r => r.json());
@@ -2251,7 +2256,7 @@ function switchTab(tab){
     return worldFeatures;
   }
 
-  // Render function
+  // --- render ---
   async function renderWorldMap(){
     await ensureGeo();
     const { ChoroplethController, GeoFeature, ProjectionScale, ColorScale } = ChartGeo;
@@ -2261,46 +2266,43 @@ function switchTab(tab){
     if (!can) return;
 
     const features = await loadWorld();
-    const rows = (Array.isArray(window.filtered) && window.filtered.length)
-               ? window.filtered
+    const rows = (Array.isArray(window.filtered) && window.filtered.length) ? window.filtered
                : (Array.isArray(window.all) ? window.all : []);
     const byName = countByCountryName(rows);
 
     const data = features.map(f => {
-      let nm = norm(f.properties.name||''); nm = SYN.get(nm) || nm;
-      return { feature:f, value: byName.get(nm) || 0 };
+      let nm = norm(f.properties.name || '');
+      nm = SYN.get(nm) || nm;
+      return { feature: f, value: byName.get(nm) || 0 };
     });
 
     if (worldChart) worldChart.destroy();
     worldChart = new Chart(can.getContext('2d'), {
       type: 'choropleth',
-      data: {
-        labels: features.map(f => f.properties.name),
-        datasets: [{ label:'Publications', data, borderWidth:0.5 }]
-      },
+      data: { labels: features.map(f => f.properties.name), datasets: [{ data, borderWidth: 0.5 }] },
       options: {
-        responsive:true,
-        maintainAspectRatio:false,
-        showOutline:true,
-        showGraticule:true,
-        plugins:{
-          legend:{ display:false },
-          tooltip:{ callbacks:{ label: c => `${c.label}: ${c.raw.value||0}` } }
+        responsive: true,
+        maintainAspectRatio: false,
+        showOutline: true,
+        showGraticule: true,
+        plugins: {
+          legend: { display: false },
+          tooltip: { callbacks: { label: c => `${c.label}: ${c.raw.value || 0}` } }
         },
-        // Explicit scale types (prevents "Cannot determine type of 'projection' axis")
-        scales:{
-          projection:{ type:'projection', axis:'x', projection:'equalEarth' },
-          color:{ type:'color', quantize:7 }
+        // IMPORTANT: explicit scale types to avoid "Cannot determine type" errors
+        scales: {
+          projection: { type: 'projection', axis: 'x', projection: 'equalEarth' },
+          color: { type: 'color', position: 'right', quantize: 7 }
         }
       }
     });
   }
 
-  // Expose + hook into your filter flow
+  // expose + hook into filters
   window.renderWorldMap = renderWorldMap;
   if (typeof window.applyFilters === 'function') {
     const old = window.applyFilters;
-    window.applyFilters = function(goToPage=1){
+    window.applyFilters = function(goToPage = 1){
       const r = old.apply(this, arguments);
       renderWorldMap().catch(()=>{});
       return r;
