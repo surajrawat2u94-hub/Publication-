@@ -2157,294 +2157,228 @@ function switchTab(tab){
   // Init
   document.addEventListener('DOMContentLoaded', ()=>{ buildSDGLegend(); autoLoad(); });
 </script>
-<!-- ===== Country-wise Publications (map) ===== -->
-<div class="card p-4">
-  <div class="flex items-center justify-between">
-    <h3 class="font-semibold">Country-wise Publications (map)</h3>
-    <button class="icon-btn"
-            onclick="openWorldMapInModal?.()">
-      <i data-lucide="maximize-2"></i>
-      <span class="hidden sm:inline">Focus</span>
-    </button>
-  </div>
-
-  <div class="mt-2 h-[360px]">
-    <div id="chartWorldMap" class="w-full h-full"></div>
-  </div>
-
-  <div class="text-xs text-slate-500 mt-2">
-    Counts are per paper (unique countries). Top-5 shown as pulsing red dots.
-  </div>
-</div>
-
-<!-- ECharts (core) -->
-<script src="https://cdn.jsdelivr.net/npm/echarts@5/dist/echarts.min.js"></script>
+<!-- ECharts core -->
+<script src="https://fastly.jsdelivr.net/npm/echarts@5.5.0/dist/echarts.min.js"></script>
 
 <script>
-/* ===========================
-   Modern choropleth + Top-5 pulses
-   =========================== */
+/* ===== Country choropleth (modern, top-5 pulse + counts) =====
+   - Works with institution_data.json produced by your harvester
+   - Robust to countries as array or comma-separated string
+   - No world.json fetch; loads world.js (registers 'world') with fallbacks
+*/
 
 (function () {
-  // ---- 1) Robust loaders ----
+  const CONTAINER_ID = 'chartWorldMap';
+
+  // Try a few common places for your JSON (change/trim if you know the exact path)
   const DATA_URLS = [
-    './institution_data.json',
-    '../institution_data.json',
-    '/institution_data.json',
-    './data/institution_data.json'
+    'institution_data.json',
+    './data/institution_data.json',
+    '/institution_data.json'
   ];
 
-  const WORLD_JSON_URLS = [
-    'https://fastly.jsdelivr.net/npm/echarts@5/map/json/world.json',
-    'https://cdn.jsdelivr.net/npm/echarts@5/map/json/world.json'
-  ];
+  // Load the world map JS (registers 'world' into ECharts)
+  async function ensureWorldMapRegistered() {
+    if (echarts.getMap && echarts.getMap('world')) return;
+    const cdns = [
+      'https://fastly.jsdelivr.net/npm/echarts@5.5.0/map/js/world.js',
+      'https://cdn.jsdelivr.net/npm/echarts@5.5.0/map/js/world.js',
+      'https://unpkg.com/echarts@5.5.0/map/js/world.js'
+    ];
+    for (const src of cdns) {
+      try { await loadScript(src); if (echarts.getMap('world')) return; } catch(_) {}
+    }
+    throw new Error('Failed to load world map script');
+  }
 
-  async function fetchFirstOk(urls) {
+  function loadScript(src) {
+    return new Promise((resolve, reject) => {
+      const s = document.createElement('script');
+      s.src = src;
+      s.onload = resolve;
+      s.onerror = reject;
+      document.head.appendChild(s);
+    });
+  }
+
+  async function fetchJSON(urls) {
     for (const u of urls) {
       try {
         const r = await fetch(u, { cache: 'no-store' });
         if (r.ok) return await r.json();
       } catch (_) {}
     }
-    return null;
+    throw new Error('Could not load institution_data.json from any known path');
   }
 
-  async function ensureWorldMapRegistered() {
-    if (echarts.getMap && echarts.getMap('world')) return true;
-    const geo = await fetchFirstOk(WORLD_JSON_URLS);
-    if (!geo) return false;
-    echarts.registerMap('world', geo);
-    return true;
+  // Country name <-> ISO2 helpers (covers all from your harvester constant)
+  const CODE_TO_NAME = {
+    IN:"India", US:"United States", GB:"United Kingdom", CN:"China", DE:"Germany",
+    FR:"France", IT:"Italy", ES:"Spain", PT:"Portugal", NL:"Netherlands",
+    SE:"Sweden", NO:"Norway", FI:"Finland", DK:"Denmark", BE:"Belgium",
+    CH:"Switzerland", AT:"Austria", IE:"Ireland", PL:"Poland", CZ:"Czechia",
+    SK:"Slovakia", HU:"Hungary", RO:"Romania", BG:"Bulgaria", GR:"Greece",
+    EE:"Estonia", LV:"Latvia", LT:"Lithuania", SI:"Slovenia", HR:"Croatia",
+    BA:"Bosnia and Herzegovina", RS:"Serbia", UA:"Ukraine", RU:"Russia",
+    TR:"Türkiye", IL:"Israel", IR:"Iran", SA:"Saudi Arabia", AE:"United Arab Emirates",
+    QA:"Qatar", KW:"Kuwait", OM:"Oman", EG:"Egypt", ZA:"South Africa",
+    NG:"Nigeria", KE:"Kenya", ET:"Ethiopia", MA:"Morocco", TN:"Tunisia", DZ:"Algeria",
+    JP:"Japan", KR:"South Korea", SG:"Singapore", MY:"Malaysia", TH:"Thailand",
+    ID:"Indonesia", PH:"Philippines", VN:"Vietnam", BD:"Bangladesh", PK:"Pakistan",
+    LK:"Sri Lanka", NP:"Nepal", AU:"Australia", NZ:"New Zealand", CA:"Canada",
+    MX:"Mexico", BR:"Brazil", AR:"Argentina", CL:"Chile", CO:"Colombia", PE:"Peru",
+    LU:"Luxembourg", IS:"Iceland", MT:"Malta", CY:"Cyprus", TW:"Taiwan", HK:"Hong Kong"
+  };
+  const NAME_TO_CODE = Object.fromEntries(Object.entries(CODE_TO_NAME).map(([k,v])=>[v.toLowerCase(), k]));
+
+  // Simple lon/lat for top-5 pins (center-ish of each country)
+  const CC_COORDS = {
+    US:[-98.5, 39.8],  CA:[-105.3,56.1], MX:[-102.5,23.6], BR:[-51.9,-10.8], AR:[-65.0,-35.4],
+    CL:[-71.0,-35.7],  CO:[-74.3,4.7],   PE:[-75.0,-9.2],
+    GB:[-3.4,54.6],    IE:[-8.0,53.2],   FR:[2.2,46.2],  DE:[10.4,51.2],  IT:[12.6,42.9],
+    ES:[-3.7,40.4],    PT:[-8.0,39.6],   NL:[5.3,52.1],  BE:[4.7,50.6],   CH:[8.2,46.8],
+    AT:[14.1,47.5],    SE:[16.4,62.2],   NO:[8.5,60.5],  FI:[26.3,64.6],  DK:[10.0,56.0],
+    PL:[19.1,52.1],    CZ:[15.5,49.8],   SK:[19.5,48.7], HU:[19.3,47.2],  RO:[25.0,45.9],
+    BG:[25.5,42.7],    GR:[22.9,39.1],   EE:[25.0,58.7], LV:[24.6,56.9],  LT:[23.9,55.2],
+    SI:[14.8,46.1],    HR:[16.4,45.1],   BA:[17.8,44.1], RS:[20.5,44.2],
+    RU:[37.6,55.8],    UA:[31.4,49.1],   TR:[35.2,39.0], IL:[34.9,31.5],  IR:[53.7,32.4],
+    SA:[45.1,23.9],    AE:[54.3,24.3],   QA:[51.2,25.3], KW:[47.6,29.3],  OM:[57.5,22.4],
+    EG:[30.8,26.7],    DZ:[2.6,28.0],    MA:[-6.0,31.8], TN:[9.4,34.0],   ZA:[24.7,-29.0],
+    NG:[8.7,9.1],      KE:[37.9,-0.02],  ET:[40.5,9.1],
+    IN:[78.9,22.0],    PK:[69.4,30.4],   BD:[90.3,23.7], LK:[80.7,7.8],   NP:[84.0,28.4],
+    CN:[103.8,35.9],   JP:[139.7,35.7],  KR:[127.8,36.3], TW:[121.0,23.7], HK:[114.1,22.4],
+    SG:[103.8,1.35],   MY:[101.7,4.2],   TH:[100.9,15.0], ID:[113.9,-1.9], VN:[106.3,16.9],
+    PH:[121.0,14.6],   AU:[134.5,-25.0], NZ:[172.9,-41.2]
+  };
+
+  // Parse country codes from a record (handles arrays or comma-separated strings)
+  function extractCodes(rec) {
+    let codes = [];
+    if (Array.isArray(rec.country_codes) && rec.country_codes.length) {
+      codes = rec.country_codes;
+    } else if (typeof rec.country_codes === 'string') {
+      codes = rec.country_codes.split(/[;,]/).map(s=>s.trim());
+    } else if (Array.isArray(rec.countries) && rec.countries.length) {
+      codes = rec.countries.map(n => NAME_TO_CODE[(n||'').toLowerCase()] || n);
+    } else if (typeof rec.countries === 'string') {
+      codes = rec.countries.split(/[;,]/).map(n => NAME_TO_CODE[n.trim().toLowerCase()] || n.trim());
+    }
+    return [...new Set(codes.filter(Boolean).map(s => s.toUpperCase()))];
   }
 
-  // ---- 2) Country name/code helpers ----
-  // Map the names your harvester emits → ISO-2 codes
-  const NAME_TO_ISO2 = {
-    'India':'IN','United States':'US','United Kingdom':'GB','China':'CN','Germany':'DE',
-    'France':'FR','Italy':'IT','Spain':'ES','Portugal':'PT','Netherlands':'NL',
-    'Sweden':'SE','Norway':'NO','Finland':'FI','Denmark':'DK','Belgium':'BE',
-    'Switzerland':'CH','Austria':'AT','Ireland':'IE','Poland':'PL','Czechia':'CZ',
-    'Slovakia':'SK','Hungary':'HU','Romania':'RO','Bulgaria':'BG','Greece':'GR',
-    'Estonia':'EE','Latvia':'LV','Lithuania':'LT','Slovenia':'SI','Croatia':'HR',
-    'Bosnia and Herzegovina':'BA','Serbia':'RS','Ukraine':'UA','Russia':'RU',
-    'Türkiye':'TR','Turkey':'TR','Israel':'IL','Iran':'IR','Saudi Arabia':'SA',
-    'United Arab Emirates':'AE','Qatar':'QA','Kuwait':'KW','Oman':'OM','Egypt':'EG',
-    'South Africa':'ZA','Nigeria':'NG','Kenya':'KE','Ethiopia':'ET','Morocco':'MA',
-    'Tunisia':'TN','Algeria':'DZ','Japan':'JP','South Korea':'KR','Korea':'KR',
-    'Singapore':'SG','Malaysia':'MY','Thailand':'TH','Indonesia':'ID','Philippines':'PH',
-    'Vietnam':'VN','Bangladesh':'BD','Pakistan':'PK','Sri Lanka':'LK','Nepal':'NP',
-    'Australia':'AU','New Zealand':'NZ','Canada':'CA','Mexico':'MX','Brazil':'BR',
-    'Argentina':'AR','Chile':'CL','Colombia':'CO','Peru':'PE','Luxembourg':'LU',
-    'Iceland':'IS','Malta':'MT','Cyprus':'CY','Taiwan':'TW','Hong Kong':'HK'
-  };
-
-  // Rough centroids for plotting pulses (lat, lon). Add more if needed.
-  const ISO2_TO_COORD = {
-    US:[37.1,-95.7], CA:[56.1,-106.3], MX:[23.6,-102.5], BR:[-10,-55], AR:[-38.4,-63.6],
-    CL:[-35.7,-71.5], CO:[4.6,-74.1], PE:[-9.2,-75.0],
-    GB:[55.3,-3.4], IE:[53.1,-8], FR:[46.2,2.2], ES:[40.4,-3.7], PT:[39.6,-8.0],
-    DE:[51.2,10.4], NL:[52.1,5.3], BE:[50.6,4.6], CH:[46.8,8.2], AT:[47.6,14.6],
-    IT:[42.8,12.5], SE:[60.1,18.6], NO:[61.0,8.5], FI:[64.0,26.3], DK:[56.0,10.0],
-    PL:[52.1,19.4], CZ:[49.8,15.5], SK:[48.7,19.7], HU:[47.2,19.5], RO:[45.9,24.9],
-    BG:[42.7,25.5], GR:[39.1,22.9], EE:[58.6,25.0], LV:[56.9,24.6], LT:[55.2,23.8],
-    SI:[46.1,14.8], HR:[45.1,15.2], BA:[44.2,17.7], RS:[44.0,20.8], UA:[49.0,31.2],
-    RU:[61.5,105.3], TR:[39.0,35.2], IL:[31.0,35.0], IR:[32.4,53.7], SA:[23.9,45.0],
-    AE:[24.3,54.3], QA:[25.3,51.2], KW:[29.3,47.5], OM:[21.0,57.0], EG:[26.8,30.8],
-    ZA:[-30.6,22.9], NG:[9.1,8.7], KE:[0.0,37.9], ET:[9.0,40.5], MA:[31.8,-7.1],
-    TN:[34.0,9.0], DZ:[28.0,2.6],
-    CN:[35.9,104.2], JP:[36.2,138.3], KR:[36.5,127.9], SG:[1.35,103.8], MY:[4.2,102.0],
-    TH:[15.9,100.9], ID:[-2.5,118.0], PH:[12.9,122.8], VN:[14.1,108.3],
-    BD:[23.7,90.4], PK:[30.4,69.3], LK:[7.9,80.7], NP:[28.4,84.1], TW:[23.7,121.0],
-    HK:[22.3,114.2],
-    AU:[-25.3,133.8], NZ:[-41.0,172.6],
-    IN:[22.8,79.0] // India
-  };
-
-  const ISO2_TO_NAME = Object.fromEntries(Object.entries(NAME_TO_ISO2).map(([n,c])=>[c,n]));
-
-  // Try to align to ECharts internal names for future shading if needed
-  const ECHARTS_NAMEMAP = {
-    'United States':'United States of America',
-    'Czechia':'Czech Rep.',
-    'Russia':'Russian Federation',
-    'South Korea':'Korea'
-  };
-
-  // ---- 3) Transform harvested JSON into country counts ----
-  function makeCounts(institutionJson) {
-    const items = (institutionJson && institutionJson.items) || [];
-    const counts = new Map(); // ISO-2 -> count
-
+  function aggregateCounts(items) {
+    const counts = {};
     for (const it of items) {
-      // use codes if present; otherwise convert names
-      let codes = Array.isArray(it.country_codes) ? it.country_codes.slice() : [];
-      if (!codes.length && Array.isArray(it.countries)) {
-        codes = it.countries.map(n => NAME_TO_ISO2[n] || null).filter(Boolean);
-      }
-      // defensive: sometimes strings like "IN, MX"
-      if (!codes.length && typeof it.countries === 'string') {
-        codes = it.countries.split(',').map(s => NAME_TO_ISO2[s.trim()] || null).filter(Boolean);
-      }
-      // per-paper unique country set
-      codes = [...new Set(codes.map(c => (c || '').toUpperCase()).filter(Boolean))];
-      for (const c of codes) counts.set(c, (counts.get(c) || 0) + 1);
+      const codes = extractCodes(it);
+      for (const cc of codes) counts[cc] = (counts[cc] || 0) + 1;
     }
     return counts;
   }
 
-  function topN(counts, n=5) {
-    return [...counts.entries()]
-      .sort((a,b) => b[1]-a[1])
-      .slice(0, n)
-      .map(([code,count]) => ({ code, count, name: ISO2_TO_NAME[code] || code }));
+  function toMapSeriesData(counts) {
+    // (Optional) if you want a numeric choropleth later; for now we keep base color uniform.
+    return Object.entries(counts).map(([cc, v]) => ({
+      name: CODE_TO_NAME[cc] || cc, value: v, cc
+    }));
   }
 
-  // ---- 4) Build the ECharts option ----
-  function buildOption({ pulses }) {
-    return {
+  function toTop5Scatter(counts) {
+    const ranked = Object.entries(counts).sort((a,b) => b[1]-a[1]).slice(0,5);
+    return ranked
+      .filter(([cc]) => CC_COORDS[cc])   // need a coordinate to show a pulse
+      .map(([cc, v]) => ({ name: CODE_TO_NAME[cc] || cc, cc, value: [...CC_COORDS[cc], v] }));
+  }
+
+  function sizeScale(maxVal) {
+    if (!maxVal) return () => 10;
+    const k = 16 / Math.log2(maxVal + 2); // smooth growth
+    return v => Math.max(10, Math.min(34, k * Math.log2(v + 2)));
+  }
+
+  async function render() {
+    const el = document.getElementById(CONTAINER_ID);
+    if (!el) return;
+
+    await ensureWorldMapRegistered();
+    const json = await fetchJSON(DATA_URLS);
+
+    const items = (json && Array.isArray(json.items)) ? json.items : [];
+    const counts = aggregateCounts(items);
+    const top5 = toTop5Scatter(counts);
+    const mapData = toMapSeriesData(counts);
+    const maxVal = Math.max(0, ...Object.values(counts));
+    const sizer = sizeScale(maxVal);
+
+    const chart = echarts.init(el);
+    chart.setOption({
       backgroundColor: 'transparent',
-      animation: true,
+      tooltip: {
+        trigger: 'item',
+        formatter: p => {
+          if (p.seriesType === 'effectScatter') {
+            return `${p.data.cc || p.name}: <b>${p.value[2]}</b>`;
+          }
+          return `${p.name}: <b>${p.value ?? 0}</b>`;
+        }
+      },
       geo: {
         map: 'world',
         roam: true,
-        zoom: 1.05,
-        nameMap: ECHARTS_NAMEMAP,
+        silent: true,
         itemStyle: {
-          areaColor: '#071a35',
-          borderColor: '#0f2b52',
-          borderWidth: 0.8
+          areaColor: '#0b1d3a',
+          borderColor: '#132a4e'
         },
-        emphasis: {
-          itemStyle: { areaColor: '#0e2a53' }
-        }
+        emphasis: { itemStyle: { areaColor: '#12315d' } }
       },
       series: [
-        // Base map layer
-        { type: 'map', map: 'world', nameMap: ECHARTS_NAMEMAP, geoIndex: 0, data: [] },
-
-        // Top-5 pulsing dots
+        // Base map layer (uniform look; you can feed mapData here for choropleth if desired)
+        {
+          type: 'map',
+          map: 'world',
+          geoIndex: 0,
+          data: mapData,       // kept in case you later add a visualMap
+          zlevel: 0,
+          silent: true,
+          itemStyle: {
+            areaColor: '#0b1d3a',
+            borderColor: '#132a4e'
+          },
+          emphasis: { itemStyle: { areaColor: '#12315d' } }
+        },
+        // Top-5 pulsing dots with value labels
         {
           type: 'effectScatter',
           coordinateSystem: 'geo',
+          data: top5,
           zlevel: 3,
-          rippleEffect: { period: 3, scale: 8, brushType: 'stroke' },
+          rippleEffect: { brushType: 'stroke', scale: 3 },
           showEffectOn: 'render',
-          symbol: 'circle',
-          itemStyle: { color: '#ef4444', shadowBlur: 16, shadowColor: '#ef4444' },
+          symbolSize: (val) => sizer(val[2]),
+          itemStyle: { color: '#ef4444' },   // red
           label: {
             show: true,
-            formatter: (p) => {
-              const c = p.data.code;
-              const name = ISO2_TO_NAME[c] || c;
-              return `${name}: ${p.data.value[2]}`;
-            },
             position: 'top',
-            fontSize: 12,
-            color: '#fef2f2',
-            backgroundColor: 'rgba(17,24,39,0.65)',
+            formatter: p => `${p.data.cc} ${p.value[2]}`,
+            color: '#fff',
+            backgroundColor: 'rgba(0,0,0,0.45)',
             padding: [2,6],
-            borderRadius: 6
-          },
-          symbolSize: (val) => {
-            // val[2] = count → size 8..24
-            const c = val[2] || 1;
-            return Math.max(8, Math.min(24, 6 + Math.sqrt(c) * 4));
-          },
-          data: pulses
-        }
-      ],
-      tooltip: {
-        trigger: 'item',
-        confine: true,
-        formatter: (p) => {
-          if (p.seriesType === 'effectScatter') {
-            const c = p.data.code;
-            const name = ISO2_TO_NAME[c] || c;
-            return `<b>${name}</b><br/>Publications: ${p.data.value[2]}`;
+            borderRadius: 4,
+            fontSize: 12
           }
-          return p.name || '';
         }
-      }
-    };
+      ]
+    });
+
+    window.addEventListener('resize', () => chart.resize());
   }
 
-  // Make pulse points from top-5
-  function makePulseData(top5) {
-    const pts = [];
-    for (const t of top5) {
-      const coord = ISO2_TO_COORD[t.code];
-      if (!coord) continue; // skip if we don't have a centroid
-      pts.push({ name: t.name, code: t.code, value: [coord[1], coord[0], t.count] }); // [lng,lat,count]
-    }
-    return pts;
+  // Kick off after DOM is ready
+  if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', render);
+  } else {
+    render();
   }
-
-  // ---- 5) Render (and expose hooks for your Focus modal) ----
-  let worldDataCache = null;
-  let worldMapOk = false;
-
-  async function prepareData() {
-    if (!worldMapOk) worldMapOk = await ensureWorldMapRegistered();
-    if (!worldMapOk) throw new Error('Failed to load world map json');
-    if (!worldDataCache) {
-      const j = await fetchFirstOk(DATA_URLS);
-      if (!j) throw new Error('institution_data.json not found');
-      worldDataCache = j;
-    }
-    const counts = makeCounts(worldDataCache);
-    const top5 = topN(counts, 5);
-    return { counts, top5 };
-  }
-
-  async function renderCountryMap(mountEl) {
-    if (!mountEl) return;
-    const chart = echarts.init(mountEl, null, { renderer: 'canvas' });
-    try {
-      const { top5 } = await prepareData();
-      const pulses = makePulseData(top5);
-      chart.setOption(buildOption({ pulses }), true);
-    } catch (err) {
-      chart.clear();
-      chart.setOption({
-        title: { text: 'Failed to load data', left: 'center', top: 'middle', textStyle: { color: '#ef4444' } }
-      });
-      // eslint-disable-next-line no-console
-      console.error(err);
-    }
-    new ResizeObserver(() => chart.resize()).observe(mountEl);
-    return chart;
-  }
-
-  // Initial render
-  document.addEventListener('DOMContentLoaded', () => {
-    const el = document.getElementById('chartWorldMap');
-    if (el) renderCountryMap(el);
-  });
-
-  // Expose for your Focus modal (call this when opening the modal)
-  window.openWorldMapInModal = async function () {
-    // Create a simple modal host if you don’t already have one
-    let modal = document.getElementById('wm-modal');
-    if (!modal) {
-      modal = document.createElement('div');
-      modal.id = 'wm-modal';
-      modal.style.cssText =
-        'position:fixed;inset:0;background:rgba(0,0,0,.55);display:flex;align-items:center;justify-content:center;z-index:60;';
-      modal.innerHTML = `
-        <div style="background:#0b1b33;border-radius:12px;box-shadow:0 10px 30px rgba(0,0,0,.25);width:min(1100px,94vw);height:min(620px,90vh);padding:12px;position:relative;">
-          <button id="wm-close" style="position:absolute;right:10px;top:10px;padding:6px 10px;border-radius:8px;background:#0f2749;color:#cbd5e1">✕</button>
-          <div style="height:100%;width:100%;"><div id="wm-container" style="width:100%;height:100%"></div></div>
-        </div>`;
-      document.body.appendChild(modal);
-      modal.querySelector('#wm-close').onclick = () => modal.remove();
-    }
-    const host = document.getElementById('wm-container');
-    host.innerHTML = '';
-    await renderCountryMap(host);
-  };
-
-  // Also export renderer in case you use another focus mechanism
-  window.renderCountryMap = renderCountryMap;
 })();
 </script>
 
