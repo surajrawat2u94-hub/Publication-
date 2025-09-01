@@ -1,0 +1,286 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width,initial-scale=1" />
+<title>Country-wise Publications (map)</title>
+
+<!-- (optional) Tailwind for quick layout styles -->
+<script src="https://cdn.tailwindcss.com"></script>
+
+<style>
+  .card{background:#fff;border:1px solid #e5e7eb;border-radius:16px;box-shadow:0 12px 24px rgba(15,23,42,.08)}
+</style>
+
+<script>
+/* ----------------------- loadInstitutionData -----------------------
+   Tries plain JSON first, then falls back to .gz (stream decompression).
+   Put institution_data.json OR institution_data.json.gz beside this file.
+-------------------------------------------------------------------- */
+async function loadInstitutionData(){
+  try{
+    const r=await fetch("institution_data.json",{cache:"no-store"});
+    if(r.ok){
+      const t=await r.clone().text();
+      if(!/^version https:\/\/git-lfs.github.com\/spec\/v1/m.test(t)) return JSON.parse(t);
+    }
+  }catch{}
+  const gz=await fetch("institution_data.json.gz",{cache:"no-store"});
+  if(!gz.ok) throw new Error("institution_data.json(.gz) not found");
+  if("DecompressionStream" in window){
+    const stream=gz.body.pipeThrough(new DecompressionStream("gzip"));
+    return JSON.parse(await new Response(stream).text());
+  }else{
+    const s=document.createElement("script"); s.src="https://cdn.jsdelivr.net/npm/pako@2.1.0/dist/pako.min.js";
+    await new Promise((ok,err)=>{s.onload=ok;s.onerror=err;document.head.appendChild(s);});
+    const buf=new Uint8Array(await gz.arrayBuffer());
+    return JSON.parse(window.pako.ungzip(buf,{to:"string"}));
+  }
+}
+</script>
+</head>
+<body class="bg-slate-50 text-slate-900">
+<header class="bg-gradient-to-r from-indigo-600 via-fuchsia-600 to-sky-600 text-white">
+  <div class="max-w-6xl mx-auto px-4 py-4 flex items-center justify-between">
+    <h1 class="text-lg font-semibold">Country-wise Publications</h1>
+    <div id="lastSynced" class="text-xs text-white/80"></div>
+  </div>
+</header>
+
+<main class="max-w-6xl mx-auto px-4 py-6 space-y-4">
+  <div class="card p-4">
+    <div class="flex items-center justify-between">
+      <h3 class="font-semibold">Map (network style)</h3>
+      <div class="text-sm text-slate-500" id="meta">Loading…</div>
+    </div>
+    <div class="mt-2 h-[420px]">
+      <canvas id="worldMap" class="w-full h-full block"></canvas>
+    </div>
+    <div class="text-xs text-slate-500 mt-2">
+      Counts are per paper (unique countries per paper). Top 5 countries blink.
+    </div>
+  </div>
+
+  <div id="topList" class="text-sm text-slate-700"></div>
+</main>
+
+<script>
+/* ======================= DATA / HELPERS ======================= */
+let all = [];
+
+const NAME_TO_ISO2 = new Map(Object.entries({
+  "united states":"US","usa":"US","u.s.a.":"US",
+  "united kingdom":"GB","uk":"GB","england":"GB",
+  "india":"IN","china":"CN","hong kong":"HK","taiwan":"TW","japan":"JP","south korea":"KR","korea, republic of":"KR",
+  "singapore":"SG","malaysia":"MY","indonesia":"ID","thailand":"TH","vietnam":"VN","philippines":"PH",
+  "australia":"AU","new zealand":"NZ","canada":"CA","mexico":"MX","brazil":"BR","argentina":"AR","chile":"CL","colombia":"CO","peru":"PE",
+  "france":"FR","germany":"DE","italy":"IT","spain":"ES","portugal":"PT","netherlands":"NL","belgium":"BE","switzerland":"CH","austria":"AT",
+  "sweden":"SE","norway":"NO","denmark":"DK","finland":"FI","ireland":"IE","poland":"PL","czech republic":"CZ","greece":"GR",
+  "russia":"RU","turkey":"TR","israel":"IL","united arab emirates":"AE","uae":"AE","saudi arabia":"SA","qatar":"QA","oman":"OM","kuwait":"KW","bahrain":"BH",
+  "iran":"IR","pakistan":"PK","bangladesh":"BD","sri lanka":"LK","nepal":"NP",
+  "egypt":"EG","kenya":"KE","ethiopia":"ET","nigeria":"NG","south africa":"ZA","morocco":"MA","tunisia":"TN","algeria":"DZ","ghana":"GH"
+}));
+const normCountry = s => String(s||'').toLowerCase().replace(/[^\p{L}\p{N}\s\-]/gu,' ').replace(/\s+/g,' ').trim();
+const ISO2name = c => { try{ return new Intl.DisplayNames(['en'],{type:'region'}).of(c) || c; }catch{ return c; } };
+
+/* lat,lon centroids (enough for the visualization) */
+const CENTROID = {
+  US:[39,-98], CA:[56,-96], MX:[23,-102],
+  BR:[-10,-55], AR:[-38,-65], CL:[-30,-71], CO:[4,-73], PE:[-10,-76],
+  GB:[54,-2], IE:[53.3,-8], FR:[46,2], DE:[51,10], IT:[42,12], ES:[40,-4], PT:[39.6,-8.2],
+  NL:[52.1,5.3], BE:[50.8,4.6], CH:[47,8], AT:[47.6,14.1],
+  SE:[62,15], NO:[64,11], DK:[56,10], FI:[64,26], PL:[52,20], CZ:[49.8,15.5], GR:[39.1,22.9],
+  RU:[60,90], TR:[39,35],
+  IN:[21,78], CN:[35,104], HK:[22.3,114.2], TW:[23.7,121], JP:[37,138], KR:[36,128],
+  SG:[1.35,103.8], MY:[4,102], ID:[-2,118], TH:[15,101], VN:[16,106], PH:[13,122],
+  AU:[-25,134], NZ:[-41,174],
+  IL:[31.4,35], AE:[24,54], SA:[24,45], QA:[25.3,51.2], OM:[20.5,56], KW:[29.3,47.5], BH:[26,50.5], IR:[32,53],
+  PK:[30,70], BD:[24,90], LK:[7,81], NP:[28,84],
+  EG:[27,30], KE:[0,38], ET:[9,40], NG:[9,8], ZA:[-29,24],
+  MA:[31,-7], TN:[34,10], DZ:[28,2], GH:[8,-2]
+};
+
+/* simple projection: lon→x (equirectangular), lat→y (mercator-ish) */
+function project(lat, lon, W, H){
+  const x = (lon + 180) / 360 * W;
+  const phi = lat * Math.PI / 180;
+  const y = (1 - Math.log(Math.tan(Math.PI/4 + phi/2)) / Math.PI) / 2 * H;
+  return [x, y];
+}
+
+/* extract unique ISO2 country codes per paper (robust against schema variations) */
+function countryCodesFromPaper(p){
+  const out = new Set();
+
+  // 1) direct 'country_codes'
+  if (Array.isArray(p.country_codes)) {
+    for (const c of p.country_codes) if (c) out.add(String(c).toUpperCase());
+  }
+  // 2) 'countries' by name
+  if (Array.isArray(p.countries)) {
+    for (const n of p.countries) {
+      const code = NAME_TO_ISO2.get(normCountry(n));
+      if (code) out.add(code);
+    }
+  }
+  // 3) author_details (affiliation_* fields)
+  if (Array.isArray(p.author_details)) {
+    for (const d of p.author_details) {
+      (d.affiliation_country_codes||[]).forEach(c=> out.add(String(c).toUpperCase()));
+      (d.affiliation_countries||[]).forEach(n=>{
+        const code = NAME_TO_ISO2.get(normCountry(n)); if (code) out.add(code);
+      });
+    }
+  }
+  // 4) OpenAlex authorships → institutions
+  if (Array.isArray(p.authorships)) {
+    for (const a of p.authorships) {
+      const insts = Array.isArray(a?.institutions) ? a.institutions : [];
+      for (const inst of insts) {
+        if (inst?.country_code) out.add(String(inst.country_code).toUpperCase());
+        else if (inst?.country){
+          const code = NAME_TO_ISO2.get(normCountry(inst.country));
+          if (code) out.add(code);
+        }
+      }
+    }
+  }
+  // 5) primary_location.source.country_code (sometimes present)
+  const src = p?.primary_location?.source;
+  if (src?.country_code) out.add(String(src.country_code).toUpperCase());
+
+  return [...out];
+}
+
+/* aggregate counts (per paper, unique countries) */
+function buildCountryCounts(items){
+  const map = new Map();
+  for (const p of items){
+    const codes = new Set(countryCodesFromPaper(p));
+    for (const code of codes){
+      if (!CENTROID[code]) continue;         // skip if we don't have a centroid
+      const rec = map.get(code) || { code, name: ISO2name(code), count: 0 };
+      rec.count += 1; map.set(code, rec);
+    }
+  }
+  return [...map.values()].sort((a,b)=>b.count-a.count);
+}
+
+/* ======================= RENDERER ======================= */
+const WM = { raf: 0 };  // animation handle
+
+function renderWorldMap(){
+  const can = document.getElementById('worldMap'); if (!can) return;
+  const W = can.clientWidth || 900, H = can.clientHeight || 420;
+  if (can.width !== W || can.height !== H){ can.width=W; can.height=H; }
+
+  const ctx = can.getContext('2d');
+  const data = buildCountryCounts(all);
+  const top5 = new Set(data.slice(0,5).map(r=>r.code));
+
+  // precompute nodes
+  const NODES = data.map(r=>{
+    const [lat,lon] = CENTROID[r.code];
+    const [x,y] = project(lat,lon,W,H);
+    const base = 3 + Math.min(14, Math.sqrt(r.count));
+    return { code:r.code, name:r.name, count:r.count, x,y, base };
+  });
+
+  // simple connectivity: each node connects to 3 nearest neighbors
+  const links = [];
+  for (let i=0;i<NODES.length;i++){
+    const a = NODES[i];
+    const dists = NODES.filter((_,j)=>j!==i)
+      .map(b=>({b, d: Math.hypot(a.x-b.x, a.y-b.y)}))
+      .sort((u,v)=>u.d-v.d).slice(0,3);
+    dists.forEach(({b})=>links.push([a,b]));
+  }
+
+  // top list
+  const list = data.slice(0,10).map(r=>`${r.name}: ${r.count}`).join(' · ');
+  document.getElementById('topList').textContent = data.length ? `Top countries — ${list}` : 'No country data detected.';
+
+  // animation loop
+  let t0 = null;
+  function frame(ts){
+    if (!t0) t0 = ts;
+    const t = (ts - t0)/1000;
+
+    // background
+    const g = ctx.createLinearGradient(0,0,W,H);
+    g.addColorStop(0,'#f8fafc'); g.addColorStop(1,'#e9edff');
+    ctx.fillStyle = g; ctx.fillRect(0,0,W,H);
+
+    // subtle grid
+    ctx.strokeStyle = 'rgba(2,6,23,.06)';
+    ctx.lineWidth = 1;
+    for (let lon=-150; lon<=150; lon+=30){
+      const x = (lon + 180) / 360 * W;
+      ctx.beginPath(); ctx.moveTo(x,0); ctx.lineTo(x,H); ctx.stroke();
+    }
+    for (let lat=-60; lat<=60; lat+=15){
+      const y = (1 - Math.log(Math.tan(Math.PI/4 + (lat*Math.PI/180)/2)) / Math.PI) / 2 * H;
+      ctx.beginPath(); ctx.moveTo(0,y); ctx.lineTo(W,y); ctx.stroke();
+    }
+
+    // faint network lines
+    ctx.lineWidth = 1.2;
+    ctx.strokeStyle = 'rgba(37,99,235,.10)';
+    ctx.beginPath();
+    for (const [a,b] of links){ ctx.moveTo(a.x,a.y); ctx.lineTo(b.x,b.y); }
+    ctx.stroke();
+
+    // base nodes
+    for (const n of NODES){
+      ctx.beginPath(); ctx.arc(n.x,n.y,n.base,0,Math.PI*2);
+      ctx.fillStyle = 'rgba(30,64,175,.85)';   // deep indigo
+      ctx.shadowColor = 'rgba(2,6,23,.18)'; ctx.shadowBlur = 14; ctx.shadowOffsetY = 6;
+      ctx.fill(); ctx.shadowBlur = 0; ctx.shadowOffsetY = 0;
+
+      // rim
+      ctx.beginPath(); ctx.arc(n.x,n.y,n.base+2,0,Math.PI*2);
+      ctx.strokeStyle = 'rgba(59,130,246,.35)';
+      ctx.lineWidth = 2; ctx.stroke();
+    }
+
+    // blinking pulses for top-5
+    for (const n of NODES){
+      if (!top5.has(n.code)) continue;
+      const pulse = 2 + 2*Math.sin(t*2 + n.base);
+      const R = n.base + pulse;
+      // glow ring
+      ctx.beginPath(); ctx.arc(n.x,n.y,R+4,0,Math.PI*2);
+      ctx.strokeStyle = 'rgba(6,182,212,.25)'; ctx.lineWidth = 6; ctx.stroke();
+      // inner bright core
+      const alpha = 0.55 + 0.45*Math.sin(t*2 + n.base);
+      ctx.beginPath(); ctx.arc(n.x,n.y,n.base,0,Math.PI*2);
+      ctx.fillStyle = `rgba(20,184,166,${alpha})`; ctx.fill();
+    }
+
+    WM.raf = requestAnimationFrame(frame);
+  }
+
+  if (WM.raf) cancelAnimationFrame(WM.raf);
+  WM.raf = requestAnimationFrame(frame);
+}
+
+/* ======================= BOOTSTRAP ======================= */
+(async function init(){
+  try{
+    const j = await loadInstitutionData();
+    document.getElementById('lastSynced').textContent =
+      j.updated ? `Last synced: ${new Date(j.updated).toLocaleString()}` : '';
+
+    all = Array.isArray(j.items) ? j.items : [];
+    document.getElementById('meta').textContent =
+      `${all.length.toLocaleString()} records loaded`;
+
+    renderWorldMap();
+    window.addEventListener('resize', renderWorldMap);
+  }catch(err){
+    document.getElementById('meta').textContent = 'Failed to load data: ' + err.message;
+  }
+})();
+</script>
+</body>
+</html>
