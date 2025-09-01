@@ -2159,12 +2159,11 @@ function switchTab(tab){
 </script>
 <script>
 /* ===========================================================
-   Country choropleth (modern neon + TOP-5 pulse & counts)
-   – Works with Chart.js 4.x, chartjs-chart-geo 4.3.x, topojson-client 3.x
-   – Re-renders when applyFilters() runs
+   Country choropleth (modern) — TOP-5 red pulse + value labels
+   Requires: Chart.js 4.x, chartjs-chart-geo 4.3.x, topojson-client 3.x
    =========================================================== */
 (() => {
-  /* ------- Lazy-load chartjs-chart-geo if missing ------- */
+  /* ---------- Lazy-load chartjs-chart-geo if needed ---------- */
   function ensureGeo() {
     if (window.ChartGeo) return Promise.resolve();
     return new Promise((resolve, reject) => {
@@ -2180,7 +2179,7 @@ function switchTab(tab){
     });
   }
 
-  /* ------- Helpers: normalize names & synonyms ------- */
+  /* ---------- Name normalization + synonyms ---------- */
   const norm = s => String(s||'').normalize('NFKD').replace(/[\u0300-\u036f]/g,'')
                    .toLowerCase().replace(/[^a-z0-9\s-]/g,' ').replace(/\s+/g,' ').trim();
   const SYN = new Map([
@@ -2203,6 +2202,7 @@ function switchTab(tab){
     Array.isArray(v) ? v.flatMap(splitList)
     : (typeof v === 'string' ? v.split(/[,\|;]+/).map(s=>s.trim()).filter(Boolean) : []);
 
+  /* ---------- Extract country hints from a publication row ---------- */
   function codesFromPaper(p){
     const out = new Set();
     const push = v => {
@@ -2240,7 +2240,7 @@ function switchTab(tab){
     return map;
   }
 
-  // rough geometry center (lon,lat)
+  // quick center-of-geometry (lon,lat)
   function featureCenter(feature){
     const pts=[]; (function walk(c){
       if (!c) return;
@@ -2252,7 +2252,7 @@ function switchTab(tab){
     return n? [sx/n, sy/n] : [0,0];
   }
 
-  /* ------- Rounded bubble for labels ------- */
+  /* ---------- Helpers for rounded label bubble ---------- */
   function roundRect(ctx, x, y, w, h, r=8){
     const rr = Math.min(r, w/2, h/2);
     ctx.beginPath();
@@ -2264,7 +2264,7 @@ function switchTab(tab){
     ctx.closePath();
   }
 
-  /* ------- Pulsing dots + labels for TOP-5 ------- */
+  /* ---------- TOP-5 red pulsing dots + value labels ---------- */
   const pulseTop5Plugin = {
     id: 'pulseTop5',
     afterDraw(chart){
@@ -2279,81 +2279,46 @@ function switchTab(tab){
         const [x,y] = proj(it.center);
         if (!isFinite(x)||!isFinite(y)) continue;
 
+        // pulse sizes
         const base = 5;
-        const pulse = 4 + 6 * Math.abs(Math.sin((now + it.rank*0.2) * Math.PI*2));
+        const pulse = 4 + 6 * Math.abs(Math.sin((now + it.rank*0.25) * Math.PI*2));
 
         ctx.save();
-        // glow ring
-        ctx.fillStyle = 'rgba(59,130,246,0.16)';
+
+        // outer glow ring (red)
+        ctx.fillStyle = 'rgba(239,68,68,0.18)';           // #ef4444
         ctx.beginPath(); ctx.arc(x, y, base+pulse, 0, Math.PI*2); ctx.fill();
 
-        // solid dot
+        // solid red dot with white outline
         ctx.beginPath(); ctx.arc(x, y, base, 0, Math.PI*2);
-        ctx.fillStyle = '#3b82f6'; ctx.fill();
+        ctx.fillStyle = '#ef4444';
+        ctx.shadowColor = 'rgba(239,68,68,0.85)';
+        ctx.shadowBlur = 8;
+        ctx.fill();
         ctx.lineWidth = 1.5; ctx.strokeStyle = 'white'; ctx.stroke();
 
-        // value label
+        // value label bubble: "<Country>: <count>"
         const txt = `${it.name}: ${it.value}`;
         ctx.font = '12px Inter, system-ui, sans-serif';
         const tw = ctx.measureText(txt).width;
         const bx = x + 10, by = y - 18, bw = tw + 16, bh = 20;
 
-        ctx.fillStyle = 'rgba(2,6,23,.86)';
+        ctx.shadowBlur = 0;
+        ctx.fillStyle = 'rgba(2,6,23,.88)'; // dark slate
         roundRect(ctx, bx, by, bw, bh, 8); ctx.fill();
-        ctx.fillStyle = '#fff'; ctx.fillText(txt, bx + 8, by + 14);
+
+        ctx.fillStyle = '#fff';
+        ctx.fillText(txt, bx + 8, by + 14);
+
         ctx.restore();
       }
-      requestAnimationFrame(() => chart.draw()); // keep pulsing
+
+      // keep animating
+      requestAnimationFrame(() => chart.draw());
     }
   };
 
-  /* ------- Neon network overlay between top nodes ------- */
-  const neonNetworkOverlay = {
-    id: 'neonNetwork',
-    afterDraw(chart){
-      const nodes = chart.$topNodes || [];
-      const proj = chart.scales?.projection?.projection;
-      if (!nodes.length || !proj) return;
-
-      const pts = nodes.map(n => ({ ...n, xy: proj(n.center) }))
-                       .filter(p => isFinite(p.xy[0]) && isFinite(p.xy[1]));
-      if (pts.length < 2) return;
-
-      const ctx = chart.ctx;
-      ctx.save();
-      ctx.globalCompositeOperation = 'screen';
-
-      // connect to 3 nearest neighbors
-      for (let i=0;i<pts.length;i++){
-        const a = pts[i];
-        const dists = pts.map((b,j)=>({j, d: Math.hypot(b.xy[0]-a.xy[0], b.xy[1]-a.xy[1])}))
-                         .filter(o=>o.j!==i).sort((x,y)=>x.d-y.d).slice(0,3);
-        for (const {j} of dists){
-          const b = pts[j];
-          ctx.lineWidth = 1.2;
-          ctx.strokeStyle = 'rgba(56,189,248,.55)';
-          ctx.shadowColor = 'rgba(56,189,248,.9)';
-          ctx.shadowBlur = 8;
-          ctx.beginPath();
-          ctx.moveTo(a.xy[0], a.xy[1]);
-          ctx.lineTo(b.xy[0], b.xy[1]);
-          ctx.stroke();
-        }
-      }
-      // glowing node dots
-      for (const p of pts){
-        ctx.beginPath();
-        ctx.arc(p.xy[0], p.xy[1], 3.5, 0, Math.PI*2);
-        ctx.fillStyle = 'rgba(59,130,246,.9)';
-        ctx.shadowColor = 'rgba(59,130,246,1)';
-        ctx.shadowBlur = 10;
-        ctx.fill();
-      }
-      ctx.restore();
-    }
-  };
-
-  /* ------- World data + chart ------- */
+  /* ---------- World data + chart ---------- */
   let worldFeatures=null, worldChart=null;
 
   async function loadWorld(){
@@ -2366,7 +2331,7 @@ function switchTab(tab){
   async function renderWorldMap(){
     await ensureGeo();
     const { ChoroplethController, GeoFeature, ProjectionScale, ColorScale } = ChartGeo;
-    Chart.register(ChoroplethController, GeoFeature, ProjectionScale, ColorScale, pulseTop5Plugin, neonNetworkOverlay);
+    Chart.register(ChoroplethController, GeoFeature, ProjectionScale, ColorScale, pulseTop5Plugin);
 
     const can = document.getElementById('chartWorldMap');
     if (!can) return;
@@ -2383,7 +2348,6 @@ function switchTab(tab){
 
     const maxVal = Math.max(1, ...data.map(d=>d.value||0));
     const top5   = data.filter(d=>d.value>0).sort((a,b)=>b.value-a.value).slice(0,5).map((d,i)=>({ ...d, rank:i+1 }));
-    const top10  = data.filter(d=>d.value>0).sort((a,b)=>b.value-a.value).slice(0,10);
 
     if (worldChart) worldChart.destroy();
     worldChart = new Chart(can.getContext('2d'), {
@@ -2392,12 +2356,12 @@ function switchTab(tab){
         labels: features.map(f => f.properties.name),
         datasets: [{
           data,
-          // modern dark fill driven by value
+          // dark navy fill that lightens with value
           backgroundColor: (ctx) => {
             const v = ctx.raw?.value || 0;
             const t = v / maxVal;           // 0..1
-            const l = 18 + t * 16;          // lightness 18% → 34%
-            return `hsl(213 80% ${l}%)`;    // deep navy → lighter navy
+            const l = 18 + t * 16;          // 18% → 34%
+            return `hsl(213 80% ${l}%)`;
           },
           borderWidth: 0.6,
           borderColor: 'rgba(15,23,42,.28)'
@@ -2412,23 +2376,22 @@ function switchTab(tab){
           legend: { display: false },
           tooltip: { callbacks: { label: c => `${c.label}: ${c.raw.value || 0}` } }
         },
-        // ***** FIX for "Cannot determine type of 'color' axis" *****
+        // important: define color scale to avoid the “color axis” error
         scales: {
           projection: { type: 'projection', axis: 'x', projection: 'equalEarth' },
           color: {
             type: 'color',
-            axis: 'x',          // required
-            position: 'right',  // required (even if hidden)
-            display: false,     // hide color bar
+            axis: 'x',
+            position: 'right',
+            display: false,
             quantize: 6
           }
         }
       }
     });
 
-    // pass data to overlay plugins
-    worldChart.$top5     = top5;
-    worldChart.$topNodes = top10;
+    // supply data for the pulse plugin
+    worldChart.$top5 = top5;
   }
 
   // Expose + hook into your filter cycle
