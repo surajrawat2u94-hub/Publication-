@@ -2148,29 +2148,42 @@ function switchTab(tab){
   document.addEventListener('DOMContentLoaded', ()=>{ buildSDGLegend(); autoLoad(); });
 </script>
 <script>
-/* ===== Country map — final =====
-   Requires: Chart.js v4
-   Will auto-load: chartjs-chart-geo (UMD)
-   Exposes: window.renderWorldMap()
-   Uses: window.filtered (if present) else window.all
+/* ===== Country choropleth — robust final =====
+   Needs Chart.js v4 (already on your page)
+   Exposes window.renderWorldMap()
 */
 (() => {
-  // Safely register geo controllers if available
-  function __wm_registerGeo(){
-    if (window.ChartGeo && window.Chart) {
-      const { ChoroplethController, BubbleMapController, GeoFeature, ProjectionScale, ColorScale } = ChartGeo;
-      try { Chart.register(ChoroplethController, BubbleMapController, GeoFeature, ProjectionScale, ColorScale); } catch {}
-    }
+  // --- register geo bits if present
+  function __regGeo(){
+    if (!window.Chart || !window.ChartGeo) return;
+    const { ChoroplethController, BubbleMapController, GeoFeature, ProjectionScale, ColorScale } = ChartGeo;
+    try { Chart.register(ChoroplethController, BubbleMapController, GeoFeature, ProjectionScale, ColorScale); } catch {}
   }
 
-  // Normalize names
-  const __wm_norm = s => String(s||'')
-    .normalize('NFKD').replace(/[\u0300-\u036f]/g,'')
-    .toLowerCase().replace(/[^a-z0-9\s\-]/g,' ')
-    .replace(/\s+/g,' ').trim();
+  // --- lazy load geo UMD (with fallback)
+  function __ensureGeo(){
+    return new Promise(res => {
+      if (window.ChartGeo) { __regGeo(); return res(); }
+      const tryLoad = (srcs, i=0) => {
+        if (i >= srcs.length) return res();
+        const s = document.createElement('script');
+        s.src = srcs[i];
+        s.onload = () => { __regGeo(); res(); };
+        s.onerror = () => tryLoad(srcs, i+1);
+        document.head.appendChild(s);
+      };
+      tryLoad([
+        'https://cdn.jsdelivr.net/npm/chartjs-chart-geo@4.3.0/build/index.umd.min.js',
+        'https://unpkg.com/chartjs-chart-geo@4.3.0/dist/index.umd.js'
+      ]);
+    });
+  }
 
-  // Common name harmonizations (left = your data, right = world-atlas names)
-  const __wm_SYNONYM = new Map([
+  // --- helpers
+  const __norm = s => String(s||'').normalize('NFKD').replace(/[\u0300-\u036f]/g,'')
+    .toLowerCase().replace(/[^a-z0-9\s\-]/g,' ').replace(/\s+/g,' ').trim();
+
+  const __SYN = new Map([
     ['united states','united states of america'], ['usa','united states of america'],
     ['uk','united kingdom'], ['russian federation','russia'], ['czech republic','czechia'],
     ['viet nam','vietnam'], ['korea, republic of','south korea'], ['korea, democratic people s republic of','north korea'],
@@ -2182,149 +2195,118 @@ function switchTab(tab){
     ['swaziland','eswatini'], ['macedonia','north macedonia'], ['cape verde','cabo verde'], ['east timor','timor-leste'],
     ['st. kitts and nevis','saint kitts and nevis'], ['st. vincent and the grenadines','saint vincent and the grenadines'],
     ['st. lucia','saint lucia'], ['palestine','state of palestine'],
-    // tiny typo guard seen in data
-    ['inida','india']
+    ['inida','india'] // typo guard seen in data
   ]);
 
-  // ISO-2 → name
-  const __wm_regionNames = new Intl.DisplayNames(['en'], { type: 'region' });
+  const __region = new Intl.DisplayNames(['en'], { type: 'region' });
+  const __split = v => Array.isArray(v) ? v.flatMap(__split)
+                     : (typeof v === 'string' ? v.split(/[,\|;]+/).map(s=>s.trim()).filter(Boolean) : []);
 
-  // Split helper: arrays OR comma/pipe/semicolon-separated strings
-  function __wm_split(v){
-    if (!v) return [];
-    if (Array.isArray(v)) return v.flatMap(__wm_split);
-    if (typeof v === 'string') return v.split(/[,\|;]+/).map(s => s.trim()).filter(Boolean);
-    return [];
-  }
-
-  // Extract country tokens from a publication record
-  function __wm_codesFromPaper(p){
+  function __codesFromPaper(p){
     const out = new Set();
     const push = v => {
       const s = String(v||'').trim(); if (!s) return;
-      if (/^[A-Za-z]{2}$/.test(s)) out.add(s.toUpperCase());        // ISO-2 like "IN"
-      else out.add('__NAME__:' + __wm_norm(s));                     // free-text name
+      if (/^[A-Za-z]{2}$/.test(s)) out.add(s.toUpperCase()); else out.add('__N__:'+__norm(s));
     };
 
-    __wm_split(p.country_codes).forEach(push);
-    __wm_split(p.countries).forEach(push);
+    __split(p.country_codes).forEach(push);
+    __split(p.countries).forEach(push);
 
-    if (Array.isArray(p.author_details)) {
-      for (const d of p.author_details) {
-        __wm_split(d.affiliation_country_code).forEach(push);
-        __wm_split(d.country_code).forEach(push);
-        __wm_split(d.countryCode).forEach(push);
-        __wm_split(d.affiliation_country).forEach(push);
-        __wm_split(d.country).forEach(push);
-        (d.affiliations||[]).forEach(af => { __wm_split(af.country_code).forEach(push); __wm_split(af.country).forEach(push); });
-        (d.institutions||[]).forEach(i => { __wm_split(i.country_code).forEach(push); __wm_split(i.country).forEach(push); });
+    if (Array.isArray(p.author_details)){
+      for (const d of p.author_details){
+        [d.affiliation_country_code,d.country_code,d.countryCode,d.affiliation_country,d.country].forEach(push);
+        (d.affiliations||[]).forEach(af => [af.country_code,af.country].forEach(push));
+        (d.institutions||[]).forEach(i  => [i.country_code,i.country].forEach(push));
       }
     }
-
-    if (Array.isArray(p.authorships)) {
-      for (const a of p.authorships) {
-        (a.institutions||[]).forEach(i => { __wm_split(i.country_code).forEach(push); __wm_split(i.country).forEach(push); });
-      }
+    if (Array.isArray(p.authorships)){
+      for (const a of p.authorships)
+        (a.institutions||[]).forEach(i => [i.country_code,i.country].forEach(push));
     }
-
-    (p.institutions||[]).forEach(i => { __wm_split(i.country_code).forEach(push); __wm_split(i.country).forEach(push); });
-
+    (p.institutions||[]).forEach(i => [i.country_code,i.country].forEach(push));
     const src = p?.primary_location?.source;
-    if (src){
-      __wm_split(src.country_code).forEach(push);
-      __wm_split(src.host_organization_country_code).forEach(push);
-      __wm_split(src.host_organization_country).forEach(push);
-    }
-
+    if (src){ [src.country_code, src.host_organization_country_code, src.host_organization_country].forEach(push); }
     return [...out];
   }
 
-  // Count by normalized country name (ISO-2 codes are converted via Intl.DisplayNames)
-  function __wm_countByName(items){
-    const byName = new Map();
-    const inc = k => byName.set(k, (byName.get(k)||0)+1);
-
-    for (const p of (items||[])){
-      for (const token of __wm_codesFromPaper(p)){
-        if (token.startsWith('__NAME__:')){
-          let nm = token.slice(9);
-          nm = __wm_SYNONYM.get(nm) || nm;
+  function __countByName(items){
+    const map = new Map();
+    const inc = k => map.set(k, (map.get(k)||0)+1);
+    for (const p of items || []){
+      for (const token of __codesFromPaper(p)){
+        if (token.startsWith('__N__:')){
+          let nm = token.slice(5);
+          nm = __SYN.get(nm) || nm;
           inc(nm);
         } else {
-          const name = __wm_regionNames.of(token); // e.g., "IN" → "India"
-          if (name) inc(__wm_norm(__wm_SYNONYM.get(__wm_norm(name)) || name));
+          const name = __region.of(token);
+          if (name) {
+            let nm = __norm(name);
+            nm = __SYN.get(nm) || nm;
+            inc(nm);
+          }
         }
       }
     }
-    return byName;
+    return map;
   }
 
-  // Lazy-load chartjs-chart-geo UMD if needed
-  function __wm_ensureGeo(){
-    return new Promise(res => {
-      if (window.ChartGeo) { __wm_registerGeo(); return res(); }
-      const s = document.createElement('script');
-      s.src = 'https://cdn.jsdelivr.net/npm/chartjs-chart-geo@4.3.0/build/index.umd.min.js';
-      s.onload = () => { __wm_registerGeo(); res(); };
-      document.head.appendChild(s);
-    });
-  }
+  let __features = null, __chart = null;
 
-  // Cache topojson features
-  let __wm_features = null;
-  async function __wm_loadFeatures(){
-    if (__wm_features) return __wm_features;
+  async function __loadFeatures(){
+    if (__features) return __features;
+    await __ensureGeo();
     const topo = await fetch('https://cdn.jsdelivr.net/npm/world-atlas@2/countries-110m.json').then(r=>r.json());
-    __wm_features = ChartGeo.topojson.feature(topo, topo.objects.countries).features;
-    return __wm_features;
+    __features = ChartGeo.topojson.feature(topo, topo.objects.countries).features;
+    return __features;
   }
 
-  let __wm_chart = null;
-
-  // Public: render (or re-render) the map
   async function renderWorldMap(){
     const can = document.getElementById('chartWorldMap');
     if (!can) return;
 
-    await __wm_ensureGeo();
-    const features = await __wm_loadFeatures();
+    await __ensureGeo();
+    const features = await __loadFeatures();
 
-    // prefer current filtered view
     const rows = (Array.isArray(window.filtered) && window.filtered.length) ? window.filtered
                : (Array.isArray(window.all) ? window.all : []);
-    const byName = __wm_countByName(rows);
+    const byName = __countByName(rows);
 
     const data = features.map(f => {
-      let nm = __wm_norm(f?.properties?.name || '');
-      nm = __wm_SYNONYM.get(nm) || nm;
-      return { feature: f, value: byName.get(nm) || 0 };
+      let nm = __norm(f?.properties?.name || '');
+      nm = __SYN.get(nm) || nm;
+      return { feature:f, value: byName.get(nm) || 0 };
     });
 
-    const ctx = can.getContext('2d');
-    if (__wm_chart) __wm_chart.destroy();
-
-    __wm_chart = new Chart(ctx, {
+    if (__chart) __chart.destroy();
+    __chart = new Chart(can.getContext('2d'), {
       type: 'choropleth',
-      data: { labels: features.map(f => f.properties.name), datasets: [{ data, borderWidth: 0.5 }] },
-      options: {
-        responsive: true,
-        maintainAspectRatio: false,
-        showOutline: true,
-        showGraticule: true,
-        plugins: {
-          legend: { display: false },
-          tooltip: { callbacks: { label: (c) => `${c.label}: ${c.raw.value || 0}` } }
-        },
-        scales: {
-          projection: { axis: 'x', projection: 'equalEarth' },
-          color: { quantize: 7 } // stepped color scale
-        }
+      data: { labels: features.map(f=>f.properties.name), datasets:[{ data, borderWidth:0.5 }] },
+      options:{
+        responsive:true, maintainAspectRatio:false, showOutline:true, showGraticule:true,
+        plugins:{ legend:{display:false}, tooltip:{ callbacks:{ label:(c)=>`${c.label}: ${c.raw.value||0}` } } },
+        scales:{ projection:{ axis:'x', projection:'equalEarth' }, color:{ quantize:7 } }
       }
     });
   }
 
-  // expose
+  // Expose globally
   window.renderWorldMap = renderWorldMap;
+
+  // Patch applyFilters so the map always updates after filters change
+  if (typeof window.applyFilters === 'function'){
+    const __old = window.applyFilters;
+    window.applyFilters = function(goToPage=1){
+      const r = __old.apply(this, arguments);
+      try { window.renderWorldMap && window.renderWorldMap(); } catch {}
+      return r;
+    };
+  }
+
+  // First paint safeguard (in case filters haven't run yet)
+  document.addEventListener('DOMContentLoaded', () => {
+    try { window.renderWorldMap && window.renderWorldMap(); } catch {}
+  });
 })();
 </script>
 
