@@ -2159,10 +2159,10 @@ function switchTab(tab){
 </script>
 <script>
 /* ===== Country choropleth (robust loader) =====
-   Requires Chart.js and topojson-client to be loaded before this script.
+   Needs Chart.js and topojson-client loaded before this script.
 */
 (() => {
-  // Lazy-load chartjs-chart-geo if not present
+  // Lazy-load chartjs-chart-geo if it's not already present
   function ensureGeo() {
     if (window.ChartGeo) return Promise.resolve();
     return new Promise((resolve, reject) => {
@@ -2195,11 +2195,10 @@ function switchTab(tab){
     ['swaziland','eswatini'], ['macedonia','north macedonia'], ['cape verde','cabo verde'], ['east timor','timor-leste'],
     ['st. kitts and nevis','saint kitts and nevis'], ['st. vincent and the grenadines','saint vincent and the grenadines'],
     ['st. lucia','saint lucia'], ['palestine','state of palestine'],
-    ['inida','india'] // common typo
+    ['inida','india']
   ]);
   const region = new Intl.DisplayNames(['en'], { type: 'region' });
 
-  // Helpers to read possible country fields in your data
   const splitList = v => Array.isArray(v) ? v.flatMap(splitList)
                      : (typeof v === 'string' ? v.split(/[,\|;]+/).map(s=>s.trim()).filter(Boolean) : []);
 
@@ -2209,10 +2208,8 @@ function switchTab(tab){
       const s = String(v||'').trim(); if (!s) return;
       if (/^[A-Za-z]{2}$/.test(s)) out.add(s.toUpperCase()); else out.add('__N__:'+norm(s));
     };
-    // top-level shortcuts
     splitList(p.country_codes).forEach(push);
     splitList(p.countries).forEach(push);
-    // nested locations
     if (Array.isArray(p.author_details)) {
       for (const d of p.author_details) {
         [d.affiliation_country_code,d.country_code,d.countryCode,d.affiliation_country,d.country].forEach(push);
@@ -2246,6 +2243,7 @@ function switchTab(tab){
   }
 
   let worldFeatures=null, worldChart=null;
+
   async function loadWorld(){
     if (worldFeatures) return worldFeatures;
     const topo = await fetch('https://cdn.jsdelivr.net/npm/world-atlas@2/countries-110m.json').then(r => r.json());
@@ -2274,17 +2272,29 @@ function switchTab(tab){
     if (worldChart) worldChart.destroy();
     worldChart = new Chart(can.getContext('2d'), {
       type: 'choropleth',
-      data: { labels: features.map(f => f.properties.name), datasets:[{ data, borderWidth:0.5 }] },
+      data: {
+        labels: features.map(f => f.properties.name),
+        datasets: [{ label:'Publications', data, borderWidth:0.5 }]
+      },
       options: {
-        responsive:true, maintainAspectRatio:false,
-        showOutline:true, showGraticule:true,
-        plugins:{ legend:{display:false}, tooltip:{ callbacks:{ label: c => `${c.label}: ${c.raw.value||0}` } } },
-        scales:{ projection:{ axis:'x', projection:'equalEarth' }, color:{ quantize:7 } }
+        responsive:true,
+        maintainAspectRatio:false,
+        showOutline:true,
+        showGraticule:true,
+        plugins:{
+          legend:{ display:false },
+          tooltip:{ callbacks:{ label: c => `${c.label}: ${c.raw.value||0}` } }
+        },
+        // IMPORTANT: make Chart instantiate the custom scales
+        scales:{
+          projection:{ type:'projection', projection:'equalEarth' },
+          color:{ type:'color', quantize:7 }
+        }
       }
     });
   }
 
-  // Expose + keep in sync with filters
+  // Expose + call when filters change
   window.renderWorldMap = renderWorldMap;
 
   if (typeof window.applyFilters === 'function') {
@@ -2299,7 +2309,6 @@ function switchTab(tab){
   document.addEventListener('DOMContentLoaded', () => { renderWorldMap().catch(()=>{}); });
 })();
 </script>
-
 
 </body>
 </html>
