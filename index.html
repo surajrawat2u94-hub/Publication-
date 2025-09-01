@@ -242,8 +242,8 @@ window.loadInstitutionData = async function () {
           <div class="text-xs text-slate-500 mt-2">Counts unique journal titles per publishing house (heuristic mapping).</div>
         </div>
       </div>
-<!-- ===== Country-wise Publications (map) ===== -->
-<div class="card p-4">
+      <!-- ===== Country-wise Publications (map) ===== -->
+<div class="card p-4 col-span-full">  <!-- col-span-full lets it span the full grid width -->
   <div class="flex items-center justify-between">
     <h3 class="font-semibold">Country-wise Publications (map)</h3>
     <button class="icon-btn" onclick="focusCanvas('chartWorldMap','Country-wise Publications (map)')">
@@ -251,8 +251,8 @@ window.loadInstitutionData = async function () {
     </button>
   </div>
 
-  <!-- IMPORTANT: a DIV (not <canvas>) -->
-  <div class="mt-2 h-[360px]">
+  <!-- Full-width, tall, responsive container -->
+  <div class="mt-2 h-[60vh] min-h-[420px]">
     <div id="chartWorldMap" class="w-full h-full"></div>
   </div>
 
@@ -2306,6 +2306,62 @@ async function renderCountryMapFocused(){
 }
 
 document.addEventListener('DOMContentLoaded', renderCountryMapFocused);
+</script>
+
+  <script>
+/**
+ * Make an ECharts instance resize perfectly with its container.
+ * Call:  makeWorldMapResponsive('chartWorldMap')
+ * AFTER you render the map (i.e., after chart.setOption(...)).
+ */
+(function () {
+  function makeWorldMapResponsive(containerId = 'chartWorldMap') {
+    const el = document.getElementById(containerId);
+    if (!el || typeof echarts === 'undefined') return;
+
+    // Reuse existing chart if already created
+    const chart =
+      echarts.getInstanceByDom(el) || echarts.init(el, null, { renderer: 'canvas' });
+
+    // Throttled resize (one per animation frame)
+    let raf = null;
+    const scheduleResize = () => {
+      if (raf) return;
+      raf = requestAnimationFrame(() => {
+        raf = null;
+        try { chart.resize(); } catch (_) {}
+      });
+    };
+
+    // Observe element size changes
+    const ro = new ResizeObserver(scheduleResize);
+    ro.observe(el);
+
+    // Respond to viewport/orientation changes
+    window.addEventListener('resize', scheduleResize, { passive: true });
+    window.addEventListener('orientationchange', scheduleResize);
+
+    // (Optional) If your Focus modal emits custom events, this helps too.
+    document.addEventListener('focus-modal-opened', scheduleResize);
+    document.addEventListener('focus-modal-closed', scheduleResize);
+
+    // Nudge it a bit after layout/fonts settle
+    setTimeout(scheduleResize, 50);
+    setTimeout(scheduleResize, 250);
+
+    // Return a disposer if you ever need to teardown
+    return () => {
+      try { ro.disconnect(); } catch (_){}
+      window.removeEventListener('resize', scheduleResize);
+      window.removeEventListener('orientationchange', scheduleResize);
+      document.removeEventListener('focus-modal-opened', scheduleResize);
+      document.removeEventListener('focus-modal-closed', scheduleResize);
+    };
+  }
+
+  // Expose globally so you can call it right after setOption(...)
+  window.makeWorldMapResponsive = makeWorldMapResponsive;
+})();
 </script>
 
 </body>
