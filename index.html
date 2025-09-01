@@ -22,9 +22,12 @@
 <!-- Chart.js -->
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
 
-<!-- Geo plugin + topojson client (needed to read the world-atlas file) -->
-<script src="https://cdn.jsdelivr.net/npm/chartjs-chart-geo@4.3.0/dist/chartjs-chart-geo.min.js"></script>
+<!-- chartjs-chart-geo (UMD build exposes `ChartGeo`) -->
+<script src="https://cdn.jsdelivr.net/npm/chartjs-chart-geo@4.3.0/build/index.umd.min.js"></script>
+
+<!-- topojson (needed to read world-atlas TopoJSON) -->
 <script src="https://cdn.jsdelivr.net/npm/topojson-client@3"></script>
+
 
   <style>
     .card{ background:rgba(255,255,255,.92); border:1px solid rgba(226,232,240,.92);
