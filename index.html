@@ -232,165 +232,6 @@ window.loadInstitutionData = async function () {
           <div class="text-xs text-slate-500 mt-2">Counts unique journal titles per publishing house (heuristic mapping).</div>
         </div>
       </div>
-      <script>
-/* ===== Country map (final) =====
-   Requirements loaded before this block:
-   - Chart.js v4
-   - chartjs-chart-geo UMD (and this will auto-register it)
-   - Your page has <canvas id="chartWorldMap"></canvas>
-*/
-(() => {
-  // Ensure geo controllers are registered (safe to call multiple times)
-  if (window.ChartGeo && window.Chart) {
-    const { ChoroplethController, BubbleMapController, GeoFeature, ProjectionScale, ColorScale } = ChartGeo;
-    Chart.register(ChoroplethController, BubbleMapController, GeoFeature, ProjectionScale, ColorScale);
-  }
-
-  // -------- helpers (scoped & prefixed to avoid clashes) --------
-  const __wm_norm = s => String(s||'')
-    .normalize('NFKD').replace(/[\u0300-\u036f]/g,'')
-    .toLowerCase().replace(/[^a-z0-9\s\-]/g,' ')
-    .replace(/\s+/g,' ').trim();
-
-  // Common name harmonizations between your data and world-atlas names
-  const __wm_SYNONYM = new Map([
-    ['united states','united states of america'], ['usa','united states of america'],
-    ['uk','united kingdom'], ['russian federation','russia'], ['czech republic','czechia'],
-    ['viet nam','vietnam'], ['korea, republic of','south korea'], ['korea, democratic people s republic of','north korea'],
-    ['iran, islamic republic of','iran'], ['moldova, republic of','moldova'], ['tanzania, united republic of','tanzania'],
-    ['bolivia, plurinational state of','bolivia'], ['venezuela, bolivarian republic of','venezuela'],
-    ['syrian arab republic','syria'], ['lao people s democratic republic','laos'], ['brunei darussalam','brunei'],
-    ['cote d ivoire','cote d’ivoire'], ['democratic republic of the congo','congo, democratic republic of the'],
-    ['republic of the congo','congo'], ['swaziland','eswatini'], ['macedonia','north macedonia'],
-    ['cape verde','cabo verde'], ['east timor','timor-leste'],
-    ['st. kitts and nevis','saint kitts and nevis'], ['st. vincent and the grenadines','saint vincent and the grenadines'],
-    ['st. lucia','saint lucia'], ['palestine','state of palestine'], ['ivory coast','cote d’ivoire']
-  ]);
-
-  // Convert ISO-2 code -> English country name
-  const __wm_regionNames = new Intl.DisplayNames(['en'], { type: 'region' });
-
-  // Pull possible country info out of a publication record
-  function __wm_codesFromPaper(p){
-    const out = new Set();
-    const push = v => {
-      const s = String(v||'').trim(); if (!s) return;
-      if (/^[A-Za-z]{2}$/.test(s)) out.add(s.toUpperCase());
-      else out.add('__NAME__:' + __wm_norm(s));
-    };
-
-    (p.country_codes||[]).forEach(push);
-    (p.countries||[]).forEach(push);
-
-    if (Array.isArray(p.author_details)) {
-      for (const d of p.author_details) {
-        [d.affiliation_country_code, d.country_code, d.countryCode, d.affiliation_country, d.country].forEach(push);
-        (d.affiliations||[]).forEach(af => [af.country_code, af.country].forEach(push));
-        (d.institutions||[]).forEach(i => [i.country_code, i.country].forEach(push));
-      }
-    }
-
-    if (Array.isArray(p.authorships)) {
-      for (const a of p.authorships) (a.institutions||[]).forEach(i => [i.country_code, i.country].forEach(push));
-    }
-
-    (p.institutions||[]).forEach(i => [i.country_code, i.country].forEach(push));
-
-    const src = p?.primary_location?.source;
-    if (src) [src.country_code, src.host_organization_country_code, src.host_organization_country].forEach(push);
-
-    return [...out];
-  }
-
-  // Count by normalized country name (handles ISO-2 via Intl.DisplayNames)
-  function __wm_countByName(items){
-    const byName = new Map();
-    const inc = k => byName.set(k, (byName.get(k)||0)+1);
-
-    for (const p of (items||[])){
-      for (const token of __wm_codesFromPaper(p)){
-        if (token.startsWith('__NAME__:')){
-          let nm = token.slice(9);
-          nm = __wm_SYNONYM.get(nm) || nm;
-          inc(nm);
-        } else {
-          const name = __wm_regionNames.of(token);
-          if (name) inc(__wm_norm(name));
-        }
-      }
-    }
-    return byName;
-  }
-
-  let __wm_chart = null;
-
-  // Lazy-load geo UMD (in case it wasn't already) and register
-  function __wm_ensureGeo(){
-    return new Promise(res => {
-      if (window.ChartGeo) return res();
-      const s = document.createElement('script');
-      s.src = 'https://cdn.jsdelivr.net/npm/chartjs-chart-geo@4.3.0/build/index.umd.min.js';
-      s.onload = () => {
-        if (window.ChartGeo && window.Chart) {
-          const { ChoroplethController, BubbleMapController, GeoFeature, ProjectionScale, ColorScale } = ChartGeo;
-          Chart.register(ChoroplethController, BubbleMapController, GeoFeature, ProjectionScale, ColorScale);
-        }
-        res();
-      };
-      document.head.appendChild(s);
-    });
-  }
-
-  async function renderWorldMap(){
-    const can = document.getElementById('chartWorldMap');
-    if (!can) return;
-
-    await __wm_ensureGeo();
-    const topo = await fetch('https://cdn.jsdelivr.net/npm/world-atlas@2/countries-110m.json').then(r=>r.json());
-    const features = ChartGeo.topojson.feature(topo, topo.objects.countries).features;
-
-    // Use your filtered list if present; else fall back to all
-    const rows = Array.isArray(window.filtered) && window.filtered.length ? window.filtered
-               : (Array.isArray(window.all) ? window.all : []);
-    const byName = __wm_countByName(rows);
-
-    // Map counts to features by normalized name
-    const data = features.map(f => {
-      let nm = __wm_norm(f?.properties?.name || '');
-      nm = __wm_SYNONYM.get(nm) || nm;
-      return { feature: f, value: byName.get(nm) || 0 };
-    });
-
-    const ctx = can.getContext('2d');
-    if (__wm_chart) __wm_chart.destroy();
-
-    __wm_chart = new Chart(ctx, {
-      type: 'choropleth',
-      data: { labels: features.map(f => f.properties.name), datasets: [{ data, borderWidth: 0.5 }] },
-      options: {
-        responsive: true,
-        maintainAspectRatio: false,
-        showOutline: true,
-        showGraticule: true,
-        plugins: {
-          legend: { display: false },
-          tooltip: {
-            callbacks: { label: (c) => `${c.label}: ${c.raw.value || 0}` }
-          }
-        },
-        scales: {
-          projection: { axis: 'x', projection: 'equalEarth' },
-          color: { quantize: 7 } // nice stepped color scale
-        }
-      }
-    });
-  }
-
-  // expose for your other code (applyFilters calls this)
-  window.renderWorldMap = renderWorldMap;
-})();
-</script>
-
     </section>
 
     <!-- PUBLICATIONS -->
@@ -2281,5 +2122,164 @@ function switchTab(tab){
   // Init
   document.addEventListener('DOMContentLoaded', ()=>{ buildSDGLegend(); autoLoad(); });
 </script>
+  <script>
+/* ===== Country map (final) =====
+   Requirements loaded before this block:
+   - Chart.js v4
+   - chartjs-chart-geo UMD (and this will auto-register it)
+   - Your page has <canvas id="chartWorldMap"></canvas>
+*/
+(() => {
+  // Ensure geo controllers are registered (safe to call multiple times)
+  if (window.ChartGeo && window.Chart) {
+    const { ChoroplethController, BubbleMapController, GeoFeature, ProjectionScale, ColorScale } = ChartGeo;
+    Chart.register(ChoroplethController, BubbleMapController, GeoFeature, ProjectionScale, ColorScale);
+  }
+
+  // -------- helpers (scoped & prefixed to avoid clashes) --------
+  const __wm_norm = s => String(s||'')
+    .normalize('NFKD').replace(/[\u0300-\u036f]/g,'')
+    .toLowerCase().replace(/[^a-z0-9\s\-]/g,' ')
+    .replace(/\s+/g,' ').trim();
+
+  // Common name harmonizations between your data and world-atlas names
+  const __wm_SYNONYM = new Map([
+    ['united states','united states of america'], ['usa','united states of america'],
+    ['uk','united kingdom'], ['russian federation','russia'], ['czech republic','czechia'],
+    ['viet nam','vietnam'], ['korea, republic of','south korea'], ['korea, democratic people s republic of','north korea'],
+    ['iran, islamic republic of','iran'], ['moldova, republic of','moldova'], ['tanzania, united republic of','tanzania'],
+    ['bolivia, plurinational state of','bolivia'], ['venezuela, bolivarian republic of','venezuela'],
+    ['syrian arab republic','syria'], ['lao people s democratic republic','laos'], ['brunei darussalam','brunei'],
+    ['cote d ivoire','cote d’ivoire'], ['democratic republic of the congo','congo, democratic republic of the'],
+    ['republic of the congo','congo'], ['swaziland','eswatini'], ['macedonia','north macedonia'],
+    ['cape verde','cabo verde'], ['east timor','timor-leste'],
+    ['st. kitts and nevis','saint kitts and nevis'], ['st. vincent and the grenadines','saint vincent and the grenadines'],
+    ['st. lucia','saint lucia'], ['palestine','state of palestine'], ['ivory coast','cote d’ivoire']
+  ]);
+
+  // Convert ISO-2 code -> English country name
+  const __wm_regionNames = new Intl.DisplayNames(['en'], { type: 'region' });
+
+  // Pull possible country info out of a publication record
+  function __wm_codesFromPaper(p){
+    const out = new Set();
+    const push = v => {
+      const s = String(v||'').trim(); if (!s) return;
+      if (/^[A-Za-z]{2}$/.test(s)) out.add(s.toUpperCase());
+      else out.add('__NAME__:' + __wm_norm(s));
+    };
+
+    (p.country_codes||[]).forEach(push);
+    (p.countries||[]).forEach(push);
+
+    if (Array.isArray(p.author_details)) {
+      for (const d of p.author_details) {
+        [d.affiliation_country_code, d.country_code, d.countryCode, d.affiliation_country, d.country].forEach(push);
+        (d.affiliations||[]).forEach(af => [af.country_code, af.country].forEach(push));
+        (d.institutions||[]).forEach(i => [i.country_code, i.country].forEach(push));
+      }
+    }
+
+    if (Array.isArray(p.authorships)) {
+      for (const a of p.authorships) (a.institutions||[]).forEach(i => [i.country_code, i.country].forEach(push));
+    }
+
+    (p.institutions||[]).forEach(i => [i.country_code, i.country].forEach(push));
+
+    const src = p?.primary_location?.source;
+    if (src) [src.country_code, src.host_organization_country_code, src.host_organization_country].forEach(push);
+
+    return [...out];
+  }
+
+  // Count by normalized country name (handles ISO-2 via Intl.DisplayNames)
+  function __wm_countByName(items){
+    const byName = new Map();
+    const inc = k => byName.set(k, (byName.get(k)||0)+1);
+
+    for (const p of (items||[])){
+      for (const token of __wm_codesFromPaper(p)){
+        if (token.startsWith('__NAME__:')){
+          let nm = token.slice(9);
+          nm = __wm_SYNONYM.get(nm) || nm;
+          inc(nm);
+        } else {
+          const name = __wm_regionNames.of(token);
+          if (name) inc(__wm_norm(name));
+        }
+      }
+    }
+    return byName;
+  }
+
+  let __wm_chart = null;
+
+  // Lazy-load geo UMD (in case it wasn't already) and register
+  function __wm_ensureGeo(){
+    return new Promise(res => {
+      if (window.ChartGeo) return res();
+      const s = document.createElement('script');
+      s.src = 'https://cdn.jsdelivr.net/npm/chartjs-chart-geo@4.3.0/build/index.umd.min.js';
+      s.onload = () => {
+        if (window.ChartGeo && window.Chart) {
+          const { ChoroplethController, BubbleMapController, GeoFeature, ProjectionScale, ColorScale } = ChartGeo;
+          Chart.register(ChoroplethController, BubbleMapController, GeoFeature, ProjectionScale, ColorScale);
+        }
+        res();
+      };
+      document.head.appendChild(s);
+    });
+  }
+
+  async function renderWorldMap(){
+    const can = document.getElementById('chartWorldMap');
+    if (!can) return;
+
+    await __wm_ensureGeo();
+    const topo = await fetch('https://cdn.jsdelivr.net/npm/world-atlas@2/countries-110m.json').then(r=>r.json());
+    const features = ChartGeo.topojson.feature(topo, topo.objects.countries).features;
+
+    // Use your filtered list if present; else fall back to all
+    const rows = Array.isArray(window.filtered) && window.filtered.length ? window.filtered
+               : (Array.isArray(window.all) ? window.all : []);
+    const byName = __wm_countByName(rows);
+
+    // Map counts to features by normalized name
+    const data = features.map(f => {
+      let nm = __wm_norm(f?.properties?.name || '');
+      nm = __wm_SYNONYM.get(nm) || nm;
+      return { feature: f, value: byName.get(nm) || 0 };
+    });
+
+    const ctx = can.getContext('2d');
+    if (__wm_chart) __wm_chart.destroy();
+
+    __wm_chart = new Chart(ctx, {
+      type: 'choropleth',
+      data: { labels: features.map(f => f.properties.name), datasets: [{ data, borderWidth: 0.5 }] },
+      options: {
+        responsive: true,
+        maintainAspectRatio: false,
+        showOutline: true,
+        showGraticule: true,
+        plugins: {
+          legend: { display: false },
+          tooltip: {
+            callbacks: { label: (c) => `${c.label}: ${c.raw.value || 0}` }
+          }
+        },
+        scales: {
+          projection: { axis: 'x', projection: 'equalEarth' },
+          color: { quantize: 7 } // nice stepped color scale
+        }
+      }
+    });
+  }
+
+  // expose for your other code (applyFilters calls this)
+  window.renderWorldMap = renderWorldMap;
+})();
+</script>
+
 </body>
 </html>
