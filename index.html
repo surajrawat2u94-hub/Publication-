@@ -2157,201 +2157,108 @@ function switchTab(tab){
   document.addEventListener('DOMContentLoaded', ()=>{ buildSDGLegend(); autoLoad(); });
 </script>
   <script>
-/* =================== Simple Country Choropleth (with .gz support) =================== */
-const ENABLE_PULSE = true; // set false if you don’t want blinking Top-5 dots
+/* =================== Country Choropleth (focused UI, red signals) =================== */
+const TOP_N = 5;                // highlight N countries
+const HIGHLIGHT_MODE = 'high';  // 'high' (top values) or 'low' (rarest)
+const ENABLE_PULSE = true;      // pulsing dots over highlighted countries
 
-/* ---------------- small loaders ---------------- */
-function loadScript(src) {
-  return new Promise((resolve, reject) => {
-    const s = document.createElement('script');
-    s.src = src; s.async = true;
-    s.onload = resolve; s.onerror = reject;
-    document.head.appendChild(s);
-  });
-}
-async function ensureEcharts() {
-  if (window.echarts) return echarts;
-  const cdns = [
-    'https://cdn.jsdelivr.net/npm/echarts@5.5.0/dist/echarts.min.js',
-    'https://cdnjs.cloudflare.com/ajax/libs/echarts/5.5.0/echarts.min.js'
-  ];
-  for (const u of cdns) { try { await loadScript(u); if (window.echarts) return echarts; } catch {} }
-  throw new Error('ECharts failed to load.');
-}
-async function ensurePako() { // for .gz
-  if (window.pako) return pako;
-  await loadScript('https://cdn.jsdelivr.net/npm/pako@2.1.0/dist/pako.min.js');
-  if (!window.pako) throw new Error('Failed to load pako (gzip).');
-  return pako;
-}
+/* ---------- tiny loaders ---------- */
+function loadScript(src){return new Promise((res,rej)=>{const s=document.createElement('script');s.src=src;s.async=true;s.onload=res;s.onerror=rej;document.head.appendChild(s);});}
+async function ensureEcharts(){if(window.echarts)return echarts;for(const u of [
+  'https://cdn.jsdelivr.net/npm/echarts@5.5.0/dist/echarts.min.js',
+  'https://cdnjs.cloudflare.com/ajax/libs/echarts/5.5.0/echarts.min.js'
+]){try{await loadScript(u);if(window.echarts)return echarts;}catch{}}throw new Error('ECharts failed to load.');}
+async function ensurePako(){if(window.pako)return pako;await loadScript('https://cdn.jsdelivr.net/npm/pako@2.1.0/dist/pako.min.js');if(!window.pako)throw new Error('Failed to load pako.');return pako;}
 
-/* ---------------- world geojson (remote-first) ---------------- */
-async function getWorldGeoJSON() {
-  const urls = [
+/* ---------- world geojson ---------- */
+async function getWorldGeoJSON(){
+  for(const u of [
     'https://raw.githubusercontent.com/johan/world.geo.json/master/countries.geo.json',
     'https://raw.githubusercontent.com/holtzy/D3-graph-gallery/master/DATA/world.geojson',
-    'assets/world.geo.json' // optional local copy if you add one later
-  ];
-  for (const u of urls) {
-    try {
-      const r = await fetch(u, { mode: 'cors' });
-      if (r.ok) return await r.json();
-    } catch {}
-  }
+    'assets/world.geo.json'
+  ]){try{const r=await fetch(u,{mode:'cors'});if(r.ok)return await r.json();}catch{}}
   throw new Error('World map failed to load.');
 }
 
-/* ---------------- robust data loader (JSON or GZIP) ---------------- */
-async function loadPortalDataRobust() {
-  // 0) existing globals (if your app already loaded the dataset)
-  const globs = [
-    () => (window.PORTAL_DATA && window.PORTAL_DATA.items),
-    () => (window.portalData && window.portalData.items),
-    () => (window.INSTITUTION_DATA && window.INSTITUTION_DATA.items),
-  ];
-  for (const g of globs) {
-    try { const it = g(); if (Array.isArray(it)) return it; } catch {}
-  }
-
-  // 1) plain JSON (relative + absolute under /Publication-/)
-  const jsonUrls = [
-    'institution_data.json',
-    'data/institution_data.json',
-    'assets/institution_data.json',
-    '/Publication-/institution_data.json',
-    '/Publication-/data/institution_data.json',
-    '/Publication-/assets/institution_data.json'
-  ];
-  for (const u of jsonUrls) {
-    try {
-      const r = await fetch(u, { cache: 'no-store' });
-      if (!r.ok) continue;
-      const j = await r.json();
-      if (Array.isArray(j.items)) return j.items;
-      if (Array.isArray(j)) return j;
-    } catch {}
-  }
-
-  // 2) gzip (same locations but .gz)
-  const gzUrls = [
-    'institution_data.json.gz',
-    'data/institution_data.json.gz',
-    'assets/institution_data.json.gz',
-    '/Publication-/institution_data.json.gz',
-    '/Publication-/data/institution_data.json.gz',
-    '/Publication-/assets/institution_data.json.gz'
-  ];
-  for (const u of gzUrls) {
-    try {
-      const r = await fetch(u, { cache: 'no-store' });
-      if (!r.ok) continue;
-      const buf = await r.arrayBuffer();
-      const pako = await ensurePako();
-      const text = new TextDecoder().decode(pako.ungzip(new Uint8Array(buf)));
-      const j = JSON.parse(text);
-      if (Array.isArray(j.items)) return j.items;
-      if (Array.isArray(j)) return j;
-    } catch {}
-  }
-
+/* ---------- robust data (JSON or .gz) ---------- */
+async function loadPortalDataRobust(){
+  const fromGlobals=[()=>window.PORTAL_DATA?.items,()=>window.portalData?.items,()=>window.INSTITUTION_DATA?.items];
+  for(const g of fromGlobals){try{const it=g();if(Array.isArray(it))return it;}catch{}}
+  const jsons=['institution_data.json','data/institution_data.json','assets/institution_data.json',
+               '/Publication-/institution_data.json','/Publication-/data/institution_data.json','/Publication-/assets/institution_data.json'];
+  for(const u of jsons){try{const r=await fetch(u,{cache:'no-store'});if(!r.ok)continue;const j=await r.json();return Array.isArray(j.items)?j.items:Array.isArray(j)?j:[];}catch{}}
+  const gzs=['institution_data.json.gz','data/institution_data.json.gz','assets/institution_data.json.gz',
+             '/Publication-/institution_data.json.gz','/Publication-/data/institution_data.json.gz','/Publication-/assets/institution_data.json.gz'];
+  for(const u of gzs){try{const r=await fetch(u,{cache:'no-store'});if(!r.ok)continue;const buf=await r.arrayBuffer();const p=await ensurePako();
+    const text=new TextDecoder().decode(p.ungzip(new Uint8Array(buf)));const j=JSON.parse(text);return Array.isArray(j.items)?j.items:Array.isArray(j)?j:[];}catch{}}
   throw new Error('No data (institution_data.json or .json.gz).');
 }
 
-/* ---------------- light country helpers ---------------- */
-const ISO2_TO_NAME = {
-  IN:'India', US:'United States', GB:'United Kingdom', CN:'China', DE:'Germany', FR:'France',
-  IT:'Italy', ES:'Spain', PT:'Portugal', NL:'Netherlands', SE:'Sweden', NO:'Norway', FI:'Finland',
-  DK:'Denmark', BE:'Belgium', CH:'Switzerland', AT:'Austria', IE:'Ireland', PL:'Poland',
-  CZ:'Czechia', SK:'Slovakia', HU:'Hungary', RO:'Romania', BG:'Bulgaria', GR:'Greece',
-  EE:'Estonia', LV:'Latvia', LT:'Lithuania', SI:'Slovenia', HR:'Croatia', UA:'Ukraine',
-  RU:'Russia', TR:'Turkey', IL:'Israel', IR:'Iran', SA:'Saudi Arabia', AE:'United Arab Emirates',
-  QA:'Qatar', KW:'Kuwait', OM:'Oman', EG:'Egypt', ZA:'South Africa', NG:'Nigeria', KE:'Kenya',
-  ET:'Ethiopia', MA:'Morocco', TN:'Tunisia', DZ:'Algeria', JP:'Japan', KR:'South Korea',
-  SG:'Singapore', MY:'Malaysia', TH:'Thailand', ID:'Indonesia', PH:'Philippines', VN:'Vietnam',
-  BD:'Bangladesh', PK:'Pakistan', LK:'Sri Lanka', NP:'Nepal', AU:'Australia', NZ:'New Zealand',
-  CA:'Canada', MX:'Mexico', BR:'Brazil', AR:'Argentina', CL:'Chile', CO:'Colombia', PE:'Peru',
-  LU:'Luxembourg', IS:'Iceland', MT:'Malta', CY:'Cyprus', TW:'Taiwan', HK:'Hong Kong'
-};
-const NAME_ALIAS = new Map([
-  ['United States of America','United States'],
-  ['Russian Federation','Russia'],
-  ['Czech Republic','Czechia'],
-  ['Türkiye','Turkey']
-]);
+/* ---------- light country helpers ---------- */
+const ISO2_TO_NAME={IN:'India',US:'United States',GB:'United Kingdom',CN:'China',DE:'Germany',FR:'France',IT:'Italy',ES:'Spain',PT:'Portugal',NL:'Netherlands',SE:'Sweden',NO:'Norway',FI:'Finland',DK:'Denmark',BE:'Belgium',CH:'Switzerland',AT:'Austria',IE:'Ireland',PL:'Poland',CZ:'Czechia',SK:'Slovakia',HU:'Hungary',RO:'Romania',BG:'Bulgaria',GR:'Greece',EE:'Estonia',LV:'Latvia',LT:'Lithuania',SI:'Slovenia',HR:'Croatia',UA:'Ukraine',RU:'Russia',TR:'Turkey',IL:'Israel',IR:'Iran',SA:'Saudi Arabia',AE:'United Arab Emirates',QA:'Qatar',KW:'Kuwait',OM:'Oman',EG:'Egypt',ZA:'South Africa',NG:'Nigeria',KE:'Kenya',ET:'Ethiopia',MA:'Morocco',TN:'Tunisia',DZ:'Algeria',JP:'Japan',KR:'South Korea',SG:'Singapore',MY:'Malaysia',TH:'Thailand',ID:'Indonesia',PH:'Philippines',VN:'Vietnam',BD:'Bangladesh',PK:'Pakistan',LK:'Sri Lanka',NP:'Nepal',AU:'Australia',NZ:'New Zealand',CA:'Canada',MX:'Mexico',BR:'Brazil',AR:'Argentina',CL:'Chile',CO:'Colombia',PE:'Peru',LU:'Luxembourg',IS:'Iceland',MT:'Malta',CY:'Cyprus',TW:'Taiwan',HK:'Hong Kong'};
+const NAME_ALIAS=new Map([['United States of America','United States'],['Russian Federation','Russia'],['Czech Republic','Czechia'],['Türkiye','Turkey']]);
 
-function buildCounts(items) {
-  const m = new Map();
-  const add = name => { const k = String(name||'').trim(); if (k) m.set(k,(m.get(k)||0)+1); };
-
-  for (const it of items) {
-    const codes = Array.isArray(it.country_codes) ? it.country_codes : [];
-    if (codes.length) {
-      for (const cc of codes) add(ISO2_TO_NAME[String(cc).toUpperCase()] || String(cc));
-      continue;
-    }
-    const cs = it.countries;
-    if (Array.isArray(cs)) cs.forEach(add);
-    else if (typeof cs === 'string') cs.split(',').map(s=>s.trim()).forEach(add);
+function buildCounts(items){
+  const m=new Map(); const add=n=>{const k=String(n||'').trim();if(k)m.set(k,(m.get(k)||0)+1);};
+  for(const it of items){
+    const codes=Array.isArray(it.country_codes)?it.country_codes:[];
+    if(codes.length){for(const cc of codes)add(ISO2_TO_NAME[String(cc).toUpperCase()]||String(cc)); continue;}
+    const cs=it.countries;
+    if(Array.isArray(cs)) cs.forEach(add);
+    else if(typeof cs==='string') cs.split(',').map(s=>s.trim()).forEach(add);
   }
   return m;
 }
-
-function centroidOfFeature(f) {
-  try {
-    const pts=[]; const push=c=>{ if(Array.isArray(c)&&typeof c[0]==='number'&&typeof c[1]==='number') pts.push(c); };
-    const walk=g=>{
-      if(!g) return;
-      if(g.type==='Polygon') g.coordinates.flat(1).forEach(push);
-      else if(g.type==='MultiPolygon') g.coordinates.flat(2).forEach(push);
-      else if(g.type==='GeometryCollection') (g.geometries||[]).forEach(walk);
-    };
+function centroidOfFeature(f){
+  try{
+    const pts=[];const push=c=>{if(Array.isArray(c)&&typeof c[0]==='number'&&typeof c[1]==='number')pts.push(c);};
+    const walk=g=>{if(!g)return; if(g.type==='Polygon')g.coordinates.flat(1).forEach(push);
+                   else if(g.type==='MultiPolygon')g.coordinates.flat(2).forEach(push);
+                   else if(g.type==='GeometryCollection')(g.geometries||[]).forEach(walk);};
     walk(f.geometry);
     let minX=Infinity,minY=Infinity,maxX=-Infinity,maxY=-Infinity;
-    for(const [x,y] of pts){ if(x<minX)minX=x; if(y<minY)minY=y; if(x>maxX)maxX=x; if(y>maxY)maxY=y; }
-    if(!isFinite(minX)||!isFinite(minY)||!isFinite(maxX)||!isFinite(maxY)) return null;
+    for(const [x,y] of pts){if(x<minX)minX=x;if(y<minY)minY=y;if(x>maxX)maxX=x;if(y>maxY)maxY=y;}
+    if(!isFinite(minX)||!isFinite(minY)||!isFinite(maxX)||!isFinite(maxY))return null;
     return [(minX+maxX)/2,(minY+maxY)/2];
-  } catch { return null; }
+  }catch{return null;}
 }
 
-/* ---------------- render ---------------- */
-async function renderCountryMapSimple() {
-  const el = document.getElementById('chartWorldMap');
-  if (!el) return;
+/* ---------- render ---------- */
+async function renderCountryMapFocused(){
+  const el=document.getElementById('chartWorldMap'); if(!el) return;
+  const showMsg=(m)=>{ if(!window.echarts){el.innerHTML=`<div style="color:#ef4444;font-size:13px">${m}</div>`;return;}
+    echarts.init(el).setOption({title:{text:m,left:'center',top:'center',textStyle:{color:'#ef4444',fontSize:14}}}); };
 
-  const showMsg = (msg) => {
-    if (!window.echarts) { el.innerHTML = `<div style="color:#ef4444;font-size:13px">${msg}</div>`; return; }
-    const c = echarts.init(el);
-    c.setOption({ title:{ text:msg, left:'center', top:'center', textStyle:{ color:'#ef4444', fontSize:14 } } });
-  };
+  try{await ensureEcharts();}catch{showMsg('ECharts failed to load.');return;}
 
-  try { await ensureEcharts(); } catch { showMsg('ECharts failed to load.'); return; }
+  let world; try{world=await getWorldGeoJSON(); echarts.registerMap('world',world);}catch{showMsg('World map failed to load.');return;}
+  let items; try{items=await loadPortalDataRobust();}catch{showMsg('No data (institution_data.json or .json.gz).');return;}
 
-  let world;
-  try { world = await getWorldGeoJSON(); echarts.registerMap('world', world); }
-  catch { showMsg('World map failed to load.'); return; }
+  const counts=buildCounts(items);
+  const mapData=Array.from(counts.entries()).map(([name,value])=>({name,value}));
+  const maxVal = mapData.length?Math.max(...mapData.map(d=>d.value)):0;
 
-  let items;
-  try { items = await loadPortalDataRobust(); }
-  catch { showMsg('No data (institution_data.json or .json.gz).'); return; }
-
-  const counts = buildCounts(items);
-  const mapData = Array.from(counts.entries()).map(([name,value]) => ({ name, value }));
-  const maxVal  = mapData.length ? Math.max(...mapData.map(d=>d.value)) : 0;
-
-  const centers = new Map();
-  for (const f of (world.features||[])) {
-    const raw = (f.properties && (f.properties.name||f.properties.NAME||f.properties.admin)) || '';
-    const norm = NAME_ALIAS.get(raw) || raw;
-    const c = centroidOfFeature(f);
-    if (norm && c) centers.set(norm, c);
+  // name -> center lookup
+  const centers=new Map();
+  for(const f of (world.features||[])){
+    const raw=(f.properties&&(f.properties.name||f.properties.NAME||f.properties.admin))||'';
+    const norm=NAME_ALIAS.get(raw)||raw;
+    const c=centroidOfFeature(f);
+    if(norm&&c) centers.set(norm,c);
   }
-  const top5 = mapData.slice().sort((a,b)=>b.value-a.value).slice(0,5);
-  const pulseData = ENABLE_PULSE ? top5.map(d=>{
-    const c = centers.get(d.name) || centers.get(NAME_ALIAS.get(d.name)||d.name);
-    return c ? { name:d.name, value:[...c, d.value] } : null;
+
+  // pick focus countries (top N by high or low)
+  const sorted=mapData.slice().sort((a,b)=>HIGHLIGHT_MODE==='low'?a.value-b.value:b.value-a.value);
+  const focus = new Set(sorted.slice(0,TOP_N).map(d=>d.name));
+
+  // pulse scatter data
+  const pulseData = ENABLE_PULSE ? [...focus].map(n=>{
+    const v=mapData.find(d=>d.name===n)?.value||0;
+    const c=centers.get(n)||centers.get(NAME_ALIAS.get(n)||n);
+    return c?{name:n,value:[...c,v]}:null;
   }).filter(Boolean) : [];
 
-  const chart = echarts.init(el, null, { renderer:'canvas' });
+  const chart=echarts.init(el,null,{renderer:'canvas'});
   chart.setOption({
     backgroundColor:'transparent',
     tooltip:{
@@ -2361,23 +2268,36 @@ async function renderCountryMapSimple() {
         : `${p.name}<br/>Papers: <b>${(Array.isArray(p.value)?p.value[2]:p.value)||0}</b>`
     },
     visualMap:{
-      min:0, max:Math.max(5,maxVal), left:20, bottom:18, text:['High','Low'],
-      inRange:{ color:['#dbeafe','#1d4ed8'] }, calculable:true
+      min:0,max:Math.max(5,maxVal), left:16, bottom:16, text:['High','Low'],
+      // neutral cool ramp so red stands out
+      inRange:{ color:['#f1f5f9','#cbd5e1','#64748b','#1e3a8a'] },
+      calculable:true
     },
     geo:{
       map:'world', roam:true,
       itemStyle:{ areaColor:'#0b1830', borderColor:'#0f2740', borderWidth:0.8 },
-      emphasis:{ itemStyle:{ areaColor:'#1e3a8a' } }
+      emphasis:{ itemStyle:{ areaColor:'#1e293b' } }
     },
     series:[
-      { name:'Publications', type:'map', map:'world', geoIndex:0, data:mapData },
+      // base choropleth
+      { name:'Publications', type:'map', map:'world', geoIndex:0, data:mapData, zlevel:0 },
+
+      // red translucent overlay on highlighted countries (so they are clearly visible)
+      { name:'Highlighted', type:'map', map:'world', geoIndex:0, zlevel:1, silent:true,
+        data:mapData.filter(d=>focus.has(d.name)),
+        itemStyle:{ areaColor:'rgba(239,68,68,0.28)', borderColor:'#ef4444', borderWidth:1.2 },
+        emphasis:{ itemStyle:{ areaColor:'rgba(239,68,68,0.45)' } }
+      },
+
+      // pulsing red dots + value labels (optional)
       ...(ENABLE_PULSE ? [{
-        name:'Top-5', type:'effectScatter', coordinateSystem:'geo', zlevel:2,
-        symbolSize:v=>Math.max(8, Math.min(26, 8 + Math.sqrt((v[2]||1))*3)),
-        rippleEffect:{ brushType:'stroke', scale:3, period:4 },
+        name:'Signal', type:'effectScatter', coordinateSystem:'geo', zlevel:2,
+        symbolSize:v=>Math.max(10,Math.min(30,10+Math.sqrt((v[2]||1))*3)),
+        rippleEffect:{ brushType:'fill', scale:4, period:3 },
         itemStyle:{ color:'#ef4444' },
         label:{ show:true, position:'right', distance:6,
-                formatter:p=>`${p.name} ${p.value[2]}`, color:'#f1f5f9', fontWeight:600, fontSize:12 },
+                formatter:p=>`${p.name} ${p.value[2]}`, color:'#f8fafc', fontWeight:700, fontSize:12,
+                backgroundColor:'rgba(15,23,42,0.55)', padding:[2,6], borderRadius:4 },
         data:pulseData
       }] : [])
     ]
@@ -2385,7 +2305,7 @@ async function renderCountryMapSimple() {
   window.addEventListener('resize', ()=>chart.resize());
 }
 
-document.addEventListener('DOMContentLoaded', renderCountryMapSimple);
+document.addEventListener('DOMContentLoaded', renderCountryMapFocused);
 </script>
 
 </body>
