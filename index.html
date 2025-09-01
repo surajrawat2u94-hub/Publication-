@@ -254,12 +254,12 @@ window.loadInstitutionData = async function () {
   </div>
 
   <div class="mt-2 h-[360px]">
-  <div id="chartWorldMap" class="w-full h-full"></div>
-</div>
-
+    <!-- IMPORTANT: use a DIV (not a canvas) -->
+    <div id="chartWorldMap" class="w-full h-full"></div>
+  </div>
 
   <div class="text-xs text-slate-500 mt-2">
-    Counts are per paper (unique countries).
+    Dark choropleth with pulsing Top-5 countries (by unique paper counts).
   </div>
 </div>
 
@@ -2158,182 +2158,263 @@ function switchTab(tab){
   // Init
   document.addEventListener('DOMContentLoaded', ()=>{ buildSDGLegend(); autoLoad(); });
 </script>
-<!-- ECharts core -->
-<script src="https://fastly.jsdelivr.net/npm/echarts@5.5.0/dist/echarts.min.js"></script>
-
 <script>
-/* ===== Country choropleth (modern, top-5 pulse + counts) ===== */
-(function () {
-  const CONTAINER_ID = 'chartWorldMap';
-  const DATA_URLS = ['institution_data.json','./data/institution_data.json','/institution_data.json'];
+// -------------------- tiny helpers --------------------
+const WORLD_MAP_CANDIDATES = [
+  // 1) local (if you later add a copy)
+  'assets/world-geo.json',
+  'data/world-geo.json',
+  'world-geo.json',
+  // 2) reliable public fallbacks (CORS-friendly)
+  'https://raw.githubusercontent.com/apache/echarts/5.5.0/map/json/world.json',
+  'https://raw.githubusercontent.com/apache/echarts/master/map/json/world.json',
+  // 3) CDNs (kept last; some networks block them)
+  'https://fastly.jsdelivr.net/npm/echarts@5.5.0/map/json/world.json',
+  'https://cdn.jsdelivr.net/npm/echarts@5.5.0/map/json/world.json',
+  'https://unpkg.com/echarts@5.5.0/map/json/world.json'
+];
 
-  // 1) Load world map GeoJSON: prefer local copy, then CDNs
-  async function ensureWorldMapRegistered() {
-    if (echarts.getMap && echarts.getMap('world')) return;
+// Minimal code→name mapper (ISO-2 → ECharts country names)
+const ISO2_TO_NAME = {
+  IN:'India', US:'United States', GB:'United Kingdom', CN:'China', DE:'Germany',
+  FR:'France', IT:'Italy', ES:'Spain', PT:'Portugal', NL:'Netherlands', SE:'Sweden',
+  NO:'Norway', FI:'Finland', DK:'Denmark', BE:'Belgium', CH:'Switzerland', AT:'Austria',
+  IE:'Ireland', PL:'Poland', CZ:'Czechia', SK:'Slovakia', HU:'Hungary', RO:'Romania',
+  BG:'Bulgaria', GR:'Greece', EE:'Estonia', LV:'Latvia', LT:'Lithuania', SI:'Slovenia',
+  HR:'Croatia', BA:'Bosnia and Herzegovina', RS:'Serbia', UA:'Ukraine', RU:'Russia',
+  TR:'Turkey', IL:'Israel', IR:'Iran', SA:'Saudi Arabia', AE:'United Arab Emirates',
+  QA:'Qatar', KW:'Kuwait', OM:'Oman', EG:'Egypt', ZA:'South Africa', NG:'Nigeria',
+  KE:'Kenya', ET:'Ethiopia', MA:'Morocco', TN:'Tunisia', DZ:'Algeria',
+  JP:'Japan', KR:'South Korea', SG:'Singapore', MY:'Malaysia', TH:'Thailand',
+  ID:'Indonesia', PH:'Philippines', VN:'Vietnam', BD:'Bangladesh', PK:'Pakistan',
+  LK:'Sri Lanka', NP:'Nepal', AU:'Australia', NZ:'New Zealand', CA:'Canada',
+  MX:'Mexico', BR:'Brazil', AR:'Argentina', CL:'Chile', CO:'Colombia', PE:'Peru',
+  LU:'Luxembourg', IS:'Iceland', MT:'Malta', CY:'Cyprus', TW:'Taiwan', HK:'Hong Kong'
+};
 
-    // Local copies you can add to your repo (recommended)
-    const localCandidates = [
-      'assets/world-geo.json', './assets/world-geo.json',
-      'data/world-geo.json', './data/world-geo.json',
-      'world-geo.json', './world-geo.json'
-    ];
-
-    for (const u of localCandidates) {
-      try {
-        const g = await fetchGeo(u);
-        echarts.registerMap('world', g);
-        return;
-      } catch (_) {}
-    }
-
-    // CDN fallbacks (GeoJSON, not the JS wrapper)
-    const cdns = [
-      'https://fastly.jsdelivr.net/npm/echarts@5.5.0/map/json/world.json',
-      'https://cdn.jsdelivr.net/npm/echarts@5.5.0/map/json/world.json',
-      'https://unpkg.com/echarts@5.5.0/map/json/world.json'
-    ];
-    for (const u of cdns) {
-      try {
-        const g = await fetchGeo(u);
-        echarts.registerMap('world', g);
-        return;
-      } catch (_) {}
-    }
-
-    throw new Error('Failed to load world map (GeoJSON)');
-  }
-
-  function fetchGeo(url) {
-    return fetch(url, { cache: 'no-store' }).then(r => {
-      if (!r.ok) throw new Error(r.statusText);
-      return r.json();
-    });
-  }
-
-  // 2) Load your publications JSON (portal export)
-  async function fetchData(urls) {
-    for (const u of urls) {
-      try {
-        const r = await fetch(u, { cache: 'no-store' });
-        if (r.ok) return await r.json();
-      } catch (_) {}
-    }
-    throw new Error('Could not load institution_data.json');
-  }
-
-  // 3) Country dictionaries + coordinates for scatter
-  const CODE_TO_NAME = {IN:"India",US:"United States",GB:"United Kingdom",CN:"China",DE:"Germany",FR:"France",IT:"Italy",ES:"Spain",PT:"Portugal",NL:"Netherlands",SE:"Sweden",NO:"Norway",FI:"Finland",DK:"Denmark",BE:"Belgium",CH:"Switzerland",AT:"Austria",IE:"Ireland",PL:"Poland",CZ:"Czechia",SK:"Slovakia",HU:"Hungary",RO:"Romania",BG:"Bulgaria",GR:"Greece",EE:"Estonia",LV:"Latvia",LT:"Lithuania",SI:"Slovenia",HR:"Croatia",BA:"Bosnia and Herzegovina",RS:"Serbia",UA:"Ukraine",RU:"Russia",TR:"Türkiye",IL:"Israel",IR:"Iran",SA:"Saudi Arabia",AE:"United Arab Emirates",QA:"Qatar",KW:"Kuwait",OM:"Oman",EG:"Egypt",ZA:"South Africa",NG:"Nigeria",KE:"Kenya",ET:"Ethiopia",MA:"Morocco",TN:"Tunisia",DZ:"Algeria",JP:"Japan",KR:"South Korea",SG:"Singapore",MY:"Malaysia",TH:"Thailand",ID:"Indonesia",PH:"Philippines",VN:"Vietnam",BD:"Bangladesh",PK:"Pakistan",LK:"Sri Lanka",NP:"Nepal",AU:"Australia",NZ:"New Zealand",CA:"Canada",MX:"Mexico",BR:"Brazil",AR:"Argentina",CL:"Chile",CO:"Colombia",PE:"Peru",LU:"Luxembourg",IS:"Iceland",MT:"Malta",CY:"Cyprus",TW:"Taiwan",HK:"Hong Kong"};
-  const NAME_TO_CODE = Object.fromEntries(Object.entries(CODE_TO_NAME).map(([k,v])=>[v.toLowerCase(),k]));
-  const CC_COORDS = {US:[-98.5,39.8],CA:[-105.3,56.1],MX:[-102.5,23.6],BR:[-51.9,-10.8],AR:[-65,-35.4],CL:[-71,-35.7],CO:[-74.3,4.7],PE:[-75,-9.2],GB:[-3.4,54.6],IE:[-8,53.2],FR:[2.2,46.2],DE:[10.4,51.2],IT:[12.6,42.9],ES:[-3.7,40.4],PT:[-8,39.6],NL:[5.3,52.1],BE:[4.7,50.6],CH:[8.2,46.8],AT:[14.1,47.5],SE:[16.4,62.2],NO:[8.5,60.5],FI:[26.3,64.6],DK:[10,56],PL:[19.1,52.1],CZ:[15.5,49.8],SK:[19.5,48.7],HU:[19.3,47.2],RO:[25,45.9],BG:[25.5,42.7],GR:[22.9,39.1],EE:[25,58.7],LV:[24.6,56.9],LT:[23.9,55.2],SI:[14.8,46.1],HR:[16.4,45.1],BA:[17.8,44.1],RS:[20.5,44.2],RU:[37.6,55.8],UA:[31.4,49.1],TR:[35.2,39],IL:[34.9,31.5],IR:[53.7,32.4],SA:[45.1,23.9],AE:[54.3,24.3],QA:[51.2,25.3],KW:[47.6,29.3],OM:[57.5,22.4],EG:[30.8,26.7],DZ:[2.6,28],MA:[-6,31.8],TN:[9.4,34],ZA:[24.7,-29],NG:[8.7,9.1],KE:[37.9,-0.02],ET:[40.5,9.1],IN:[78.9,22],PK:[69.4,30.4],BD:[90.3,23.7],LK:[80.7,7.8],NP:[84,28.4],CN:[103.8,35.9],JP:[139.7,35.7],KR:[127.8,36.3],TW:[121,23.7],HK:[114.1,22.4],SG:[103.8,1.35],MY:[101.7,4.2],TH:[100.9,15],ID:[113.9,-1.9],VN:[106.3,16.9],PH:[121,14.6],AU:[134.5,-25],NZ:[172.9,-41.2]};
-
-  // Aggregate helpers
-  function extractCodes(rec){
-    let codes=[];
-    if (Array.isArray(rec.country_codes) && rec.country_codes.length) codes=rec.country_codes;
-    else if (typeof rec.country_codes === 'string') codes = rec.country_codes.split(/[;,|]/).map(s=>s.trim());
-    else if (Array.isArray(rec.countries) && rec.countries.length) codes = rec.countries.map(n => NAME_TO_CODE[(n||'').toLowerCase()] || n);
-    else if (typeof rec.countries === 'string') codes = rec.countries.split(/[;,|]/).map(n => NAME_TO_CODE[n.trim().toLowerCase()] || n.trim());
-    return [...new Set(codes.filter(Boolean).map(s=>s.toUpperCase()))];
-  }
-  function aggregateCounts(items){ const c={}; for (const it of items){ for (const cc of extractCodes(it)) c[cc]=(c[cc]||0)+1; } return c; }
-  function toMapSeriesData(counts){ return Object.entries(counts).map(([cc,v])=>({name:CODE_TO_NAME[cc]||cc,value:v,cc})); }
-  function toTop5Scatter(counts){ return Object.entries(counts).sort((a,b)=>b[1]-a[1]).slice(0,5).filter(([cc])=>CC_COORDS[cc]).map(([cc,v])=>({name:CODE_TO_NAME[cc]||cc,cc,value:[...CC_COORDS[cc],v]})); }
-  function sizeScale(max){ if(!max) return ()=>10; const k=16/Math.log2(max+2); return v=>Math.max(10,Math.min(34,k*Math.log2(v+2))); }
-
-  // Render
-  async function render() {
-    const el = document.getElementById(CONTAINER_ID);
-    if (!el) return;
-
+// Try a list of URLs until one returns JSON
+async function fetchFirstJSON(urls) {
+  for (const u of urls) {
     try {
-      await ensureWorldMapRegistered();
-    } catch (e) {
-      console.error(e);
-      el.innerHTML = '<div class="text-red-500 p-2 text-sm">World map failed to load.</div>';
-      return;
+      const r = await fetch(u, { mode: 'cors' });
+      if (!r.ok) continue;
+      return await r.json();
+    } catch (e) { /* next */ }
+  }
+  throw new Error('Failed to load world map (GeoJSON)');
+}
+
+// Ensure ECharts has the 'world' map registered exactly once
+let __worldMapRegistered = false;
+async function ensureWorldMapRegistered() {
+  if (__worldMapRegistered) return true;
+  const geo = await fetchFirstJSON(WORLD_MAP_CANDIDATES);
+  echarts.registerMap('world', geo);
+  __worldMapRegistered = true;
+  return true;
+}
+
+// Get portal data: use window cache if present, otherwise fetch the JSON
+async function loadPortalData() {
+  if (window.__PORTAL_DATA__ && Array.isArray(window.__PORTAL_DATA__.items)) {
+    return window.__PORTAL_DATA__;
+  }
+  const r = await fetch('institution_data.json', { cache: 'no-store' });
+  if (!r.ok) throw new Error('institution_data.json not found');
+  const j = await r.json();
+  window.__PORTAL_DATA__ = j;  // cache
+  return j;
+}
+
+// Extract (country -> count), handling multiple shapes:
+// - country_codes: ['IN','US']
+// - countries: 'India, United States' OR ['India','United States']
+function computeCountryCounts(items) {
+  const counts = new Map();
+  const add = (name) => {
+    if (!name) return;
+    const key = String(name).trim();
+    if (!key) return;
+    counts.set(key, 1 + (counts.get(key) || 0));
+  };
+
+  for (const it of items || []) {
+    // Prefer ISO codes if present
+    const codes = Array.isArray(it.country_codes) ? it.country_codes : [];
+    if (codes.length) {
+      for (const cc of codes) add(ISO2_TO_NAME[String(cc).toUpperCase()] || String(cc));
+      continue;
     }
-
-    let data;
-    try {
-      data = await fetchData(DATA_URLS);
-    } catch (e) {
-      console.error(e);
-      data = { items: [] };
+    // Fallback to countries by name (array or comma-string)
+    let cs = it.countries;
+    if (Array.isArray(cs)) {
+      for (const nm of cs) add(nm);
+    } else if (typeof cs === 'string') {
+      cs.split(',').map(s => s.trim()).filter(Boolean).forEach(add);
     }
+  }
+  return counts;
+}
 
-    const items = Array.isArray(data.items) ? data.items : [];
-    const counts = aggregateCounts(items);
-    const top5 = toTop5Scatter(counts);
-    const mapData = toMapSeriesData(counts);
-    const sizer = sizeScale(Math.max(0, ...Object.values(counts)));
+// Compute simple bbox centroids for each feature so we can position Top-5 pulses
+function centroidOfFeature(f) {
+  try {
+    const coords = [];
+    const push = (c) => { if (Array.isArray(c) && typeof c[0]==='number' && typeof c[1]==='number') coords.push(c); };
+    const walk = (g) => {
+      const t = g.type;
+      if (t === 'Polygon') g.coordinates.flat(1).forEach(push);
+      else if (t === 'MultiPolygon') g.coordinates.flat(2).forEach(push);
+      else if (t === 'GeometryCollection') (g.geometries||[]).forEach(walk);
+    };
+    walk(f.geometry);
+    let minX=Infinity,minY=Infinity,maxX=-Infinity,maxY=-Infinity;
+    for (const [x,y] of coords){ if (x<minX) minX=x; if (y<minY) minY=y; if (x>maxX) maxX=x; if (y>maxY) maxY=y; }
+    if (!isFinite(minX) || !isFinite(minY) || !isFinite(maxX) || !isFinite(maxY)) return null;
+    return [(minX+maxX)/2, (minY+maxY)/2];
+  } catch { return null; }
+}
 
-    const chart = echarts.init(el);
+// Build the chart
+async function renderCountryMapModern() {
+  const dom = document.getElementById('chartWorldMap');
+  if (!dom) return;
+
+  const chart = echarts.init(dom, null, { renderer: 'canvas' });
+
+  try {
+    await ensureWorldMapRegistered();
+  } catch (e) {
+    chart.clear();
     chart.setOption({
-      backgroundColor: 'transparent',
-      tooltip: {
-        trigger: 'item',
-        formatter: (p) =>
-          p.seriesType === 'effectScatter'
-            ? `${p.data.cc || p.name}: <b>${p.value[2]}</b>`
-            : `${p.name}: <b>${p.value ?? 0}</b>`
-      },
-      geo: {
-        map: 'world',
-        roam: true,
-        silent: true,
-        itemStyle: { areaColor: '#0b1d3a', borderColor: '#132a4e' },
-        emphasis: { itemStyle: { areaColor: '#12315d' } }
-      },
-      series: [
-        {
-          type: 'map',
-          map: 'world',
-          geoIndex: 0,
-          data: mapData,
-          zlevel: 0,
-          silent: true,
-          itemStyle: { areaColor: '#0b1d3a', borderColor: '#132a4e' },
-          emphasis: { itemStyle: { areaColor: '#12315d' } }
-        },
-        {
-          type: 'effectScatter',
-          coordinateSystem: 'geo',
-          data: top5,
-          zlevel: 3,
-          rippleEffect: { brushType: 'stroke', scale: 3 },
-          showEffectOn: 'render',
-          symbolSize: (val) => sizer(val[2]),
-          itemStyle: { color: '#ef4444' },
-          label: {
-            show: true,
-            position: 'top',
-            formatter: (p) => `${p.data.cc} ${p.value[2]}`,
-            color: '#fff',
-            backgroundColor: 'rgba(0,0,0,0.45)',
-            padding: [2, 6],
-            borderRadius: 4,
-            fontSize: 12
-          }
-        }
-      ],
-      // Optional "no data" banner
-      graphic: (!mapData.length) ? [{
-        type: 'text',
-        left: 'center',
-        top: 'middle',
-        style: { text: 'No country data', fill: '#94a3b8', fontSize: 14 }
-      }] : []
+      title: { text: 'World map failed to load.', left: 'center', top: 'center', textStyle: { color: '#ef4444', fontWeight: 'normal', fontSize: 14 } }
     });
-
-    window.addEventListener('resize', () => chart.resize());
+    return;
   }
 
-  if (document.readyState === 'loading') {
-    document.addEventListener('DOMContentLoaded', render);
-  } else {
-    render();
+  // Load data and aggregate
+  let data;
+  try {
+    const portal = await loadPortalData();
+    data = portal.items || [];
+  } catch (e) {
+    chart.setOption({
+      title: { text: 'No data found (institution_data.json).', left: 'center', top: 'center', textStyle: { color: '#ef4444', fontWeight: 'normal', fontSize: 14 } }
+    });
+    return;
   }
-})();
+  const counts = computeCountryCounts(data);
+
+  // Build choropleth data for ECharts
+  const mapData = Array.from(counts.entries()).map(([name, value]) => ({ name, value }));
+  const maxVal = mapData.length ? Math.max(...mapData.map(d => d.value)) : 0;
+
+  // Find Top-5 for pulses
+  const top5 = mapData.slice().sort((a,b)=>b.value-a.value).slice(0,5);
+
+  // Get centroids from the registered map features
+  const geo = echarts.getMap('world').geoJson;
+  const centerByName = new Map();
+  for (const f of (geo.features || [])) {
+    const n = f.properties && (f.properties.name || f.properties.NAME || f.properties.admin);
+    if (!n) continue;
+    const c = centroidOfFeature(f);
+    if (c) centerByName.set(n, c); // [lon,lat]
+  }
+
+  // Convert top5 to effectScatter points with coords
+  const pulseData = top5.map(d => {
+    let coord = centerByName.get(d.name);
+    // handle a couple of common aliases
+    if (!coord) {
+      const alias = (d.name === 'Czechia') ? 'Czech Republic'
+                  : (d.name === 'Türkiye') ? 'Turkey'
+                  : (d.name === 'Russia') ? 'Russian Federation'
+                  : (d.name === 'United States of America') ? 'United States'
+                  : d.name;
+      coord = centerByName.get(alias);
+    }
+    return coord ? { name: d.name, value: [...coord, d.value] } : null;
+  }).filter(Boolean);
+
+  // Dark-modern look
+  const option = {
+    backgroundColor: 'transparent',
+    tooltip: {
+      trigger: 'item',
+      formatter: (params) => {
+        if (params.seriesType === 'effectScatter') {
+          return `${params.name}<br/>Papers: <b>${params.value[2]}</b>`;
+        }
+        const v = (params.value && (Array.isArray(params.value) ? params.value[2] : params.value)) || 0;
+        return `${params.name}<br/>Papers: <b>${v}</b>`;
+      }
+    },
+    visualMap: {
+      min: 0,
+      max: Math.max(5, maxVal),
+      left: 20,
+      bottom: 20,
+      text: ['High','Low'],
+      inRange: {
+        color: ['#0b1b2a','#112a46','#163b60','#1c4d7d','#215f9a','#2773ba']
+      },
+      textStyle: { color: '#9ca3af' },
+      calculable: true
+    },
+    geo: {
+      map: 'world',
+      roam: true,
+      itemStyle: {
+        areaColor: '#0a1a2a',
+        borderColor: '#0f2740',
+        borderWidth: 0.8
+      },
+      emphasis: {
+        itemStyle: { areaColor: '#254f7a' },
+        label: { show: false }
+      }
+    },
+    series: [
+      {
+        name: 'Publications',
+        type: 'map',
+        map: 'world',
+        geoIndex: 0,
+        data: mapData
+      },
+      {
+        name: 'Top-5',
+        type: 'effectScatter',
+        coordinateSystem: 'geo',
+        zlevel: 2,
+        symbolSize: (val) => {
+          const v = val[2] || 1;
+          // gentle scaling for visibility across datasets
+          return Math.max(8, Math.min(28, 8 + Math.sqrt(v) * 3));
+        },
+        rippleEffect: { brushType: 'stroke', scale: 3, period: 4 },
+        itemStyle: { color: '#ef4444' },
+        label: {
+          show: true,
+          position: 'right',
+          distance: 6,
+          formatter: (p) => `${p.name}  ${p.value[2]}`,
+          color: '#e5e7eb',
+          fontWeight: 600,
+          fontSize: 12
+        },
+        data: pulseData
+      }
+    ]
+  };
+
+  chart.setOption(option);
+  window.addEventListener('resize', () => chart.resize());
+}
+
+// Kick it
+document.addEventListener('DOMContentLoaded', renderCountryMapModern);
 </script>
 
 </body>
