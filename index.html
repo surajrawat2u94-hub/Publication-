@@ -2158,11 +2158,11 @@ function switchTab(tab){
   document.addEventListener('DOMContentLoaded', ()=>{ buildSDGLegend(); autoLoad(); });
 </script>
 <script>
-/* ===== Country choropleth (robust loader) =====
-   Needs Chart.js and topojson-client loaded before this script.
+/* ===== Country choropleth (robust) =====
+   Requires Chart.js and topojson-client to be loaded BEFORE this script.
 */
 (() => {
-  // Lazy-load chartjs-chart-geo if it's not already present
+  // Ensure chartjs-chart-geo is available (fallback CDN too)
   function ensureGeo() {
     if (window.ChartGeo) return Promise.resolve();
     return new Promise((resolve, reject) => {
@@ -2180,7 +2180,7 @@ function switchTab(tab){
     });
   }
 
-  // Normalization + synonyms
+  // Normalization + synonyms to match names from your data to map features
   const norm = s => String(s||'').normalize('NFKD').replace(/[\u0300-\u036f]/g,'')
                    .toLowerCase().replace(/[^a-z0-9\s\-]/g,' ').replace(/\s+/g,' ').trim();
   const SYN = new Map([
@@ -2198,10 +2198,10 @@ function switchTab(tab){
     ['inida','india']
   ]);
   const region = new Intl.DisplayNames(['en'], { type: 'region' });
-
   const splitList = v => Array.isArray(v) ? v.flatMap(splitList)
                      : (typeof v === 'string' ? v.split(/[,\|;]+/).map(s=>s.trim()).filter(Boolean) : []);
 
+  // Read possible country hints from each publication record
   function codesFromPaper(p){
     const out = new Set();
     const push = v => {
@@ -2242,8 +2242,8 @@ function switchTab(tab){
     return map;
   }
 
+  // GeoJSON loader (from world-atlas TopoJSON)
   let worldFeatures=null, worldChart=null;
-
   async function loadWorld(){
     if (worldFeatures) return worldFeatures;
     const topo = await fetch('https://cdn.jsdelivr.net/npm/world-atlas@2/countries-110m.json').then(r => r.json());
@@ -2251,6 +2251,7 @@ function switchTab(tab){
     return worldFeatures;
   }
 
+  // Render function
   async function renderWorldMap(){
     await ensureGeo();
     const { ChoroplethController, GeoFeature, ProjectionScale, ColorScale } = ChartGeo;
@@ -2260,7 +2261,8 @@ function switchTab(tab){
     if (!can) return;
 
     const features = await loadWorld();
-    const rows = (Array.isArray(window.filtered) && window.filtered.length) ? window.filtered
+    const rows = (Array.isArray(window.filtered) && window.filtered.length)
+               ? window.filtered
                : (Array.isArray(window.all) ? window.all : []);
     const byName = countByCountryName(rows);
 
@@ -2285,18 +2287,17 @@ function switchTab(tab){
           legend:{ display:false },
           tooltip:{ callbacks:{ label: c => `${c.label}: ${c.raw.value||0}` } }
         },
-        // IMPORTANT: make Chart instantiate the custom scales
+        // Explicit scale types (prevents "Cannot determine type of 'projection' axis")
         scales:{
-          projection:{ type:'projection', projection:'equalEarth' },
+          projection:{ type:'projection', axis:'x', projection:'equalEarth' },
           color:{ type:'color', quantize:7 }
         }
       }
     });
   }
 
-  // Expose + call when filters change
+  // Expose + hook into your filter flow
   window.renderWorldMap = renderWorldMap;
-
   if (typeof window.applyFilters === 'function') {
     const old = window.applyFilters;
     window.applyFilters = function(goToPage=1){
