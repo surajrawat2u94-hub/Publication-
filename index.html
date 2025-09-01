@@ -19,14 +19,15 @@
   <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
   <!-- Matrix (kept for IF heatmap) -->
   <script src="https://cdn.jsdelivr.net/npm/chartjs-chart-matrix@2.0.1"></script>
-<!-- Chart.js -->
+<!-- Chart.js (once) -->
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
 
-<!-- chartjs-chart-geo (UMD build exposes `ChartGeo`) -->
-<script src="https://cdn.jsdelivr.net/npm/chartjs-chart-geo@4.3.0/build/index.umd.min.js"></script>
-
-<!-- topojson (needed to read world-atlas TopoJSON) -->
+<!-- topojson (needed by our code) -->
 <script src="https://cdn.jsdelivr.net/npm/topojson-client@3"></script>
+
+<!-- chartjs-chart-geo (UMD exposes `ChartGeo`) -->
+<script src="https://cdn.jsdelivr.net/npm/chartjs-chart-geo@4.3.3/build/index.umd.min.js"></script>
+
 
 
   <style>
@@ -2157,16 +2158,29 @@ function switchTab(tab){
   document.addEventListener('DOMContentLoaded', ()=>{ buildSDGLegend(); autoLoad(); });
 </script>
 <script>
-/* ===== Country choropleth (final, simple, reliable) ===== */
+/* ===== Country choropleth (robust loader) =====
+   Requires Chart.js and topojson-client to be loaded before this script.
+*/
 (() => {
-  // Register geo pieces once the plugin is on the page
-  try {
-    const { ChoroplethController, GeoFeature, ProjectionScale, ColorScale } = ChartGeo;
-    Chart.register(ChoroplethController, GeoFeature, ProjectionScale, ColorScale);
-  } catch (e) {
-    console.error('chartjs-chart-geo not available', e);
+  // Lazy-load chartjs-chart-geo if not present
+  function ensureGeo() {
+    if (window.ChartGeo) return Promise.resolve();
+    return new Promise((resolve, reject) => {
+      const s = document.createElement('script');
+      s.src = 'https://cdn.jsdelivr.net/npm/chartjs-chart-geo@4.3.3/build/index.umd.min.js';
+      s.onload = resolve;
+      s.onerror = () => {
+        const s2 = document.createElement('script');
+        s2.src = 'https://unpkg.com/chartjs-chart-geo@4.3.3/build/index.umd.min.js';
+        s2.onload = resolve;
+        s2.onerror = reject;
+        document.head.appendChild(s2);
+      };
+      document.head.appendChild(s);
+    });
   }
 
+  // Normalization + synonyms
   const norm = s => String(s||'').normalize('NFKD').replace(/[\u0300-\u036f]/g,'')
                    .toLowerCase().replace(/[^a-z0-9\s\-]/g,' ').replace(/\s+/g,' ').trim();
   const SYN = new Map([
@@ -2181,10 +2195,11 @@ function switchTab(tab){
     ['swaziland','eswatini'], ['macedonia','north macedonia'], ['cape verde','cabo verde'], ['east timor','timor-leste'],
     ['st. kitts and nevis','saint kitts and nevis'], ['st. vincent and the grenadines','saint vincent and the grenadines'],
     ['st. lucia','saint lucia'], ['palestine','state of palestine'],
-    ['inida','india'] // typo seen in your data
+    ['inida','india'] // common typo
   ]);
   const region = new Intl.DisplayNames(['en'], { type: 'region' });
 
+  // Helpers to read possible country fields in your data
   const splitList = v => Array.isArray(v) ? v.flatMap(splitList)
                      : (typeof v === 'string' ? v.split(/[,\|;]+/).map(s=>s.trim()).filter(Boolean) : []);
 
@@ -2194,11 +2209,10 @@ function switchTab(tab){
       const s = String(v||'').trim(); if (!s) return;
       if (/^[A-Za-z]{2}$/.test(s)) out.add(s.toUpperCase()); else out.add('__N__:'+norm(s));
     };
-
-    // top-level shortcuts you likely have
+    // top-level shortcuts
     splitList(p.country_codes).forEach(push);
     splitList(p.countries).forEach(push);
-    // common places inside your JSON
+    // nested locations
     if (Array.isArray(p.author_details)) {
       for (const d of p.author_details) {
         [d.affiliation_country_code,d.country_code,d.countryCode,d.affiliation_country,d.country].forEach(push);
@@ -2213,56 +2227,47 @@ function switchTab(tab){
     (p.institutions||[]).forEach(i => [i.country_code,i.country].forEach(push));
     const src = p?.primary_location?.source;
     if (src) [src.country_code, src.host_organization_country_code, src.host_organization_country].forEach(push);
-
     return [...out];
   }
 
   function countByCountryName(items){
-    const map = new Map();
-    const inc = k => map.set(k, (map.get(k)||0)+1);
-
+    const map = new Map(), inc = k => map.set(k, (map.get(k)||0)+1);
     for (const p of items || []) {
       for (const token of codesFromPaper(p)) {
         if (token.startsWith('__N__:')) {
-          let nm = token.slice(5);
-          nm = SYN.get(nm) || nm;
-          inc(nm);
+          let nm = token.slice(5); nm = SYN.get(nm) || nm; inc(nm);
         } else {
           const name = region.of(token);
-          if (name) {
-            let nm = norm(name);
-            nm = SYN.get(nm) || nm;
-            inc(nm);
-          }
+          if (name) { let nm = norm(name); nm = SYN.get(nm) || nm; inc(nm); }
         }
       }
     }
     return map;
   }
 
-  let worldFeatures = null, worldChart = null;
-
+  let worldFeatures=null, worldChart=null;
   async function loadWorld(){
     if (worldFeatures) return worldFeatures;
-    // world-atlas TopoJSON -> GeoJSON with topojson-client
     const topo = await fetch('https://cdn.jsdelivr.net/npm/world-atlas@2/countries-110m.json').then(r => r.json());
     worldFeatures = topojson.feature(topo, topo.objects.countries).features;
     return worldFeatures;
   }
 
   async function renderWorldMap(){
+    await ensureGeo();
+    const { ChoroplethController, GeoFeature, ProjectionScale, ColorScale } = ChartGeo;
+    Chart.register(ChoroplethController, GeoFeature, ProjectionScale, ColorScale);
+
     const can = document.getElementById('chartWorldMap');
-    if (!can || !window.ChartGeo) return;
+    if (!can) return;
 
     const features = await loadWorld();
-    const rows = (Array.isArray(window.filtered) && window.filtered.length)
-               ? window.filtered
+    const rows = (Array.isArray(window.filtered) && window.filtered.length) ? window.filtered
                : (Array.isArray(window.all) ? window.all : []);
     const byName = countByCountryName(rows);
 
     const data = features.map(f => {
-      let nm = norm(f.properties.name || '');
-      nm = SYN.get(nm) || nm;
+      let nm = norm(f.properties.name||''); nm = SYN.get(nm) || nm;
       return { feature:f, value: byName.get(nm) || 0 };
     });
 
@@ -2286,14 +2291,15 @@ function switchTab(tab){
     const old = window.applyFilters;
     window.applyFilters = function(goToPage=1){
       const r = old.apply(this, arguments);
-      try { renderWorldMap(); } catch {}
+      renderWorldMap().catch(()=>{});
       return r;
     };
   }
 
-  document.addEventListener('DOMContentLoaded', () => { try { renderWorldMap(); } catch {} });
+  document.addEventListener('DOMContentLoaded', () => { renderWorldMap().catch(()=>{}); });
 })();
 </script>
+
 
 </body>
 </html>
