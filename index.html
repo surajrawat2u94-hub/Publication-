@@ -2140,199 +2140,69 @@ function switchTab(tab){
   // Init
   document.addEventListener('DOMContentLoaded', ()=>{ buildSDGLegend(); autoLoad(); });
 </script>
-  <script>
-/* ================= Country-wise Publications (Count Map) ================ */
-/* Uses existing app data: window.filtered (if set) else window.all         */
+<script>
+/* ... keep everything above as-is ... */
 
-/* --- small helpers --- */
-const __normC = s => String(s||'').toLowerCase().replace(/[^\p{L}\p{N}\s\-]/gu,' ').replace(/\s+/g,' ').trim();
-const __ISO2name = c => { try{ return new Intl.DisplayNames(['en'],{type:'region'}).of(c) || c; }catch{ return c; } };
-function __pubs(){ return (Array.isArray(window.filtered) && window.filtered.length) ? window.filtered
-                   : (Array.isArray(window.all) ? window.all : []); }
-
-/* --- name → ISO2 (common variants) --- */
-const __NAME_TO_ISO2 = new Map(Object.entries({
-  "united states":"US","usa":"US","u.s.a.":"US","united kingdom":"GB","uk":"GB","england":"GB",
-  "india":"IN","china":"CN","hong kong":"HK","taiwan":"TW","japan":"JP","south korea":"KR","korea, republic of":"KR",
-  "singapore":"SG","malaysia":"MY","indonesia":"ID","thailand":"TH","vietnam":"VN","philippines":"PH",
-  "australia":"AU","new zealand":"NZ","canada":"CA","mexico":"MX","brazil":"BR","argentina":"AR","chile":"CL","colombia":"CO","peru":"PE",
-  "france":"FR","germany":"DE","italy":"IT","spain":"ES","portugal":"PT","netherlands":"NL","belgium":"BE","switzerland":"CH","austria":"AT",
-  "sweden":"SE","norway":"NO","denmark":"DK","finland":"FI","ireland":"IE","poland":"PL","czech republic":"CZ","greece":"GR",
-  "russia":"RU","turkey":"TR","israel":"IL","united arab emirates":"AE","uae":"AE","saudi arabia":"SA","qatar":"QA","oman":"OM","kuwait":"KW","bahrain":"BH",
-  "iran":"IR","pakistan":"PK","bangladesh":"BD","sri lanka":"LK","nepal":"NP",
-  "egypt":"EG","kenya":"KE","ethiopia":"ET","nigeria":"NG","south africa":"ZA","morocco":"MA","tunisia":"TN","algeria":"DZ","ghana":"GH"
-}));
-
-/* --- very light centroids (lat,lon) for common ISO2 codes --- */
-const __CENTROID = {
-  US:[39,-98], CA:[56,-96], MX:[23,-102], BR:[-10,-55], AR:[-38,-65], CL:[-30,-71], CO:[4,-73], PE:[-10,-76],
-  GB:[54,-2], IE:[53.3,-8], FR:[46,2], DE:[51,10], IT:[42,12], ES:[40,-4], PT:[39.6,-8.2], NL:[52.1,5.3], BE:[50.8,4.6],
-  CH:[47,8], AT:[47.6,14.1], SE:[62,15], NO:[64,11], DK:[56,10], FI:[64,26], PL:[52,20], CZ:[49.8,15.5], GR:[39.1,22.9],
-  RU:[60,90], TR:[39,35],
-  IN:[21,78], CN:[35,104], HK:[22.3,114.2], TW:[23.7,121], JP:[37,138], KR:[36,128],
-  SG:[1.35,103.8], MY:[4,102], ID:[-2,118], TH:[15,101], VN:[16,106], PH:[13,122],
-  AU:[-25,134], NZ:[-41,174],
-  IL:[31.4,35], AE:[24,54], SA:[24,45], QA:[25.3,51.2], OM:[20.5,56], KW:[29.3,47.5], BH:[26,50.5], IR:[32,53],
-  PK:[30,70], BD:[24,90], LK:[7,81], NP:[28,84],
-  EG:[27,30], KE:[0,38], ET:[9,40], NG:[9,8], ZA:[-29,24],
-  MA:[31,-7], TN:[34,10], DZ:[28,2], GH:[8,-2]
-};
-
-/* --- projection: lon->x (equirect), lat->y (Mercator) --- */
-function __project(lat, lon, W, H){
-  const x = (lon + 180) / 360 * W;
-  const phi = lat * Math.PI / 180;
-  const y = (1 - Math.log(Math.tan(Math.PI/4 + phi/2)) / Math.PI) / 2 * H;
-  return [x, y];
-}
-
-/* --- extract unique ISO2 codes for each paper (robust) --- */
+/* --- extract unique ISO2 codes for each paper (ROBUST) --- */
 function __codesFromPaper(p){
   const out = new Set();
+  const push = v => {
+    if (!v) return;
+    let c = String(v).trim();
+    if (!c) return;
+    // if it's a 2-letter code, normalize
+    if (/^[A-Za-z]{2}$/.test(c)) { out.add(c.toUpperCase()); return; }
+    // otherwise try to map a country name -> ISO2
+    const m = __NAME_TO_ISO2.get(__normC(c));
+    if (m) out.add(m);
+  };
 
-  if (Array.isArray(p.country_codes))
-    p.country_codes.forEach(c => c && out.add(String(c).toUpperCase()));
+  // 1) easy buckets
+  (p.country_codes || []).forEach(push);
+  (p.countries     || []).forEach(push);
 
-  if (Array.isArray(p.countries))
-    p.countries.forEach(n => { const c = __NAME_TO_ISO2.get(__normC(n)); if (c) out.add(c); });
-
+  // 2) author_details (many harvesters put affiliations here)
   if (Array.isArray(p.author_details)){
     for (const d of p.author_details){
-      (d.affiliation_country_codes||[]).forEach(c => out.add(String(c).toUpperCase()));
-      (d.affiliation_countries||[]).forEach(n => { const c = __NAME_TO_ISO2.get(__normC(n)); if (c) out.add(c); });
-    }
-  }
+      [d.affiliation_country_code, d.country_code, d.countryCode].forEach(push);
+      [d.affiliation_country, d.country].forEach(push);
 
-  if (Array.isArray(p.authorships)){
-    for (const a of p.authorships){
-      for (const inst of (a.institutions||[])){
-        if (inst?.country_code) out.add(String(inst.country_code).toUpperCase());
-        else if (inst?.country){
-          const c = __NAME_TO_ISO2.get(__normC(inst.country));
-          if (c) out.add(c);
-        }
+      // affiliations list: { country_code, country } or similar
+      for (const af of (d.affiliations || [])){
+        [af.country_code, af.country].forEach(push);
+      }
+
+      // nested institutions, if present
+      for (const inst of (d.institutions || [])){
+        [inst.country_code, inst.country].forEach(push);
       }
     }
   }
 
+  // 3) OpenAlex-style authorships -> institutions
+  if (Array.isArray(p.authorships)){
+    for (const a of p.authorships){
+      for (const inst of (a.institutions || [])){
+        [inst.country_code, inst.country].forEach(push);
+      }
+    }
+  }
+
+  // 4) Some exports add top-level institutions[]
+  for (const inst of (p.institutions || [])){
+    [inst.country_code, inst.country].forEach(push);
+  }
+
+  // 5) Source/host info sometimes carries a country
   const src = p?.primary_location?.source;
-  if (src?.country_code) out.add(String(src.country_code).toUpperCase());
+  if (src){
+    [src.country_code, src.host_organization_country_code, src.host_organization_country].forEach(push);
+  }
 
   return [...out];
 }
 
-/* --- aggregate per-country (per paper, unique countries) --- */
-function __buildCountryCounts(){
-  const map = new Map();
-  for (const p of __pubs()){
-    const codes = new Set(__codesFromPaper(p));
-    for (const code of codes){
-      if (!__CENTROID[code]) continue; // skip unknown centroids
-      const rec = map.get(code) || { code, name:__ISO2name(code), count:0 };
-      rec.count += 1; map.set(code, rec);
-    }
-  }
-  return [...map.values()].sort((a,b)=>b.count-a.count);
-}
-
-/* --- renderer --- */
-const __WM = { raf:0 };
-function renderWorldMap(){
-  const can = document.getElementById('chartWorldMap');
-  if (!can) return;
-
-  const W = can.clientWidth || 800, H = can.clientHeight || 360;
-  if (can.width !== W || can.height !== H){ can.width = W; can.height = H; }
-  const ctx = can.getContext('2d');
-
-  const data = __buildCountryCounts();
-  if (!data.length){ ctx.clearRect(0,0,W,H); return; }
-  const top5 = new Set(data.slice(0,5).map(r=>r.code));
-
-  const nodes = data.map(r=>{
-    const [lat,lon] = __CENTROID[r.code];
-    const [x,y] = __project(lat,lon,W,H);
-    const r0 = 3 + Math.min(14, Math.sqrt(r.count));
-    return { code:r.code, name:r.name, n:r.count, x, y, r:r0 };
-  });
-
-  const links = [];
-  for (let i=0;i<nodes.length;i++){
-    const a=nodes[i];
-    const dists = nodes.filter((_,j)=>j!==i)
-      .map(b=>({b, d: Math.hypot(a.x-b.x, a.y-b.y)}))
-      .sort((u,v)=>u.d-v.d).slice(0,3);
-    dists.forEach(({b})=>links.push([a,b]));
-  }
-
-  let t0=null;
-  function frame(ts){
-    if (!t0) t0 = ts;
-    const t = (ts - t0)/1000;
-
-    // background
-    const g = ctx.createLinearGradient(0,0,W,H);
-    g.addColorStop(0,'#f8fafc'); g.addColorStop(1,'#e9edff');
-    ctx.fillStyle = g; ctx.fillRect(0,0,W,H);
-
-    // grid lines
-    ctx.strokeStyle = 'rgba(2,6,23,.06)'; ctx.lineWidth = 1;
-    for (let lon=-150; lon<=150; lon+=30){
-      const x = (lon + 180) / 360 * W; ctx.beginPath(); ctx.moveTo(x,0); ctx.lineTo(x,H); ctx.stroke();
-    }
-    for (let lat=-60; lat<=60; lat+=15){
-      const y = (1 - Math.log(Math.tan(Math.PI/4 + (lat*Math.PI/180)/2)) / Math.PI) / 2 * H;
-      ctx.beginPath(); ctx.moveTo(0,y); ctx.lineTo(W,y); ctx.stroke();
-    }
-
-    // network lines
-    ctx.lineWidth = 1.2; ctx.strokeStyle = 'rgba(37,99,235,.10)';
-    ctx.beginPath(); for (const [a,b] of links){ ctx.moveTo(a.x,a.y); ctx.lineTo(b.x,b.y); } ctx.stroke();
-
-    // nodes
-    for (const n of nodes){
-      ctx.beginPath(); ctx.arc(n.x,n.y,n.r,0,Math.PI*2);
-      ctx.fillStyle='rgba(30,64,175,.85)'; ctx.shadowColor='rgba(2,6,23,.18)';
-      ctx.shadowBlur=14; ctx.shadowOffsetY=6; ctx.fill(); ctx.shadowBlur=0; ctx.shadowOffsetY=0;
-
-      ctx.beginPath(); ctx.arc(n.x,n.y,n.r+2,0,Math.PI*2);
-      ctx.strokeStyle='rgba(59,130,246,.35)'; ctx.lineWidth=2; ctx.stroke();
-    }
-
-    // top-5 glow
-    for (const n of nodes){
-      if (!top5.has(n.code)) continue;
-      const pulse = 2 + 2*Math.sin(t*2 + n.r);
-      ctx.beginPath(); ctx.arc(n.x,n.y,n.r+pulse+3,0,Math.PI*2);
-      ctx.strokeStyle='rgba(6,182,212,.28)'; ctx.lineWidth=6; ctx.stroke();
-
-      const a = 0.55 + 0.45*Math.sin(t*2 + n.r);
-      ctx.beginPath(); ctx.arc(n.x,n.y,n.r,0,Math.PI*2);
-      ctx.fillStyle=`rgba(20,184,166,${a})`; ctx.fill();
-    }
-
-    __WM.raf = requestAnimationFrame(frame);
-  }
-
-  if (__WM.raf) cancelAnimationFrame(__WM.raf);
-  __WM.raf = requestAnimationFrame(frame);
-}
-
-/* --- hook into your app: run after Overview charts, on resize & filters --- */
-(function hook(){
-  const start = () => {
-    const prev = window.renderOverviewCharts;
-    window.renderOverviewCharts = function(){
-      if (typeof prev === 'function') prev();
-      renderWorldMap();
-    };
-    renderWorldMap();
-    addEventListener('resize', renderWorldMap);
-    document.addEventListener('app:filters-applied', renderWorldMap);
-  };
-  if (document.readyState === 'complete') start();
-  else addEventListener('load', start);
-})();
+/* ... keep everything below as-is ... */
 </script>
 
 </body>
