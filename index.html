@@ -2156,12 +2156,11 @@ function switchTab(tab){
   // Init
   document.addEventListener('DOMContentLoaded', ()=>{ buildSDGLegend(); autoLoad(); });
 </script>
-<script>
-/* =================== Simple Choropleth (robust loader) =================== */
-/* Toggle pulsing Top-5 dots */
-const ENABLE_PULSE = true;
+  <script>
+/* =================== Simple Country Choropleth (with .gz support) =================== */
+const ENABLE_PULSE = true; // set false if you don’t want blinking Top-5 dots
 
-/* ---------- tiny helpers ---------- */
+/* ---------------- small loaders ---------------- */
 function loadScript(src) {
   return new Promise((resolve, reject) => {
     const s = document.createElement('script');
@@ -2177,15 +2176,21 @@ async function ensureEcharts() {
     'https://cdnjs.cloudflare.com/ajax/libs/echarts/5.5.0/echarts.min.js'
   ];
   for (const u of cdns) { try { await loadScript(u); if (window.echarts) return echarts; } catch {} }
-  throw new Error('ECharts failed to load');
+  throw new Error('ECharts failed to load.');
+}
+async function ensurePako() { // for .gz
+  if (window.pako) return pako;
+  await loadScript('https://cdn.jsdelivr.net/npm/pako@2.1.0/dist/pako.min.js');
+  if (!window.pako) throw new Error('Failed to load pako (gzip).');
+  return pako;
 }
 
-/* ---------- world map loader (remote first, then local optional) ---------- */
+/* ---------------- world geojson (remote-first) ---------------- */
 async function getWorldGeoJSON() {
   const urls = [
     'https://raw.githubusercontent.com/johan/world.geo.json/master/countries.geo.json',
     'https://raw.githubusercontent.com/holtzy/D3-graph-gallery/master/DATA/world.geojson',
-    'assets/world.geo.json'  // only if you add one later
+    'assets/world.geo.json' // optional local copy if you add one later
   ];
   for (const u of urls) {
     try {
@@ -2196,44 +2201,63 @@ async function getWorldGeoJSON() {
   throw new Error('World map failed to load.');
 }
 
-/* ---------- data loader: try many places + globals ---------- */
+/* ---------------- robust data loader (JSON or GZIP) ---------------- */
 async function loadPortalDataRobust() {
-  // 1) Try global variables some dashboards expose
-  const candidatesGlobals = [
+  // 0) existing globals (if your app already loaded the dataset)
+  const globs = [
     () => (window.PORTAL_DATA && window.PORTAL_DATA.items),
     () => (window.portalData && window.portalData.items),
     () => (window.INSTITUTION_DATA && window.INSTITUTION_DATA.items),
   ];
-  for (const g of candidatesGlobals) {
-    try {
-      const it = g();
-      if (Array.isArray(it)) return it;
-    } catch {}
+  for (const g of globs) {
+    try { const it = g(); if (Array.isArray(it)) return it; } catch {}
   }
 
-  // 2) Try common static paths (relative to the current page)
-  const urlCandidates = [
+  // 1) plain JSON (relative + absolute under /Publication-/)
+  const jsonUrls = [
     'institution_data.json',
     'data/institution_data.json',
     'assets/institution_data.json',
-    './institution_data.json',
-    './data/institution_data.json',
+    '/Publication-/institution_data.json',
+    '/Publication-/data/institution_data.json',
+    '/Publication-/assets/institution_data.json'
   ];
-  for (const u of urlCandidates) {
+  for (const u of jsonUrls) {
     try {
       const r = await fetch(u, { cache: 'no-store' });
       if (!r.ok) continue;
       const j = await r.json();
       if (Array.isArray(j.items)) return j.items;
-      if (Array.isArray(j)) return j; // in case it's a bare array
+      if (Array.isArray(j)) return j;
     } catch {}
   }
 
-  // 3) Give up
-  throw new Error('No data (institution_data.json).');
+  // 2) gzip (same locations but .gz)
+  const gzUrls = [
+    'institution_data.json.gz',
+    'data/institution_data.json.gz',
+    'assets/institution_data.json.gz',
+    '/Publication-/institution_data.json.gz',
+    '/Publication-/data/institution_data.json.gz',
+    '/Publication-/assets/institution_data.json.gz'
+  ];
+  for (const u of gzUrls) {
+    try {
+      const r = await fetch(u, { cache: 'no-store' });
+      if (!r.ok) continue;
+      const buf = await r.arrayBuffer();
+      const pako = await ensurePako();
+      const text = new TextDecoder().decode(pako.ungzip(new Uint8Array(buf)));
+      const j = JSON.parse(text);
+      if (Array.isArray(j.items)) return j.items;
+      if (Array.isArray(j)) return j;
+    } catch {}
+  }
+
+  throw new Error('No data (institution_data.json or .json.gz).');
 }
 
-/* ---------- country helpers ---------- */
+/* ---------------- light country helpers ---------------- */
 const ISO2_TO_NAME = {
   IN:'India', US:'United States', GB:'United Kingdom', CN:'China', DE:'Germany', FR:'France',
   IT:'Italy', ES:'Spain', PT:'Portugal', NL:'Netherlands', SE:'Sweden', NO:'Norway', FI:'Finland',
@@ -2257,16 +2281,14 @@ const NAME_ALIAS = new Map([
 
 function buildCounts(items) {
   const m = new Map();
-  const add = (name) => { const k = String(name||'').trim(); if (k) m.set(k, (m.get(k)||0)+1); };
+  const add = name => { const k = String(name||'').trim(); if (k) m.set(k,(m.get(k)||0)+1); };
 
   for (const it of items) {
-    // prefer ISO-2 codes if present
     const codes = Array.isArray(it.country_codes) ? it.country_codes : [];
     if (codes.length) {
       for (const cc of codes) add(ISO2_TO_NAME[String(cc).toUpperCase()] || String(cc));
       continue;
     }
-    // fallback to names (array or comma-separated string)
     const cs = it.countries;
     if (Array.isArray(cs)) cs.forEach(add);
     else if (typeof cs === 'string') cs.split(',').map(s=>s.trim()).forEach(add);
@@ -2274,11 +2296,9 @@ function buildCounts(items) {
   return m;
 }
 
-/* crude centroid for pulsing labels */
 function centroidOfFeature(f) {
   try {
-    const pts=[];
-    const push=c=>{ if(Array.isArray(c)&&typeof c[0]==='number'&&typeof c[1]==='number') pts.push(c); };
+    const pts=[]; const push=c=>{ if(Array.isArray(c)&&typeof c[0]==='number'&&typeof c[1]==='number') pts.push(c); };
     const walk=g=>{
       if(!g) return;
       if(g.type==='Polygon') g.coordinates.flat(1).forEach(push);
@@ -2293,38 +2313,31 @@ function centroidOfFeature(f) {
   } catch { return null; }
 }
 
-/* ---------- render ---------- */
+/* ---------------- render ---------------- */
 async function renderCountryMapSimple() {
   const el = document.getElementById('chartWorldMap');
   if (!el) return;
 
   const showMsg = (msg) => {
-    const chart = window.echarts ? echarts.init(el) : null;
-    if (!chart) { el.innerHTML = `<div class="text-red-500 text-sm">${msg}</div>`; return; }
-    chart.setOption({ title:{ text:msg, left:'center', top:'center',
-      textStyle:{ color:'#ef4444', fontSize:14 } } });
+    if (!window.echarts) { el.innerHTML = `<div style="color:#ef4444;font-size:13px">${msg}</div>`; return; }
+    const c = echarts.init(el);
+    c.setOption({ title:{ text:msg, left:'center', top:'center', textStyle:{ color:'#ef4444', fontSize:14 } } });
   };
 
   try { await ensureEcharts(); } catch { showMsg('ECharts failed to load.'); return; }
 
-  // load map
   let world;
-  try {
-    world = await getWorldGeoJSON();
-    echarts.registerMap('world', world);
-  } catch { showMsg('World map failed to load.'); return; }
+  try { world = await getWorldGeoJSON(); echarts.registerMap('world', world); }
+  catch { showMsg('World map failed to load.'); return; }
 
-  // load data
   let items;
   try { items = await loadPortalDataRobust(); }
-  catch { showMsg('No data (institution_data.json).'); return; }
+  catch { showMsg('No data (institution_data.json or .json.gz).'); return; }
 
-  // aggregate
   const counts = buildCounts(items);
   const mapData = Array.from(counts.entries()).map(([name,value]) => ({ name, value }));
-  const maxVal = mapData.length ? Math.max(...mapData.map(d=>d.value)) : 0;
+  const maxVal  = mapData.length ? Math.max(...mapData.map(d=>d.value)) : 0;
 
-  // centroids for pulsing
   const centers = new Map();
   for (const f of (world.features||[])) {
     const raw = (f.properties && (f.properties.name||f.properties.NAME||f.properties.admin)) || '';
@@ -2338,7 +2351,6 @@ async function renderCountryMapSimple() {
     return c ? { name:d.name, value:[...c, d.value] } : null;
   }).filter(Boolean) : [];
 
-  // draw
   const chart = echarts.init(el, null, { renderer:'canvas' });
   chart.setOption({
     backgroundColor:'transparent',
@@ -2350,12 +2362,12 @@ async function renderCountryMapSimple() {
     },
     visualMap:{
       min:0, max:Math.max(5,maxVal), left:20, bottom:18, text:['High','Low'],
-      inRange:{ color:['#dbeafe','#1d4ed8'] }, calculable:true, textStyle:{ color:'#64748b' }
+      inRange:{ color:['#dbeafe','#1d4ed8'] }, calculable:true
     },
     geo:{
       map:'world', roam:true,
       itemStyle:{ areaColor:'#0b1830', borderColor:'#0f2740', borderWidth:0.8 },
-      emphasis:{ itemStyle:{ areaColor:'#1e3a8a' }, label:{ show:false } }
+      emphasis:{ itemStyle:{ areaColor:'#1e3a8a' } }
     },
     series:[
       { name:'Publications', type:'map', map:'world', geoIndex:0, data:mapData },
@@ -2365,7 +2377,7 @@ async function renderCountryMapSimple() {
         rippleEffect:{ brushType:'stroke', scale:3, period:4 },
         itemStyle:{ color:'#ef4444' },
         label:{ show:true, position:'right', distance:6,
-                formatter:p=>`${p.name} ${p.value[2]}`, color:'#e5e7eb', fontWeight:600, fontSize:12 },
+                formatter:p=>`${p.name} ${p.value[2]}`, color:'#f1f5f9', fontWeight:600, fontSize:12 },
         data:pulseData
       }] : [])
     ]
