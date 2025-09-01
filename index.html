@@ -423,6 +423,23 @@ function renderWorldMap(){
   window.addEventListener('resize', () => { renderWorldMap(); });
 })();
 </script>
+<!-- Country-wise Publications (map) -->
+<div class="grid grid-cols-1 gap-4">
+  <div class="card p-4">
+    <div class="flex items-center justify-between">
+      <h3 class="font-semibold">Country-wise Publications (map)</h3>
+      <button class="icon-btn" onclick="focusCanvas('chartWorldMap','Country-wise Publications (map)')">
+        <i data-lucide="maximize-2"></i><span class="hidden sm:inline">Focus</span>
+      </button>
+    </div>
+    <div class="mt-2 h-[360px]">
+      <canvas id="chartWorldMap"></canvas>
+    </div>
+    <div class="text-xs text-slate-500 mt-2">
+      Counts are per paper (unique countries). Top 5 countries blink.
+    </div>
+  </div>
+</div>
 
     </section>
 
