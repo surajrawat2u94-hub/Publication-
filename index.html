@@ -1342,10 +1342,15 @@ const normalizeType = (t) => {
     document.getElementById('kpiJournals').textContent = num(journals.size);
 
     if (goToPage===1) currentPage = 1;
-    renderTable();
-    renderOverviewCharts();
-    renderSDGChart();
-    updateCoverage();
+   renderTable();
+renderOverviewCharts();
+
+// add this line
+if (window.renderWorldMap) window.renderWorldMap();
+
+renderSDGChart();
+updateCoverage();
+
   }
 
   function changePageSize(){ pageSize = parseInt(document.getElementById('pageSize').value,10) || 50; currentPage=1; renderTable(); }
