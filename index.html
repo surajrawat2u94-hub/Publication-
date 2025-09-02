@@ -12,21 +12,24 @@
   <!-- SheetJS – reads Excel in browser -->
 <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
 
-  <!-- Icons -->
-  <script src="https://unpkg.com/lucide@latest/dist/umd/lucide.js"></script>
-  <!-- Day.js + Chart.js -->
-  <script src="https://cdn.jsdelivr.net/npm/dayjs@1/dayjs.min.js"></script>
-  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
-  <!-- Matrix (kept for IF heatmap) -->
-  <script src="https://cdn.jsdelivr.net/npm/chartjs-chart-matrix@2.0.1"></script>
-<!-- Chart.js (once) -->
+<!-- Icons (optional) -->
+<script src="https://unpkg.com/lucide@latest/dist/umd/lucide.js"></script>
+
+<!-- Day.js (optional) -->
+<script src="https://cdn.jsdelivr.net/npm/dayjs@1/dayjs.min.js"></script>
+
+<!-- Chart.js (load ONCE) -->
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
 
-<!-- topojson (needed by our code) -->
-<script src="https://cdn.jsdelivr.net/npm/topojson-client@3"></script>
+<!-- Chart.js plugins (AFTER Chart.js) -->
+<!-- Matrix controller for the Quartiles heatmap -->
+<script src="https://cdn.jsdelivr.net/npm/chartjs-chart-matrix@2.0.1/dist/chartjs-chart-matrix.min.js"></script>
 
-<!-- chartjs-chart-geo (UMD exposes `ChartGeo`) -->
+<!-- Chart.js Geo (for choropleths) -->
 <script src="https://cdn.jsdelivr.net/npm/chartjs-chart-geo@4.3.3/build/index.umd.min.js"></script>
+
+<!-- TopoJSON (needed by our code when converting topojson -> geojson) -->
+<script src="https://cdn.jsdelivr.net/npm/topojson-client@3"></script>
 
 
 
