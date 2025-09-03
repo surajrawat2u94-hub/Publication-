@@ -2366,6 +2366,119 @@ document.addEventListener('DOMContentLoaded', renderCountryMapFocused);
   window.makeWorldMapResponsive = makeWorldMapResponsive;
 })();
 </script>
+<script>
+/* ===== Category column (Journal Article / Conference Paper / Book / Book Chapter / Others) ===== */
+(function () {
+  /* Uses your existing normalizeType helper */
+  function categoryFor(p) {
+    const rawType = String(p.type || p.type_crossref || "").toLowerCase();
+    const nt = (typeof normalizeType === "function") ? normalizeType(rawType) : rawType;
+    const title = String(p.title || "").toLowerCase();
+
+    // Journal Article bucket (Journal, Review, Editorial/Commentary, Letters, Brief/Case Reports, Erratum/Retraction, etc.)
+    if (nt === "article" || nt === "review" || nt === "editorial" || nt === "letter") {
+      return "Journal Article";
+    }
+    if (/(comment|commentary|note|short(\s|-)?communication|communication|brief(\s|-)?report|case(\s|-)?report|retraction|erratum|corrigendum|correction|addendum)/.test(rawType)
+     || /(retraction|retracted|erratum|corrigendum|correction|addendum|letter|comment|reply|brief report|case report)/.test(title)) {
+      return "Journal Article";
+    }
+
+    // Conference
+    if (nt === "conference") return "Conference Paper";
+
+    // Books
+    if (nt === "book") return "Book";
+    if (nt === "book-chapter") return "Book Chapter";
+
+    // Everything else → Others (datasets, data papers, preprints, paratext, peer review, media, etc.)
+    return "Others";
+  }
+
+  function addCategoryColumnConfig() {
+    try {
+      // Add to KNOWN_COLUMNS so it appears in the Columns panel with a friendly label
+      if (typeof KNOWN_COLUMNS !== "undefined" && !KNOWN_COLUMNS.some(c => c.key === "category")) {
+        // Insert right after "publisher" if present, else push
+        const idxPub = KNOWN_COLUMNS.findIndex(c => c.key === "publisher");
+        const def = { key: "category", label: "Category", default: true };
+        if (idxPub >= 0) KNOWN_COLUMNS.splice(idxPub + 1, 0, def); else KNOWN_COLUMNS.push(def);
+      }
+    } catch (e) { /* noop */ }
+
+    try {
+      // Also reflect in ALL_COLUMNS (your dynamic columns list used by the UI)
+      if (typeof ALL_COLUMNS !== "undefined" && !ALL_COLUMNS.some(c => c.key === "category")) {
+        const idxPub = ALL_COLUMNS.findIndex(c => c.key === "publisher");
+        const def = { key: "category", label: "Category", default: true };
+        if (idxPub >= 0) ALL_COLUMNS.splice(idxPub + 1, 0, def); else ALL_COLUMNS.push(def);
+      }
+    } catch (e) { /* noop */ }
+
+    try {
+      // Ensure it's selected by default in the current session (won't override user customizations if already chosen)
+      if (typeof selectedColumns !== "undefined" && !selectedColumns.some(c => c.key === "category")) {
+        const idxPub = selectedColumns.findIndex(c => c.key === "publisher");
+        const entry = { key: "category", label: "Category" };
+        if (idxPub >= 0) selectedColumns.splice(idxPub + 1, 0, entry);
+        else selectedColumns.push(entry);
+        // Persist the choice so it stays on reload
+        try { localStorage.setItem("pub_columns", JSON.stringify(selectedColumns)); } catch {}
+      }
+    } catch (e) { /* noop */ }
+  }
+
+  function patchRenderers() {
+    // renderCell
+    try {
+      const _renderCell = (typeof renderCell === "function") ? renderCell : null;
+      window.renderCell = function (key, p) {
+        if (key === "category") return categoryFor(p);
+        return _renderCell ? _renderCell(key, p) : "";
+      };
+    } catch (e) { /* noop */ }
+
+    // textForExport (CSV text)
+    try {
+      const _textForExport = (typeof textForExport === "function") ? textForExport : null;
+      window.textForExport = function (key, p) {
+        if (key === "category") return categoryFor(p);
+        return _textForExport ? _textForExport(key, p) : "";
+      };
+    } catch (e) { /* noop */ }
+
+    // rawForExport (JSON value)
+    try {
+      const _rawForExport = (typeof rawForExport === "function") ? rawForExport : null;
+      window.rawForExport = function (key, p) {
+        if (key === "category") return categoryFor(p);
+        return _rawForExport ? _rawForExport(key, p) : (p && p[key]);
+      };
+    } catch (e) { /* noop */ }
+  }
+
+  function refreshUI() {
+    try { if (typeof buildColumnsPanel === "function") buildColumnsPanel(); } catch {}
+    try {
+      // Re-render the table and KPIs
+      if (typeof applyFilters === "function") applyFilters();
+      else if (typeof renderTable === "function") renderTable();
+    } catch {}
+  }
+
+  function init() {
+    addCategoryColumnConfig();
+    patchRenderers();
+    refreshUI();
+  }
+
+  if (document.readyState === "loading") {
+    document.addEventListener("DOMContentLoaded", () => setTimeout(init, 0));
+  } else {
+    setTimeout(init, 0);
+  }
+})();
+</script>
 
 </body>
 </html>
