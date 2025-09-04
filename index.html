@@ -2739,6 +2739,119 @@ document.addEventListener('DOMContentLoaded', renderCountryMapFocused);
   }
 })();
 </script>
+<script>
+/* === DOI Type/Category Corrector — booster v1.1b === */
+(function () {
+  if (window.__TYPE_FIXER_V11B__) return;
+  window.__TYPE_FIXER_V11B__ = true;
+
+  const low = s => String(s||'').toLowerCase();
+  const has = (s, ...w) => { s = low(s); return w.some(x => s.includes(x)); };
+
+  // Your normalized type keys (must match what your renderer expects)
+  function normType(raw) {
+    const t = low(raw).trim();
+    if (t === 'journal-article' || t === 'journal article' || t === 'article' ||
+        t === 'research article' || t === 'original article' ||
+        t === 'short communication' || t === 'brief report' ||
+        t === 'case report' || t === 'technical note') return 'article';
+    if (has(t,'proceed','conference','symposium','workshop')) return 'conference';
+    if (t === 'book-chapter' || has(t,'book chapter') || t === 'chapter') return 'book-chapter';
+    if (t.startsWith('book') || t === 'monograph' || t === 'edited-book' || t === 'reference-book') return 'book';
+    if (t === 'review' || has(t,'mini review','survey')) return 'review';
+    if (has(t,'systematic review')) return 'systematic-review';
+    if (has(t,'meta-analysis','meta analysis')) return 'meta-analysis';
+    if (has(t,'editorial')) return 'editorial';
+    if (/^letter\b|\bletter to the editor\b/.test(t)) return 'letter';
+    if (t === 'preprint' || has(t,'posted content','working paper')) return 'preprint';
+    if (t === 'dataset' || has(t,'data paper')) return 'dataset';
+    if (has(t,'erratum','corrigendum','correction','addendum')) return 'correction';
+    if (has(t,'retraction')) return 'retraction-notice';
+    if (has(t,'peer review','peer-review')) return 'peer-review';
+    if (has(t,'case study')) return 'case-study';
+    return 'article';
+  }
+
+  // Your “Comes Under” mapping
+  function comesUnder(k, rawLabel='') {
+    if (k === 'conference')   return 'Conference';
+    if (k === 'book')         return 'Book';
+    if (k === 'book-chapter') return 'Book Chapter';
+    if (['article','review','systematic-review','meta-analysis','editorial','letter','correction','retraction-notice']
+        .includes(k)) return 'Journal';
+    if (['preprint','peer-review','dataset','case-study'].includes(k)) return 'other';
+    if (low(rawLabel).includes('posted content')) return 'other';
+    return 'other';
+  }
+
+  // Solid DOI/url chapter detection (Wiley/Springer/Elsevier + generic)
+  function doiChapterGuess(doi, url, title) {
+    const d = low(doi||''); const u = low(url||''); const t = low(title||'');
+    // Wiley: ends with .chNN
+    if (/10\.1002\/[0-9a-z.\-]+\.ch\d+$/i.test(d)) return 'book-chapter';
+    // Springer: 10.1007/978…_15 or …-15
+    if (/^10\.1007\/978.*(?:[_-]\d+)$/.test(d)) return 'book-chapter';
+    // Elsevier: .../B978… with chapter tail
+    if (/\/b978/i.test(d) || /b978/i.test(d)) {
+      if (/(ch|_|\-)\d+$/i.test(d) || /chapter/.test(d)) return 'book-chapter';
+      return 'book';
+    }
+    // Generic chapter cues
+    if (/(^|\/)chapter(s)?(\/|$)/.test(d) || /(\/|\.)(ch|chap)\d+$/i.test(d)) return 'book-chapter';
+    if (/\/chapter(\/|$)/.test(u) || /\bchapter\b/.test(t)) return 'book-chapter';
+    return '';
+  }
+
+  function fixAllTypes(arr){
+    if (!Array.isArray(arr) || !arr.length) return;
+    for (const p of arr){
+      // 1) start from whatever is present
+      let k = normType(p.type || p.type_crossref || p.type_openalex || p.openaire_type || p.repo_type || '');
+
+      // 2) DOI/url override for chapters/books
+      const doiHit = doiChapterGuess(p.doi, p.url, p.title);
+      if (doiHit) k = doiHit;
+
+      // 3) write back to the actual field your renderer uses
+      p.type = (k === 'article') ? 'journal-article' : k;
+
+      // 4) category per your mapping
+      p.category = comesUnder(k, p.type || '');
+    }
+  }
+
+  // Run when data is ready
+  function whenReady(fn){
+    let tries = 0;
+    (function tick(){
+      const ok = Array.isArray(window.all) && window.all.length;
+      if (ok || tries > 200){ try{ fn(); }catch{} return; }
+      tries++; requestAnimationFrame(tick);
+    })();
+  }
+
+  function runOnceAndHook(){
+    // first pass
+    fixAllTypes(window.all || []);
+    // re-render
+    if (typeof window.applyFilters === 'function') window.applyFilters(1);
+
+    // hook applyFilters so new filters keep corrected types
+    if (!window.__TYPE_FIXER_PATCHED__ && typeof window.applyFilters === 'function'){
+      window.__TYPE_FIXER_PATCHED__ = true;
+      const orig = window.applyFilters;
+      window.applyFilters = function(page){
+        fixAllTypes(window.all || []);
+        return orig.call(this, page);
+      };
+    }
+  }
+
+  // schedule
+  if (document.readyState === 'complete') whenReady(runOnceAndHook);
+  else window.addEventListener('load', () => whenReady(runOnceAndHook));
+})();
+</script>
 
 </body>
 </html>
