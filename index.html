@@ -2367,103 +2367,149 @@ document.addEventListener('DOMContentLoaded', renderCountryMapFocused);
 })();
 </script>
 <script>
-/* ===== Category column (Journal Article / Conference Paper / Book / Book Chapter / Others) ===== */
+/* ============================================================
+   Category column: Journal Article / Conference Paper / Book /
+                    Book Chapter / Others
+   - Adds a "Category" column (default ON) to your Publications table
+   - Populates exports (CSV/JSON)
+   - Safe to drop in without editing existing code
+   - Paste this block right before </body>
+   ============================================================ */
 (function () {
-  /* Uses your existing normalizeType helper */
+  /* ---------- Robust normalization (uses your normalizeType if present) ---------- */
+  function normalizeTypeFallback(raw) {
+    const s = String(raw || '').toLowerCase().trim();
+
+    if (s === 'journal-article') return 'article';
+
+    if (s.includes('conference') || s.includes('proceed')) return 'conference';
+
+    if (
+      s.includes('book-chapter') || s.includes('book part') ||
+      s.includes('book-part') || s.includes('book section') ||
+      s.includes('book-section') || s === 'chapter' || s === 'chapter article'
+    ) return 'book-chapter';
+
+    if (
+      s.startsWith('book') || s === 'monograph' ||
+      s === 'edited-book' || s === 'reference-book'
+    ) return 'book';
+
+    return s || 'unknown';
+  }
+  function getNormalizedType(raw) {
+    try {
+      if (typeof normalizeType === 'function') return normalizeType(raw);
+    } catch(_) {}
+    return normalizeTypeFallback(raw);
+  }
+
+  /* ---------- Final mapping logic (AI-ish rules baked in) ---------- */
   function categoryFor(p) {
-    const rawType = String(p.type || p.type_crossref || "").toLowerCase();
-    const nt = (typeof normalizeType === "function") ? normalizeType(rawType) : rawType;
-    const title = String(p.title || "").toLowerCase();
+    const rawType = String(p?.type || p?.type_crossref || '').toLowerCase();
+    const nt = getNormalizedType(rawType);
+    const title = String(p?.title || '').toLowerCase();
+    const hay = `${rawType} ${title}`; // keyword bag
 
-    // Journal Article bucket (Journal, Review, Editorial/Commentary, Letters, Brief/Case Reports, Erratum/Retraction, etc.)
-    if (nt === "article" || nt === "review" || nt === "editorial" || nt === "letter") {
-      return "Journal Article";
+    // 1) "Others" has highest precedence when its tokens appear anywhere
+    const OTHERS_TOKENS = [
+      'preprint', 'posted content', 'dataset', 'data paper',
+      'paratext', 'peer review', 'video audio media', 'media'
+    ];
+    if (OTHERS_TOKENS.some(k => hay.includes(k))) return 'Others';
+
+    // 2) Book / Book Chapter
+    if (nt === 'book') return 'Book';
+    if (nt === 'book-chapter' || /(^|[\s;,-])chapter article([\s;,-]|$)/.test(hay)) return 'Book Chapter';
+
+    // 3) Conference
+    if (nt === 'conference' || /\b(proceedings?|symposium|workshop)\b/.test(hay)) return 'Conference Paper';
+
+    // 4) Journal Article (inclusive umbrella: review/editorial/letters/brief/erratum/retraction/etc.)
+    const JOURNAL_HINTS = [
+      'journal', 'article', 'review', 'editorial', 'letter', 'brief report', 'case report',
+      'retraction', 'retracted', 'erratum', 'corrigendum', 'correction', 'comment',
+      'commentary', 'meta analysis', 'systematic review', 'discussion'
+    ];
+    if (
+      nt === 'article' || nt === 'review' || nt === 'editorial' || nt === 'letter' ||
+      JOURNAL_HINTS.some(k => hay.includes(k))
+    ) {
+      return 'Journal Article';
     }
-    if (/(comment|commentary|note|short(\s|-)?communication|communication|brief(\s|-)?report|case(\s|-)?report|retraction|erratum|corrigendum|correction|addendum)/.test(rawType)
-     || /(retraction|retracted|erratum|corrigendum|correction|addendum|letter|comment|reply|brief report|case report)/.test(title)) {
-      return "Journal Article";
-    }
 
-    // Conference
-    if (nt === "conference") return "Conference Paper";
-
-    // Books
-    if (nt === "book") return "Book";
-    if (nt === "book-chapter") return "Book Chapter";
-
-    // Everything else → Others (datasets, data papers, preprints, paratext, peer review, media, etc.)
-    return "Others";
+    // 5) Fallback
+    return 'Others';
   }
 
+  /* ---------- Wire the new column into your UI model ---------- */
   function addCategoryColumnConfig() {
+    // KNOWN_COLUMNS: add right after "publisher" if possible
     try {
-      // Add to KNOWN_COLUMNS so it appears in the Columns panel with a friendly label
-      if (typeof KNOWN_COLUMNS !== "undefined" && !KNOWN_COLUMNS.some(c => c.key === "category")) {
-        // Insert right after "publisher" if present, else push
-        const idxPub = KNOWN_COLUMNS.findIndex(c => c.key === "publisher");
-        const def = { key: "category", label: "Category", default: true };
-        if (idxPub >= 0) KNOWN_COLUMNS.splice(idxPub + 1, 0, def); else KNOWN_COLUMNS.push(def);
+      if (typeof KNOWN_COLUMNS !== 'undefined' && !KNOWN_COLUMNS.some(c => c.key === 'category')) {
+        const def = { key: 'category', label: 'Category', default: true };
+        const i = KNOWN_COLUMNS.findIndex(c => c.key === 'publisher');
+        if (i >= 0) KNOWN_COLUMNS.splice(i + 1, 0, def); else KNOWN_COLUMNS.push(def);
       }
-    } catch (e) { /* noop */ }
+    } catch(_) {}
 
+    // ALL_COLUMNS: same treatment
     try {
-      // Also reflect in ALL_COLUMNS (your dynamic columns list used by the UI)
-      if (typeof ALL_COLUMNS !== "undefined" && !ALL_COLUMNS.some(c => c.key === "category")) {
-        const idxPub = ALL_COLUMNS.findIndex(c => c.key === "publisher");
-        const def = { key: "category", label: "Category", default: true };
-        if (idxPub >= 0) ALL_COLUMNS.splice(idxPub + 1, 0, def); else ALL_COLUMNS.push(def);
+      if (typeof ALL_COLUMNS !== 'undefined' && !ALL_COLUMNS.some(c => c.key === 'category')) {
+        const def = { key: 'category', label: 'Category', default: true };
+        const i = ALL_COLUMNS.findIndex(c => c.key === 'publisher');
+        if (i >= 0) ALL_COLUMNS.splice(i + 1, 0, def); else ALL_COLUMNS.push(def);
       }
-    } catch (e) { /* noop */ }
+    } catch(_) {}
 
+    // selectedColumns: show by default (won't duplicate if user already has it)
     try {
-      // Ensure it's selected by default in the current session (won't override user customizations if already chosen)
-      if (typeof selectedColumns !== "undefined" && !selectedColumns.some(c => c.key === "category")) {
-        const idxPub = selectedColumns.findIndex(c => c.key === "publisher");
-        const entry = { key: "category", label: "Category" };
-        if (idxPub >= 0) selectedColumns.splice(idxPub + 1, 0, entry);
-        else selectedColumns.push(entry);
-        // Persist the choice so it stays on reload
-        try { localStorage.setItem("pub_columns", JSON.stringify(selectedColumns)); } catch {}
+      if (typeof selectedColumns !== 'undefined' && !selectedColumns.some(c => c.key === 'category')) {
+        const entry = { key: 'category', label: 'Category' };
+        const i = selectedColumns.findIndex(c => c.key === 'publisher');
+        if (i >= 0) selectedColumns.splice(i + 1, 0, entry); else selectedColumns.push(entry);
+        try { localStorage.setItem('pub_columns', JSON.stringify(selectedColumns)); } catch(_) {}
       }
-    } catch (e) { /* noop */ }
+    } catch(_) {}
   }
 
+  /* ---------- Patch renderers + exporters (non-destructive) ---------- */
   function patchRenderers() {
-    // renderCell
+    // Table cell renderer
     try {
-      const _renderCell = (typeof renderCell === "function") ? renderCell : null;
+      const prev = (typeof renderCell === 'function') ? renderCell : null;
       window.renderCell = function (key, p) {
-        if (key === "category") return categoryFor(p);
-        return _renderCell ? _renderCell(key, p) : "";
+        if (key === 'category') return categoryFor(p);
+        return prev ? prev(key, p) : '';
       };
-    } catch (e) { /* noop */ }
+    } catch(_) {}
 
-    // textForExport (CSV text)
+    // CSV text export
     try {
-      const _textForExport = (typeof textForExport === "function") ? textForExport : null;
+      const prev = (typeof textForExport === 'function') ? textForExport : null;
       window.textForExport = function (key, p) {
-        if (key === "category") return categoryFor(p);
-        return _textForExport ? _textForExport(key, p) : "";
+        if (key === 'category') return categoryFor(p);
+        return prev ? prev(key, p) : '';
       };
-    } catch (e) { /* noop */ }
+    } catch(_) {}
 
-    // rawForExport (JSON value)
+    // JSON raw export
     try {
-      const _rawForExport = (typeof rawForExport === "function") ? rawForExport : null;
+      const prev = (typeof rawForExport === 'function') ? rawForExport : null;
       window.rawForExport = function (key, p) {
-        if (key === "category") return categoryFor(p);
-        return _rawForExport ? _rawForExport(key, p) : (p && p[key]);
+        if (key === 'category') return categoryFor(p);
+        return prev ? prev(key, p) : (p && p[key]);
       };
-    } catch (e) { /* noop */ }
+    } catch(_) {}
   }
 
+  /* ---------- Refresh UI so the new column appears immediately ---------- */
   function refreshUI() {
-    try { if (typeof buildColumnsPanel === "function") buildColumnsPanel(); } catch {}
+    try { if (typeof buildColumnsPanel === 'function') buildColumnsPanel(); } catch(_) {}
     try {
-      // Re-render the table and KPIs
-      if (typeof applyFilters === "function") applyFilters();
-      else if (typeof renderTable === "function") renderTable();
-    } catch {}
+      if (typeof applyFilters === 'function') applyFilters();
+      else if (typeof renderTable === 'function') renderTable();
+    } catch(_) {}
   }
 
   function init() {
@@ -2472,8 +2518,8 @@ document.addEventListener('DOMContentLoaded', renderCountryMapFocused);
     refreshUI();
   }
 
-  if (document.readyState === "loading") {
-    document.addEventListener("DOMContentLoaded", () => setTimeout(init, 0));
+  if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', () => setTimeout(init, 0));
   } else {
     setTimeout(init, 0);
   }
