@@ -2528,6 +2528,341 @@ document.addEventListener('DOMContentLoaded', renderCountryMapFocused);
   }
 })();
 </script>
+<script>
+/* ============================================================
+   CLIENT AUTOPILOT — DOI Type/Category Corrector (v1)
+   - No server needed. Uses Crossref → OpenAlex → DataCite.
+   - Caches results in localStorage (per-browser).
+   - Only upgrades weak/ambiguous rows.
+   ============================================================ */
+(function () {
+  if (window.__TYPE_AUTOPILOT_V1__) return;
+  window.__TYPE_AUTOPILOT_V1__ = true;
+
+  /* ---------- config ---------- */
+  const CROSSREF_MAILTO = 'metadata-team@example.com'; // <-- put your email
+  const MAX_PARALLEL = 1;           // keep it polite
+  const MIN_DELAY_MS = 600;         // ~1–2 rps total
+  const CACHE_KEY = 'autoTypeCache.v2';
+  const CACHE_TTL_DAYS = 180;       // refresh twice a year
+
+  /* ---------- small DOM badge ---------- */
+  function setStatus(msg, done=false){
+    try{
+      let el = document.getElementById('autoTypeStatus');
+      if (!el) {
+        const anchor = document.getElementById('lastSynced') || document.body;
+        el = document.createElement('span');
+        el.id = 'autoTypeStatus';
+        el.style.marginLeft = '8px';
+        el.style.fontSize = '11px';
+        el.style.padding = '2px 6px';
+        el.style.borderRadius = '8px';
+        el.style.background = 'rgba(99,102,241,.1)';
+        el.style.border = '1px solid rgba(99,102,241,.4)';
+        el.style.color = '#1f2937';
+        anchor.parentNode.insertBefore(el, anchor.nextSibling);
+      }
+      el.textContent = msg || '';
+      el.style.display = msg ? 'inline-block' : 'none';
+      if (done) setTimeout(()=>{ el.style.display='none'; }, 1500);
+    }catch{}
+  }
+
+  /* ---------- cache helpers ---------- */
+  const now = () => Date.now();
+  const days = n => n*24*3600*1000;
+  function loadCache() {
+    try { return JSON.parse(localStorage.getItem(CACHE_KEY)||'{}'); } catch { return {}; }
+  }
+  function saveCache(c) {
+    try { localStorage.setItem(CACHE_KEY, JSON.stringify(c)); } catch {}
+  }
+  function normDoi(x){
+    if (!x) return '';
+    let s = String(x).trim();
+    s = s.replace(/^https?:\/\/(dx\.)?doi\.org\//i,'');
+    return s.toLowerCase();
+  }
+
+  /* ---------- normalize → your keys ---------- */
+  function keyFromCrossref(t){
+    t = String(t||'').toLowerCase();
+    if (t === 'journal-article' || t === 'article' || t === 'research-article') return 'article';
+    if (t.includes('proceed') || t === 'proceedings-article' || t.includes('conference')) return 'conference';
+    if (t === 'book-chapter' || /chapter/.test(t)) return 'book-chapter';
+    if (t.startsWith('book') || t === 'monograph' || t === 'edited-book' || t === 'reference-book') return 'book';
+    if (t.includes('dataset') || t === 'data-paper') return 'dataset';
+    if (/^posted-content$|preprint|working-paper/.test(t)) return 'preprint';
+    if (/review/.test(t)) return 'review';
+    if (/editorial/.test(t)) return 'editorial';
+    if (/letter/.test(t)) return 'letter';
+    if (/correction|erratum|corrigendum|addendum/.test(t)) return 'correction';
+    if (/retraction/.test(t)) return 'retraction-notice';
+    return 'article';
+  }
+  function keyFromOpenAlex(t){
+    t = String(t||'').toLowerCase();
+    if (t === 'article') return 'article';
+    if (t === 'proceedings-article' || t === 'conference-proceedings') return 'conference';
+    if (t === 'book-chapter' || t === 'chapter') return 'book-chapter';
+    if (t === 'book') return 'book';
+    if (t === 'dataset') return 'dataset';
+    if (t === 'posted-content' || t === 'preprint') return 'preprint';
+    if (t === 'editorial') return 'editorial';
+    if (t === 'letter') return 'letter';
+    if (t === 'review') return 'review';
+    return 'article';
+  }
+  function keyFromDataCite(resourceTypeGeneral){
+    const s = String(resourceTypeGeneral||'').toLowerCase();
+    if (s === 'dataset') return 'dataset';
+    if (s === 'collection') return 'dataset';
+    if (s === 'text') return 'article'; // broad
+    return '';
+  }
+  function labelForKey(k){
+    return ({
+      'article':'Journal',
+      'conference':'Conference',
+      'book':'Book',
+      'book-chapter':'Book Chapter',
+      'dataset':'Dataset',
+      'preprint':'PrePrint',
+      'editorial':'Editorial',
+      'letter':'Letter',
+      'review':'Review',
+      'correction':'Correction/Erratum',
+      'retraction-notice':'Retraction Notice',
+      'unknown':'Other'
+    })[k] || 'Other';
+  }
+  function categoryForKey(k){
+    if (k === 'conference') return 'Conference Paper';
+    if (k === 'book') return 'Book';
+    if (k === 'book-chapter') return 'Book Chapter';
+    if (['article','review','editorial','letter','preprint'].includes(k)) return 'Journal Article';
+    // keep these out of Journal as you requested
+    if (k === 'correction' || k === 'retraction-notice' || k === 'dataset') return 'Others';
+    return 'Others';
+  }
+
+  /* ---------- polite fetchers ---------- */
+  async function getJSON(url){
+    const ctrl = new AbortController();
+    const t = setTimeout(()=>ctrl.abort(), 12000);
+    try{
+      const r = await fetch(url, { signal: ctrl.signal });
+      if (!r.ok) throw new Error(r.status+' '+r.statusText);
+      return await r.json();
+    } finally { clearTimeout(t); }
+  }
+  async function fromCrossref(doi){
+    try{
+      const u = `https://api.crossref.org/works/${encodeURIComponent(doi)}?mailto=${encodeURIComponent(CROSSREF_MAILTO)}`;
+      const j = await getJSON(u);
+      const m = j && j.message || {};
+      const k = keyFromCrossref(m.type);
+      return k ? {key:k, source:'crossref', raw:m.type, score:0.9} : null;
+    }catch{ return null; }
+  }
+  async function fromOpenAlex(doi){
+    try{
+      // OpenAlex accepts either doi:10.... or full https doi
+      const u = `https://api.openalex.org/works/doi:${encodeURIComponent(doi)}`;
+      const j = await getJSON(u);
+      const k = keyFromOpenAlex(j.type);
+      return k ? {key:k, source:'openalex', raw:j.type, score:0.8} : null;
+    }catch{ return null; }
+  }
+  async function fromDataCite(doi){
+    try{
+      const u = `https://api.datacite.org/works/${encodeURIComponent(doi)}`;
+      const j = await getJSON(u);
+      const m = j && j.data && j.data.attributes || {};
+      const k = keyFromDataCite(m.resourceTypeGeneral || m.resource_type_general);
+      return k ? {key:k, source:'datacite', raw:(m.resourceTypeGeneral||m.resource_type_general), score:0.85} : null;
+    }catch{ return null; }
+  }
+
+  /* ---------- choose best among sources ---------- */
+  const precedence = [
+    'correction', 'retraction-notice',
+    'conference', 'book-chapter', 'book',
+    'dataset', 'preprint',
+    'review', 'editorial', 'letter',
+    'article', 'unknown'
+  ];
+  function pickBest(candidates){
+    if (!candidates.length) return null;
+    // Prefer more specific class by precedence; break ties by score (Crossref/DataCite/OpenAlex weights)
+    let best = candidates[0];
+    for (const c of candidates.slice(1)){
+      const a = precedence.indexOf(c.key), b = precedence.indexOf(best.key);
+      if (a < b) best = c;
+      else if (a === b && (c.score||0) > (best.score||0)) best = c;
+    }
+    best.label = labelForKey(best.key);
+    best.category = categoryForKey(best.key);
+    best.confidence = Math.min(1, (best.score||0.8));
+    return best;
+  }
+
+  /* ---------- should we try to fix this row? ---------- */
+  function normalizeLocalKey(p){
+    const s = String(p.type || p.type_crossref || '').toLowerCase();
+    // your page already has a normalizeType; keep this minimal for decision only
+    if (s === 'journal-article' || s === 'article' || s === 'research-article') return 'article';
+    if (s.includes('conference') || s.includes('proceed')) return 'conference';
+    if (s.includes('book-chapter') || s === 'chapter') return 'book-chapter';
+    if (s.startsWith('book') || s === 'monograph' || s === 'edited-book') return 'book';
+    if (s === 'dataset') return 'dataset';
+    if (s === 'preprint' || s === 'posted-content') return 'preprint';
+    if (s === 'editorial') return 'editorial';
+    if (s === 'letter') return 'letter';
+    if (s === 'review') return 'review';
+    if (/(correction|erratum|corrigendum|addendum)/.test(s)) return 'correction';
+    if (/retraction/.test(s)) return 'retraction-notice';
+    return 'unknown';
+  }
+  function needsHelp(p){
+    const hasDOI = !!normDoi(p.doi || p.url);
+    if (!hasDOI) return false;
+    const k = normalizeLocalKey(p);
+    const weakType = (k === 'unknown');
+    const weakCat = !p.category || p.category === 'Others';
+    return weakType || weakCat;
+  }
+
+  /* ---------- apply fix back to the record ---------- */
+  function applyFix(p, fix){
+    if (!fix) return false;
+    const beforeKey = normalizeLocalKey(p);
+    const beforeCat = p.category || '';
+    // only upgrade when more specific than what we have
+    const isMoreSpecific =
+      precedence.indexOf(fix.key) < precedence.indexOf(beforeKey) ||
+      beforeKey === 'unknown';
+    const willChangeCategory = !p.category || p.category === 'Others';
+
+    if (isMoreSpecific) {
+      p.type = (fix.key === 'article') ? 'journal-article' : fix.key;
+    }
+    if (willChangeCategory) {
+      p.category = fix.category;
+    }
+    p._auto_type_key = fix.key;
+    p._auto_type_label = fix.label;
+    p._auto_type_confidence = fix.confidence;
+    p._auto_type_source = fix.source;
+    p._auto_type_checked_at = new Date().toISOString();
+    return (isMoreSpecific || willChangeCategory);
+  }
+
+  /* ---------- patch renderers once so table prefers autopilot ---------- */
+  try{
+    const prevRenderCell = window.renderCell;
+    window.renderCell = function(key, p){
+      if (key === 'type') {
+        const lbl = p?._auto_type_label || (window.labelForType ? window.labelForType(window.normalizeType ? window.normalizeType(p.type||p.type_crossref) : (p.type||p.type_crossref)) : (p.type||''));
+        const warn = p?._auto_type_confidence && p._auto_type_confidence < 0.7 ? ' <span class="text-amber-600" title="Low confidence">⚠</span>' : '';
+        return lbl + warn;
+      }
+      if (key === 'category') {
+        return p?.category || '';
+      }
+      return prevRenderCell ? prevRenderCell(key, p) : '';
+    };
+  }catch{}
+
+  /* ---------- queue runner ---------- */
+  function delay(ms){ return new Promise(r=>setTimeout(r,ms)); }
+
+  async function resolveOne(doi, cache){
+    const cached = cache[doi];
+    if (cached && (now() - (cached.ts||0) < days(CACHE_TTL_DAYS))) {
+      return cached; // recent enough
+    }
+    const cand = [];
+    const a = await fromCrossref(doi); if (a) cand.push(a);
+    // If Crossref says "article" but venue/title scream proceedings,
+    // OpenAlex can correct to proceedings-article.
+    const b = await fromOpenAlex(doi); if (b) cand.push(b);
+    // Only ping DataCite if nothing decisive yet or we suspect dataset
+    if (!cand.length || cand.every(x => x.key !== 'dataset')){
+      const c = await fromDataCite(doi); if (c) cand.push(c);
+    }
+    const fix = pickBest(cand);
+    if (fix){
+      cache[doi] = { ...fix, ts: now() };
+      saveCache(cache);
+      return cache[doi];
+    }
+    // remember negatives briefly to avoid hammering
+    cache[doi] = { key:'unknown', label:'Other', category:'Others', source:'none', score:0, ts: now() };
+    saveCache(cache);
+    return cache[doi];
+  }
+
+  async function runAutopilot(){
+    const items = Array.isArray(window.all) ? window.all : [];
+    if (!items.length) return;
+
+    const candidates = items.filter(needsHelp);
+    if (!candidates.length){ setStatus('Auto-typing: nothing to improve', true); return; }
+
+    const cache = loadCache();
+    let done = 0, changed = 0;
+    setStatus(`Auto-typing: 0 / ${candidates.length}`);
+
+    // simple serial queue with polite delay
+    for (const p of candidates){
+      const doi = normDoi(p.doi || p.url);
+      if (!doi) { done++; setStatus(`Auto-typing: ${done} / ${candidates.length}`); continue; }
+
+      let fix = cache[doi];
+      if (!fix || (now() - (fix.ts||0) >= days(CACHE_TTL_DAYS))) {
+        fix = await resolveOne(doi, cache);
+        await delay(MIN_DELAY_MS);
+      }
+
+      if (fix && fix.key && fix.key !== 'unknown') {
+        if (applyFix(p, fix)) changed++;
+      }
+      done++;
+      if (done % 10 === 0 && typeof window.applyFilters === 'function') {
+        // re-render in small batches
+        window.applyFilters();
+      }
+      setStatus(`Auto-typing: ${done} / ${candidates.length}`);
+    }
+
+    if (typeof window.applyFilters === 'function') window.applyFilters();
+    setStatus(`Auto-typing done · updated ${changed}`, true);
+  }
+
+  /* ---------- start when data is ready ---------- */
+  function startWhenReady(){
+    // run once after your loader has populated `all`
+    const tryStart = () => {
+      if (Array.isArray(window.all) && window.all.length){
+        runAutopilot();
+        document.removeEventListener('app:filters-applied', tryStart);
+      }
+    };
+    // run after initial filters, too
+    document.addEventListener('app:filters-applied', tryStart);
+    // and a small timeout in case no event fires
+    setTimeout(tryStart, 1200);
+  }
+
+  if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', startWhenReady);
+  } else {
+    startWhenReady();
+  }
+})();
+</script>
 
 </body>
 </html>
