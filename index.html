@@ -2368,16 +2368,17 @@ document.addEventListener('DOMContentLoaded', renderCountryMapFocused);
 </script>
 <script>
 /* ============================================================
-   Runtime patch (v3):
-   - Dedupe on each applyFilters() run (so late data can't override)
-   - DOI cleanup + merge
-   - Safe Title+Year+Venue fallback merge
-   - Category column + clean DOI rendering
+   FINAL one-block patch (v4)
+   - Canonicalize & merge duplicates by DOI
+   - Safe Title+Year+Venue fallback merge when DOI missing
+   - Normalize type + add Category column
+   - Clean DOI rendering (always "10.…" link)
+   - Dedupes on applyFilters() AND right before renderTable()
    Paste right before </body>
    ============================================================ */
 (function () {
-  if (window.__PORTAL_RUNTIME_DEDUPE_V3__) return;
-  window.__PORTAL_RUNTIME_DEDUPE_V3__ = true;
+  if (window.__PORTAL_RUNTIME_DEDUPE_V4__) return;
+  window.__PORTAL_RUNTIME_DEDUPE_V4__ = true;
 
   /* ---------------- helpers ---------------- */
   function htmlDecode(s){ if(s==null) return s; const d=document.createElement('textarea'); d.innerHTML=String(s); return d.value; }
@@ -2403,7 +2404,6 @@ document.addEventListener('DOMContentLoaded', renderCountryMapFocused);
   /* -------------- type + category -------------- */
   function normalizeType(raw){
     const s = String(raw||'').toLowerCase().trim();
-    // include both "journal-article" and "journal article"
     if(s==='journal-article' || s==='journal article' || s==='article' || s==='research article' || s==='journal') return 'article';
     if(s.includes('conference')||s.includes('proceed')||s.includes('symposium')||s.includes('workshop')) return 'conference';
     if(s.includes('book-chapter')||s.includes('book part')||s.includes('book-part')||
@@ -2422,7 +2422,7 @@ document.addEventListener('DOMContentLoaded', renderCountryMapFocused);
     if(types.some(t=>t==='editorial'))   return 'editorial';
     if(types.some(t=>t==='letter'))      return 'letter';
     if(types.some(t=>t==='article'))     return 'article';
-    return types.find(t=>t!=='unknown') || 'unknown';
+    return types.find(t=>t!=='unknown') || 'article';
   }
   function categoryFor(p){
     const rawType = String(p?.type || p?.type_crossref || p?.document_type || p?.genre || '').toLowerCase();
@@ -2461,12 +2461,11 @@ document.addEventListener('DOMContentLoaded', renderCountryMapFocused);
     out.authors      = [...new Set([...(arr(a.authors)), ...(arr(b.authors))])].filter(Boolean);
     out.home_authors = [...new Set([...(a.home_authors||[]), ...(b.home_authors||[])])];
 
-    // Type – choose best
+    // Type – choose best, store as "journal-article" for UI consistency
     const types=[ normalizeType(a.type||a.type_crossref||a.document_type||a.genre),
                   normalizeType(b.type||b.type_crossref||b.document_type||b.genre) ];
-    out.type = chooseBestType(types, normTxt(out.title));
-    // Keep “journal-article” form for UI that expects it
-    if (out.type==='article') out.type='journal-article';
+    const best = chooseBestType(types, normTxt(out.title));
+    out.type = (best==='article') ? 'journal-article' : best;
 
     return out;
   }
@@ -2480,6 +2479,8 @@ document.addEventListener('DOMContentLoaded', renderCountryMapFocused);
   }
 
   function dedupeArray(items){
+    if (!Array.isArray(items) || !items.length) return items || [];
+
     // Pre-clean
     for (const p of items){
       if (typeof p.title==='string')   p.title   = htmlDecode(p.title);
@@ -2508,7 +2509,6 @@ document.addEventListener('DOMContentLoaded', renderCountryMapFocused);
 
       for (const g of groups){
         if (g.t !== t) continue;
-        // same year (or one is missing) AND (venues equal OR authors overlap)
         const yearOK = (g.y === y) || (!g.y || !y);
         let overlap = 0; a.forEach(x=>{ if(g.a.has(x)) overlap++; });
         const authorOK = (overlap / Math.min(g.a.size||1, a.size||1)) >= 0.5;
@@ -2516,7 +2516,6 @@ document.addEventListener('DOMContentLoaded', renderCountryMapFocused);
 
         if (yearOK && (venueOK || authorOK)) {
           g.p = mergeRecords(g.p, p);
-          // update meta
           g.a = new Set([...g.a, ...a]);
           if (!g.v && v) g.v = v;
           merged = true;
@@ -2527,6 +2526,13 @@ document.addEventListener('DOMContentLoaded', renderCountryMapFocused);
     }
 
     return [...byDoi.values(), ...groups.map(x=>x.p)];
+  }
+
+  function dedupeInPlace(){
+    try {
+      if (Array.isArray(window.all))      window.all      = dedupeArray(window.all);
+      if (Array.isArray(window.filtered)) window.filtered = dedupeArray(window.filtered);
+    } catch (e) { console.warn('[Portal] dedupe error', e); }
   }
 
   /* -------------- patch UI: renderers & columns -------------- */
@@ -2600,26 +2606,29 @@ document.addEventListener('DOMContentLoaded', renderCountryMapFocused);
     }catch(_){}
   }
 
-  /* -------------- hook applyFilters (the key fix) -------------- */
-  (function hookApplyFilters(){
+  /* -------------- hook applyFilters + renderTable -------------- */
+  (function hookAll(){
     ensureCategoryColumn();
     patchRenderers();
 
-    const original = window.applyFilters;
+    // Hook applyFilters: dedupe sources every time filters run
+    const originalApply = window.applyFilters;
     window.applyFilters = function(...args){
-      try{
-        if (Array.isArray(window.all) && window.all.length) {
-          // fill DOI from urls and dedupe in-place every time filters run
-          window.all = dedupeArray(window.all);
-        }
-      }catch(e){ console.warn('[Portal] dedupe error', e); }
-      return original ? original.apply(this, args) : undefined;
+      dedupeInPlace();
+      return originalApply ? originalApply.apply(this, args) : undefined;
+    };
+
+    // Hook renderTable: dedupe right before drawing (covers late repopulation)
+    const originalRender = window.renderTable;
+    window.renderTable = function(...args){
+      dedupeInPlace();
+      return originalRender ? originalRender.apply(this, args) : undefined;
     };
   })();
 
-  // One first refresh after load to ensure dedupe applies even before the user touches filters
+  // One first refresh after load
   if (document.readyState === 'loading') {
-    document.addEventListener('DOMContentLoaded', () => { try { if (typeof applyFilters==='function') applyFilters(1); } catch(_){} });
+    document.addEventListener('DOMContentLoaded', () => { try { if (typeof applyFilters==='function') applyFilters(1); } catch(_){}} );
   } else {
     try { if (typeof applyFilters==='function') applyFilters(1); } catch(_){}
   }
