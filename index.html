@@ -2368,24 +2368,20 @@ document.addEventListener('DOMContentLoaded', renderCountryMapFocused);
 </script>
 <script>
 /* ============================================================
-   FINAL one-block patch (v4)
-   - Canonicalize & merge duplicates by DOI
-   - Safe Title+Year+Venue fallback merge when DOI missing
-   - Normalize type + add Category column
-   - Clean DOI rendering (always "10.…" link)
-   - Dedupes on applyFilters() AND right before renderTable()
-   Paste right before </body>
+   Load-hook deduper (v5)
+   - Dedupes institution_data on load (DOI-first, then Title+Year+Venue)
+   - Works even if `all`/`filtered` use `let` (not on window)
    ============================================================ */
 (function () {
-  if (window.__PORTAL_RUNTIME_DEDUPE_V4__) return;
-  window.__PORTAL_RUNTIME_DEDUPE_V4__ = true;
+  if (window.__PORTAL_DEDUPE_V5__) return;
+  window.__PORTAL_DEDUPE_V5__ = true;
 
-  /* ---------------- helpers ---------------- */
+  /* ---------- helpers ---------- */
   function htmlDecode(s){ if(s==null) return s; const d=document.createElement('textarea'); d.innerHTML=String(s); return d.value; }
   function extractDOI(s){ const m=String(s||'').match(/\b10\.\d{4,9}\/\S+\b/i); return m ? m[0] : ''; }
   function canonicalDoi(x){
     const raw = extractDOI(x) || x;
-    let s = String(raw || '').trim();
+    let s = String(raw||'').trim();
     s = s.replace(/^https?:\/\/(dx\.)?doi\.org\//i,'');
     return s.toLowerCase();
   }
@@ -2401,67 +2397,51 @@ document.addEventListener('DOMContentLoaded', renderCountryMapFocused);
   }
   const arr = v => Array.isArray(v)?v:(typeof v==='string'?v.split(/[,;]\s*/):[]);
 
-  /* -------------- type + category -------------- */
   function normalizeType(raw){
-    const s = String(raw||'').toLowerCase().trim();
-    if(s==='journal-article' || s==='journal article' || s==='article' || s==='research article' || s==='journal') return 'article';
-    if(s.includes('conference')||s.includes('proceed')||s.includes('symposium')||s.includes('workshop')) return 'conference';
-    if(s.includes('book-chapter')||s.includes('book part')||s.includes('book-part')||
-       s.includes('book section')||s.includes('book-section')||s==='chapter'||s==='chapter article') return 'book-chapter';
-    if(s.startsWith('book')||s==='monograph'||s==='edited-book'||s==='reference-book') return 'book';
-    if(s==='review'||s==='systematic review'||s==='meta analysis') return 'review';
-    if(s==='editorial') return 'editorial';
-    if(s==='letter')    return 'letter';
+    const s=String(raw||'').toLowerCase().trim();
+    if (s==='journal-article'||s==='journal article'||s==='article'||s==='research article'||s==='journal') return 'article';
+    if (s.includes('conference')||s.includes('proceed')||s.includes('symposium')||s.includes('workshop')) return 'conference';
+    if (s.includes('book-chapter')||s.includes('book part')||s.includes('book-part')||s.includes('book section')||s.includes('book-section')||s==='chapter') return 'book-chapter';
+    if (s.startsWith('book')||s==='monograph'||s==='edited-book'||s==='reference-book') return 'book';
+    if (s==='review'||s==='systematic review'||s==='meta analysis') return 'review';
+    if (s==='editorial') return 'editorial';
+    if (s==='letter') return 'letter';
     return s || 'unknown';
   }
   function chooseBestType(types, titleNorm){
-    if(types.some(t=>t==='conference') || /\bproceedings?\b/.test(titleNorm)) return 'conference';
-    if(types.some(t=>t==='book-chapter')) return 'book-chapter';
-    if(types.some(t=>t==='book'))        return 'book';
-    if(types.some(t=>t==='review'))      return 'review';
-    if(types.some(t=>t==='editorial'))   return 'editorial';
-    if(types.some(t=>t==='letter'))      return 'letter';
-    if(types.some(t=>t==='article'))     return 'article';
+    if (types.some(t=>t==='conference') || /\bproceedings?\b/.test(titleNorm)) return 'conference';
+    if (types.some(t=>t==='book-chapter')) return 'book-chapter';
+    if (types.some(t=>t==='book'))        return 'book';
+    if (types.some(t=>t==='review'))      return 'review';
+    if (types.some(t=>t==='editorial'))   return 'editorial';
+    if (types.some(t=>t==='letter'))      return 'letter';
+    if (types.some(t=>t==='article'))     return 'article';
     return types.find(t=>t!=='unknown') || 'article';
   }
-  function categoryFor(p){
-    const rawType = String(p?.type || p?.type_crossref || p?.document_type || p?.genre || '').toLowerCase();
-    const nt = normalizeType(rawType);
-    const hay = `${rawType} ${String(p?.title||'').toLowerCase()}`;
-    const OTH = ['preprint','posted content','dataset','data paper','paratext','peer review','video audio media','media'];
-    if (OTH.some(k=>hay.includes(k))) return 'Others';
-    if (nt==='book') return 'Book';
-    if (nt==='book-chapter') return 'Book Chapter';
-    if (nt==='conference') return 'Conference Paper';
-    if (nt==='article' || nt==='review' || nt==='editorial' || nt==='letter') return 'Journal Article';
-    return 'Others';
-  }
 
-  /* -------------- merge + dedupe -------------- */
   function mergeRecords(a,b){
     const out = Object.assign({}, a);
-
-    // Title / Journal (decode + keep longest)
+    // title / journal (prefer longer / decoded)
     const at=htmlDecode(a.title||''), bt=htmlDecode(b.title||''); out.title=(at.length>=bt.length?at:bt)||at||bt||'';
     const aj=htmlDecode(a.journal||a?.host_venue?.display_name||''), bj=htmlDecode(b.journal||b?.host_venue?.display_name||'');
     out.journal=(aj.length>=bj.length?aj:bj)||aj||bj||'';
 
-    // DOI & URL
+    // DOI / URL
     const ad = canonicalDoi(a.doi) || canonicalDoi(a.url);
     const bd = canonicalDoi(b.doi) || canonicalDoi(b.url);
     out.doi  = ad || bd || a.doi || b.doi || '';
     out.url  = a.url || b.url || (out.doi ? ('https://doi.org/'+canonicalDoi(out.doi)) : '');
 
-    // Year, citations
+    // year / citations
     out.year = a.year ?? b.year ?? null;
     out.citations = Math.max(Number(a.citations||0), Number(b.citations||0));
 
-    // Arrays – unions
+    // arrays => unions
     out.issns        = [...new Set([...(a.issns||[]), ...(b.issns||[])])];
     out.authors      = [...new Set([...(arr(a.authors)), ...(arr(b.authors))])].filter(Boolean);
     out.home_authors = [...new Set([...(a.home_authors||[]), ...(b.home_authors||[])])];
 
-    // Type – choose best, store as "journal-article" for UI consistency
+    // type => best pick, keep "journal-article" for article
     const types=[ normalizeType(a.type||a.type_crossref||a.document_type||a.genre),
                   normalizeType(b.type||b.type_crossref||b.document_type||b.genre) ];
     const best = chooseBestType(types, normTxt(out.title));
@@ -2481,14 +2461,14 @@ document.addEventListener('DOMContentLoaded', renderCountryMapFocused);
   function dedupeArray(items){
     if (!Array.isArray(items) || !items.length) return items || [];
 
-    // Pre-clean
+    // pre-clean
     for (const p of items){
       if (typeof p.title==='string')   p.title   = htmlDecode(p.title);
       if (typeof p.journal==='string') p.journal = htmlDecode(p.journal);
       fillDoiFromUrl(p);
     }
 
-    // 1) DOI-based
+    // 1) DOI-based merge
     const byDoi = new Map();
     for (const p of items){
       const key = canonicalDoi(p.doi) || canonicalDoi(p.url);
@@ -2497,7 +2477,7 @@ document.addEventListener('DOMContentLoaded', renderCountryMapFocused);
       else byDoi.set(key, p);
     }
 
-    // 2) Safe Title+Year+Venue fallback (for remaining without DOI)
+    // 2) Title+Year+Venue (for those without DOI)
     const rest = items.filter(p => !(canonicalDoi(p.doi) || canonicalDoi(p.url)));
     const groups = [];
     for (const p of rest){
@@ -2528,109 +2508,23 @@ document.addEventListener('DOMContentLoaded', renderCountryMapFocused);
     return [...byDoi.values(), ...groups.map(x=>x.p)];
   }
 
-  function dedupeInPlace(){
-    try {
-      if (Array.isArray(window.all))      window.all      = dedupeArray(window.all);
-      if (Array.isArray(window.filtered)) window.filtered = dedupeArray(window.filtered);
-    } catch (e) { console.warn('[Portal] dedupe error', e); }
-  }
-
-  /* -------------- patch UI: renderers & columns -------------- */
-  function ensureCategoryColumn(){
-    try{
-      if (typeof KNOWN_COLUMNS!=='undefined' && !KNOWN_COLUMNS.some(c=>c.key==='category')) {
-        const def = { key:'category', label:'Category', default:true };
-        const i = KNOWN_COLUMNS.findIndex(c=>c.key==='publisher');
-        if (i>=0) KNOWN_COLUMNS.splice(i+1,0,def); else KNOWN_COLUMNS.push(def);
-      }
-      if (typeof ALL_COLUMNS!=='undefined' && !ALL_COLUMNS.some(c=>c.key==='category')) {
-        const def = { key:'category', label:'Category', default:true };
-        const i = ALL_COLUMNS.findIndex(c=>c.key==='publisher');
-        if (i>=0) ALL_COLUMNS.splice(i+1,0,def); else ALL_COLUMNS.push(def);
-      }
-      if (typeof selectedColumns!=='undefined' && !selectedColumns.some(c=>c.key==='category')) {
-        const entry = { key:'category', label:'Category' };
-        const i = selectedColumns.findIndex(c=>c.key==='publisher');
-        if (i>=0) selectedColumns.splice(i+1,0,entry); else selectedColumns.push(entry);
-        try{ localStorage.setItem('pub_columns', JSON.stringify(selectedColumns)); }catch(_){}
-      }
-    }catch(_){}
-  }
-
-  function patchRenderers(){
-    // Table cell
-    try{
-      const prev = window.renderCell;
-      window.renderCell = function(key,p){
-        if (key==='category') return categoryFor(p);
-        if (key==='doi') {
-          const d = p?.doi ? canonicalDoi(p.doi) : canonicalDoi(p?.url);
-          return d ? `<a class="text-indigo-600 hover:underline" href="https://doi.org/${d}" target="_blank">${d}</a>` : '';
+  /* ---------- wrap the data loader ---------- */
+  const origLoad = window.loadInstitutionData;
+  if (typeof origLoad === 'function' && !origLoad.__dedupeWrapped){
+    const wrapped = async function(...args){
+      const data = await origLoad.apply(this, args);
+      try{
+        if (data && Array.isArray(data.items)) {
+          data.items = dedupeArray(data.items);
+        } else if (Array.isArray(data)) {
+          // if someone returns a bare array, normalize to {items:[…]}
+          return { items: dedupeArray(data) };
         }
-        if (key==='title'){
-          const t = (typeof p?.title==='string') ? htmlDecode(p.title) : (p?.title??'');
-          return p?.url
-            ? `<a class="text-indigo-600 hover:underline" href="${p.url}" target="_blank">${(typeof esc==='function'?esc(t):t)}</a>`
-            : (typeof esc==='function'?esc(t):t);
-        }
-        if (key==='journal'){
-          const j=(typeof p?.journal==='string') ? htmlDecode(p.journal) : (p?.journal??'');
-          return (typeof esc==='function'?esc(j):j);
-        }
-        return prev ? prev(key,p) : '';
-      };
-    }catch(_){}
-
-    // CSV
-    try{
-      const prev = window.textForExport;
-      window.textForExport = function(key,p){
-        if (key==='category') return categoryFor(p);
-        if (key==='title')   return htmlDecode(p?.title??'');
-        if (key==='journal') return htmlDecode(p?.journal??'');
-        if (key==='doi'){ const d = p?.doi ? canonicalDoi(p.doi) : canonicalDoi(p?.url); return d || ''; }
-        return prev ? prev(key,p) : '';
-      };
-    }catch(_){}
-
-    // JSON
-    try{
-      const prev = window.rawForExport;
-      window.rawForExport = function(key,p){
-        if (key==='category') return categoryFor(p);
-        if (key==='title')   return htmlDecode(p?.title??'');
-        if (key==='journal') return htmlDecode(p?.journal??'');
-        if (key==='doi'){ const d = p?.doi ? canonicalDoi(p.doi) : canonicalDoi(p?.url); return d || ''; }
-        return prev ? prev(key,p) : (p && p[key]);
-      };
-    }catch(_){}
-  }
-
-  /* -------------- hook applyFilters + renderTable -------------- */
-  (function hookAll(){
-    ensureCategoryColumn();
-    patchRenderers();
-
-    // Hook applyFilters: dedupe sources every time filters run
-    const originalApply = window.applyFilters;
-    window.applyFilters = function(...args){
-      dedupeInPlace();
-      return originalApply ? originalApply.apply(this, args) : undefined;
+      } catch (e) { console.warn('[dedupe v5] failed to dedupe', e); }
+      return data;
     };
-
-    // Hook renderTable: dedupe right before drawing (covers late repopulation)
-    const originalRender = window.renderTable;
-    window.renderTable = function(...args){
-      dedupeInPlace();
-      return originalRender ? originalRender.apply(this, args) : undefined;
-    };
-  })();
-
-  // One first refresh after load
-  if (document.readyState === 'loading') {
-    document.addEventListener('DOMContentLoaded', () => { try { if (typeof applyFilters==='function') applyFilters(1); } catch(_){}} );
-  } else {
-    try { if (typeof applyFilters==='function') applyFilters(1); } catch(_){}
+    wrapped.__dedupeWrapped = true;
+    window.loadInstitutionData = wrapped;
   }
 })();
 </script>
