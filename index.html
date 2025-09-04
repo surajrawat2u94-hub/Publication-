@@ -2368,161 +2368,309 @@ document.addEventListener('DOMContentLoaded', renderCountryMapFocused);
 </script>
 <script>
 /* ============================================================
-   Category column: Journal Article / Conference Paper / Book /
-                    Book Chapter / Others
-   - Adds a "Category" column (default ON) to your Publications table
-   - Populates exports (CSV/JSON)
-   - Safe to drop in without editing existing code
-   - Paste this block right before </body>
+   Unified DEDUPE + TYPE normalization + Category + DOI cleanup
+   Paste this block right before </body>. Safe to rerun.
    ============================================================ */
 (function () {
-  /* ---------- Robust normalization (uses your normalizeType if present) ---------- */
-  function normalizeTypeFallback(raw) {
-    const s = String(raw || '').toLowerCase().trim();
+  if (window.__PORTAL_UNIFIED_PATCH__) return;
+  window.__PORTAL_UNIFIED_PATCH__ = true;
 
-    if (s === 'journal-article') return 'article';
+  /* -------------------- Config -------------------- */
+  // Keep conference and journal versions separate when they share a title:
+  const MERGE_BY_TITLE_YEAR = false;  // set to true to enable fallback merging (see safe block below)
 
-    if (s.includes('conference') || s.includes('proceed')) return 'conference';
-
-    if (
-      s.includes('book-chapter') || s.includes('book part') ||
-      s.includes('book-part') || s.includes('book section') ||
-      s.includes('book-section') || s === 'chapter' || s === 'chapter article'
-    ) return 'book-chapter';
-
-    if (
-      s.startsWith('book') || s === 'monograph' ||
-      s === 'edited-book' || s === 'reference-book'
-    ) return 'book';
-
-    return s || 'unknown';
+  /* -------------------- Utils -------------------- */
+  function htmlDecode(s){ if(s==null) return s; const d=document.createElement('textarea'); d.innerHTML=String(s); return d.value; }
+  function extractDOI(s){ const m=String(s||'').match(/\b10\.\d{4,9}\/\S+\b/i); return m ? m[0] : ''; }
+  function canonicalDoi(x){
+    const raw = extractDOI(x) || x;
+    let s = String(raw || '').trim();
+    s = s.replace(/^https?:\/\/(dx\.)?doi\.org\//i,'');
+    return s.toLowerCase();
   }
-  function getNormalizedType(raw) {
-    try {
-      if (typeof normalizeType === 'function') return normalizeType(raw);
-    } catch(_) {}
-    return normalizeTypeFallback(raw);
+  function normTitleLocal(s){
+    const t=htmlDecode(String(s||'').toLowerCase());
+    return t.replace(/&amp;/g,'&').replace(/[^\w\s]/g,' ').replace(/\s+/g,' ').trim();
+  }
+  const toArr = (v)=> Array.isArray(v) ? v : (typeof v==='string' ? v.split(/[,;]\s*/) : []);
+  function detectSource(p){
+    const v=(p.source||p.data_source||p.provider||'').toString().toLowerCase();
+    const u=(p.url||'').toLowerCase();
+    if(v.includes('openalex')||u.includes('openalex')) return 'openalex';
+    if(v.includes('crossref')||u.includes('crossref')) return 'crossref';
+    if(v.includes('doab')||u.includes('doab'))         return 'doab';
+    if(v.includes('openaire')||u.includes('openaire')) return 'openaire';
+    return v||'other';
   }
 
-  /* ---------- Final mapping logic (AI-ish rules baked in) ---------- */
-  function categoryFor(p) {
-    const rawType = String(p?.type || p?.type_crossref || '').toLowerCase();
-    const nt = getNormalizedType(rawType);
-    const title = String(p?.title || '').toLowerCase();
-    const hay = `${rawType} ${title}`; // keyword bag
-
-    // 1) "Others" has highest precedence when its tokens appear anywhere
-    const OTHERS_TOKENS = [
-      'preprint', 'posted content', 'dataset', 'data paper',
-      'paratext', 'peer review', 'video audio media', 'media'
-    ];
-    if (OTHERS_TOKENS.some(k => hay.includes(k))) return 'Others';
-
-    // 2) Book / Book Chapter
-    if (nt === 'book') return 'Book';
-    if (nt === 'book-chapter' || /(^|[\s;,-])chapter article([\s;,-]|$)/.test(hay)) return 'Book Chapter';
-
-    // 3) Conference
-    if (nt === 'conference' || /\b(proceedings?|symposium|workshop)\b/.test(hay)) return 'Conference Paper';
-
-    // 4) Journal Article (inclusive umbrella: review/editorial/letters/brief/erratum/retraction/etc.)
-    const JOURNAL_HINTS = [
-      'journal', 'article', 'review', 'editorial', 'letter', 'brief report', 'case report',
-      'retraction', 'retracted', 'erratum', 'corrigendum', 'correction', 'comment',
-      'commentary', 'meta analysis', 'systematic review', 'discussion'
-    ];
-    if (
-      nt === 'article' || nt === 'review' || nt === 'editorial' || nt === 'letter' ||
-      JOURNAL_HINTS.some(k => hay.includes(k))
-    ) {
-      return 'Journal Article';
-    }
-
-    // 5) Fallback
+  /* -------------------- Type + Category -------------------- */
+  function extractRawType(p){
+    return (p?.type ?? p?.type_crossref ?? p?.document_type ?? p?.doc_type ??
+            p?.item_type ?? p?.pub_type ?? p?.genre ?? p?.kind ?? p?.subtype ??
+            p?.work_type ?? '');
+  }
+  function normalizeTypeFallback(raw){
+    const s=String(raw||'').toLowerCase().trim();
+    if(s==='journal-article'||s==='article'||s==='research article'||s==='journal') return 'article';
+    if(s.includes('conference')||s.includes('proceed')||s.includes('symposium')||s.includes('workshop')) return 'conference';
+    if(s.includes('book-chapter')||s.includes('book part')||s.includes('book-part')||
+       s.includes('book section')||s.includes('book-section')||s==='chapter'||s==='chapter article') return 'book-chapter';
+    if(s.startsWith('book')||s==='monograph'||s==='edited-book'||s==='reference-book') return 'book';
+    if(s==='review'||s==='systematic review'||s==='meta analysis') return 'review';
+    if(s==='editorial') return 'editorial';
+    if(s==='letter')    return 'letter';
+    return s||'unknown';
+  }
+  function getNormalizedType(raw){ try{ if(typeof normalizeType==='function') return normalizeType(raw); }catch(_){} return normalizeTypeFallback(raw); }
+  function chooseBestType(types, titleNorm){
+    if(types.some(t=>t==='conference') || /\bproceedings?\b/.test(titleNorm)) return 'conference';
+    if(types.some(t=>t==='book-chapter')) return 'book-chapter';
+    if(types.some(t=>t==='book'))        return 'book';
+    if(types.some(t=>t==='review'))      return 'review';
+    if(types.some(t=>t==='editorial'))   return 'editorial';
+    if(types.some(t=>t==='letter'))      return 'letter';
+    if(types.some(t=>t==='article'))     return 'article';
+    return types.find(t=>t!=='unknown') || 'unknown';
+  }
+  function categoryFor(p){
+    const rawType=String(extractRawType(p)).toLowerCase();
+    const nt=getNormalizedType(rawType);
+    const title=String(p?.title||'').toLowerCase();
+    const hay=`${rawType} ${title}`;
+    const OTHERS=['preprint','posted content','dataset','data paper','paratext','peer review','video audio media','media'];
+    if(OTHERS.some(k=>hay.includes(k))) return 'Others';
+    if(nt==='book') return 'Book';
+    if(nt==='book-chapter'||/(^|[\s;,-])chapter article([\s;,-]|$)/.test(hay)) return 'Book Chapter';
+    if(nt==='conference') return 'Conference Paper';
+    const JOURNAL=['journal','article','review','editorial','letter','brief report','case report',
+                   'retraction','retracted','erratum','corrigendum','correction','comment','commentary',
+                   'meta analysis','systematic review','discussion'];
+    if(nt==='article'||nt==='review'||nt==='editorial'||nt==='letter'||JOURNAL.some(k=>hay.includes(k))) return 'Journal Article';
     return 'Others';
   }
 
-  /* ---------- Wire the new column into your UI model ---------- */
-  function addCategoryColumnConfig() {
-    // KNOWN_COLUMNS: add right after "publisher" if possible
-    try {
-      if (typeof KNOWN_COLUMNS !== 'undefined' && !KNOWN_COLUMNS.some(c => c.key === 'category')) {
-        const def = { key: 'category', label: 'Category', default: true };
-        const i = KNOWN_COLUMNS.findIndex(c => c.key === 'publisher');
-        if (i >= 0) KNOWN_COLUMNS.splice(i + 1, 0, def); else KNOWN_COLUMNS.push(def);
-      }
-    } catch(_) {}
+  /* -------------------- Merge + Dedupe -------------------- */
+  function mergeRecords(a,b){
+    const out=Object.assign({},a);
 
-    // ALL_COLUMNS: same treatment
-    try {
-      if (typeof ALL_COLUMNS !== 'undefined' && !ALL_COLUMNS.some(c => c.key === 'category')) {
-        const def = { key: 'category', label: 'Category', default: true };
-        const i = ALL_COLUMNS.findIndex(c => c.key === 'publisher');
-        if (i >= 0) ALL_COLUMNS.splice(i + 1, 0, def); else ALL_COLUMNS.push(def);
-      }
-    } catch(_) {}
+    // sources (union)
+    const sset=new Set();
+    const addS=p=>{ if(Array.isArray(p.sources)) p.sources.forEach(x=>x&&sset.add(String(x).toLowerCase())); const s=detectSource(p); if(s) sset.add(s); };
+    addS(a); addS(b);
+    out.sources=[...sset]; out.source=out.sources.join(',');
 
-    // selectedColumns: show by default (won't duplicate if user already has it)
-    try {
-      if (typeof selectedColumns !== 'undefined' && !selectedColumns.some(c => c.key === 'category')) {
-        const entry = { key: 'category', label: 'Category' };
-        const i = selectedColumns.findIndex(c => c.key === 'publisher');
-        if (i >= 0) selectedColumns.splice(i + 1, 0, entry); else selectedColumns.push(entry);
-        try { localStorage.setItem('pub_columns', JSON.stringify(selectedColumns)); } catch(_) {}
-      }
-    } catch(_) {}
+    // decode and choose longest strings for title/journal
+    const at=htmlDecode(a.title||''), bt=htmlDecode(b.title||''); out.title=(at.length>=bt.length?at:bt)||at||bt||'';
+    const aj=htmlDecode(a.journal||a?.host_venue?.display_name||''), bj=htmlDecode(b.journal||b?.host_venue?.display_name||'');
+    out.journal=(aj.length>=bj.length?aj:bj)||aj||bj||'';
+
+    // DOI / URL / Year
+    const ad = canonicalDoi(a.doi) || canonicalDoi(a.url);
+    const bd = canonicalDoi(b.doi) || canonicalDoi(b.url);
+    out.doi  = ad || bd || a.doi || b.doi || '';
+    out.url  = a.url || b.url || (out.doi ? ('https://doi.org/'+canonicalDoi(out.doi)) : '');
+    out.year = a.year ?? b.year ?? null;
+
+    // Citations = max
+    out.citations = Math.max(Number(a.citations||0), Number(b.citations||0));
+
+    // Arrays: unique union
+    out.issns        = [...new Set([...(a.issns||[]), ...(b.issns||[])])];
+    out.authors      = [...new Set([...(toArr(a.authors)), ...(toArr(b.authors))])].filter(Boolean);
+    out.home_authors = [...new Set([...(a.home_authors||[]), ...(b.home_authors||[])])];
+    if(a.subjects||b.subjects) out.subjects=[...new Set([...(a.subjects||[]), ...(b.subjects||[])])];
+    if(a.sdg_tags||b.sdg_tags) out.sdg_tags=[...new Set([...(a.sdg_tags||[]), ...(b.sdg_tags||[])])];
+
+    if(a.concepts||b.concepts){
+      const seen=new Map();
+      [...(a.concepts||[]), ...(b.concepts||[])].forEach(c=>{
+        if(!c) return; const name=c.display_name||c.name||c; if(!name) return;
+        const key=String(name).toLowerCase(); if(!seen.has(key)) seen.set(key,{display_name:name});
+      });
+      out.concepts=[...seen.values()];
+    }
+
+    out.is_retracted = !!(a.is_retracted || b.is_retracted);
+
+    // pick ONE best type and store in p.type so existing renderer works
+    const types=[ getNormalizedType(extractRawType(a)), getNormalizedType(extractRawType(b)) ];
+    const best=chooseBestType(types, normTitleLocal(out.title));
+    out.type = (best==='article' ? 'journal-article' : best);
+
+    return out;
   }
 
-  /* ---------- Patch renderers + exporters (non-destructive) ---------- */
-  function patchRenderers() {
-    // Table cell renderer
-    try {
-      const prev = (typeof renderCell === 'function') ? renderCell : null;
-      window.renderCell = function (key, p) {
-        if (key === 'category') return categoryFor(p);
-        return prev ? prev(key, p) : '';
-      };
-    } catch(_) {}
+  function dedupeItems(items){
+    // prepass: decode strings, pull DOI from URL if missing, attach source tags
+    for(const p of items){
+      if(typeof p.title==='string')   p.title=htmlDecode(p.title);
+      if(typeof p.journal==='string') p.journal=htmlDecode(p.journal);
+      if(!p.doi){
+        const fromUrl = extractDOI(p.url) || extractDOI((p.urls||[]).join(' '));
+        if(fromUrl) p.doi = fromUrl;
+      }
+      const s=detectSource(p);
+      if(s){ if(!Array.isArray(p.sources)) p.sources=[]; if(!p.sources.includes(s)) p.sources.push(s); p.source=p.source||s; }
+    }
 
-    // CSV text export
-    try {
-      const prev = (typeof textForExport === 'function') ? textForExport : null;
-      window.textForExport = function (key, p) {
-        if (key === 'category') return categoryFor(p);
-        return prev ? prev(key, p) : '';
-      };
-    } catch(_) {}
+    // 1) by DOI (most reliable)
+    const byDoi=new Map();
+    for(const p of items){
+      const doi=canonicalDoi(p.doi) || canonicalDoi(p.url);
+      if(!doi) continue;
+      if(byDoi.has(doi)) byDoi.set(doi, mergeRecords(byDoi.get(doi), p));
+      else byDoi.set(doi, p);
+    }
 
-    // JSON raw export
-    try {
-      const prev = (typeof rawForExport === 'function') ? rawForExport : null;
-      window.rawForExport = function (key, p) {
-        if (key === 'category') return categoryFor(p);
-        return prev ? prev(key, p) : (p && p[key]);
+    // Fast return when we don’t want Title+Year fallback
+    if(!MERGE_BY_TITLE_YEAR){
+      const rest = items.filter(p => !(canonicalDoi(p.doi) || canonicalDoi(p.url)));
+      return [...byDoi.values(), ...rest];
+    }
+
+    // 2) optional safer fallback by normalized Title+Year with author overlap rule
+    const groups=[];
+    for(const p of items){
+      if (canonicalDoi(p.doi) || canonicalDoi(p.url)) continue;
+      const tp = { p,
+        t: normTitleLocal(p.title),
+        y: p.year ?? '',
+        a: new Set(toArr(p.authors).map(x=>String(x).toLowerCase())),
+        j: (p.journal || p?.host_venue?.display_name || '').toLowerCase()
       };
-    } catch(_) {}
+      let merged = false;
+      for(const g of groups){
+        if(g.t !== tp.t || g.y !== tp.y) continue;
+        // author overlap ≥50%
+        let overlap=0; tp.a.forEach(x=>{ if(g.a.has(x)) overlap++; });
+        const ratio = overlap / Math.min(g.a.size||1, tp.a.size||1);
+        // same venue when both known
+        const venueOK = (!g.j || !tp.j) || g.j === tp.j;
+        if (ratio >= 0.5 && venueOK){
+          g.p = mergeRecords(g.p, tp.p);
+          g.a = new Set([...g.a, ...tp.a]);
+          g.j = g.j || tp.j;
+          merged = true;
+          break;
+        }
+      }
+      if(!merged) groups.push(tp);
+    }
+    return [...byDoi.values(), ...groups.map(x=>x.p)];
   }
 
-  /* ---------- Refresh UI so the new column appears immediately ---------- */
-  function refreshUI() {
-    try { if (typeof buildColumnsPanel === 'function') buildColumnsPanel(); } catch(_) {}
-    try {
-      if (typeof applyFilters === 'function') applyFilters();
-      else if (typeof renderTable === 'function') renderTable();
-    } catch(_) {}
+  /* -------------------- UI: Category column + DOI display + exports -------------------- */
+  function addCategoryColumnConfig(){
+    try{
+      if(typeof KNOWN_COLUMNS!=='undefined' && !KNOWN_COLUMNS.some(c=>c.key==='category')){
+        const def={key:'category',label:'Category',default:true};
+        const i=KNOWN_COLUMNS.findIndex(c=>c.key==='publisher');
+        if(i>=0) KNOWN_COLUMNS.splice(i+1,0,def); else KNOWN_COLUMNS.push(def);
+      }
+    }catch(_){}
+    try{
+      if(typeof ALL_COLUMNS!=='undefined' && !ALL_COLUMNS.some(c=>c.key==='category')){
+        const def={key:'category',label:'Category',default:true};
+        const i=ALL_COLUMNS.findIndex(c=>c.key==='publisher');
+        if(i>=0) ALL_COLUMNS.splice(i+1,0,def); else ALL_COLUMNS.push(def);
+      }
+    }catch(_){}
+    try{
+      if(typeof selectedColumns!=='undefined' && !selectedColumns.some(c=>c.key==='category')){
+        const entry={key:'category',label:'Category'};
+        const i=selectedColumns.findIndex(c=>c.key==='publisher');
+        if(i>=0) selectedColumns.splice(i+1,0,entry); else selectedColumns.push(entry);
+        try{ localStorage.setItem('pub_columns', JSON.stringify(selectedColumns)); }catch(_){}
+      }
+    }catch(_){}
   }
 
-  function init() {
+  function patchRenderers(){
+    // Table cells (Category + clean DOI + decode title/journal)
+    try{
+      const prev=(typeof renderCell==='function')?renderCell:null;
+      window.renderCell=function(key,p){
+        if(key==='category') return categoryFor(p);
+
+        if(key==='doi'){
+          const d = p?.doi ? canonicalDoi(p.doi) : canonicalDoi(p?.url);
+          if(!d) return '';
+          return `<a class="text-indigo-600 hover:underline" href="https://doi.org/${d}" target="_blank">${d}</a>`;
+        }
+        if(key==='title'){
+          const t=(p && typeof p.title==='string') ? htmlDecode(p.title) : (p?.title??'');
+          return p?.url
+            ? `<a class="text-indigo-600 hover:underline" href="${p.url}" target="_blank">${(typeof esc==='function'?esc(t):t)}</a>`
+            : (typeof esc==='function'?esc(t):t);
+        }
+        if(key==='journal'){
+          const j=(p && typeof p.journal==='string') ? htmlDecode(p.journal) : (p?.journal??'');
+          return (typeof esc==='function'?esc(j):j);
+        }
+        return prev ? prev(key,p) : '';
+      };
+    }catch(_){}
+
+    // CSV text
+    try{
+      const prev=(typeof textForExport==='function')?textForExport:null;
+      window.textForExport=function(key,p){
+        if(key==='category') return categoryFor(p);
+        if(key==='title')   return htmlDecode(p?.title??'');
+        if(key==='journal') return htmlDecode(p?.journal??'');
+        if(key==='doi'){ const d = p?.doi ? canonicalDoi(p.doi) : canonicalDoi(p?.url); return d || ''; }
+        return prev ? prev(key,p) : '';
+      };
+    }catch(_){}
+
+    // JSON raw
+    try{
+      const prev=(typeof rawForExport==='function')?rawForExport:null;
+      window.rawForExport=function(key,p){
+        if(key==='category') return categoryFor(p);
+        if(key==='title')   return htmlDecode(p?.title??'');
+        if(key==='journal') return htmlDecode(p?.journal??'');
+        if(key==='doi'){ const d = p?.doi ? canonicalDoi(p.doi) : canonicalDoi(p?.url); return d || ''; }
+        return prev ? prev(key,p) : (p && p[key]);
+      };
+    }catch(_){}
+  }
+
+  function refreshUI(){
+    try{ if(typeof buildColumnsPanel==='function') buildColumnsPanel(); }catch(_){}
+    try{
+      if(typeof applyFilters==='function') applyFilters(1);
+      else if(typeof renderTable==='function') renderTable();
+    }catch(_){}
+  }
+
+  /* -------------------- Orchestration -------------------- */
+  function run(){
     addCategoryColumnConfig();
     patchRenderers();
-    refreshUI();
+
+    let tries=0;
+    (function waitForData(){
+      tries++;
+      const has=Array.isArray(window.all) && window.all.length>0;
+      if(!has && tries<100) return setTimeout(waitForData,120);
+      if(!has) { refreshUI(); return; }
+
+      const before=window.all.length;
+      const deduped=dedupeItems(window.all);
+      window.all=deduped;
+      try{ console.log('[Portal] Dedupe:', before, '→', deduped.length, 'MERGE_BY_TITLE_YEAR=', MERGE_BY_TITLE_YEAR); }catch(_){}
+
+      refreshUI();
+    })();
   }
 
-  if (document.readyState === 'loading') {
-    document.addEventListener('DOMContentLoaded', () => setTimeout(init, 0));
-  } else {
-    setTimeout(init, 0);
-  }
+  if(document.readyState==='loading') document.addEventListener('DOMContentLoaded', run);
+  else run();
+
+  /* expose a couple helpers if needed later */
+  window.categoryFor = window.categoryFor || categoryFor;
+  window.canonicalDoi = window.canonicalDoi || canonicalDoi;
 })();
 </script>
 
