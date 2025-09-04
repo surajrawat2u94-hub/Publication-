@@ -2368,20 +2368,29 @@ document.addEventListener('DOMContentLoaded', renderCountryMapFocused);
 </script>
 <script>
 /* ============================================================
-   Load-hook deduper (v5)
-   - Dedupes institution_data on load (DOI-first, then Title+Year+Venue)
-   - Works even if `all`/`filtered` use `let` (not on window)
+   Publications — Consolidated Patch (dedupe + consensus type + category)
+   Drop-in block: paste before </body>. Safe to include once.
    ============================================================ */
 (function () {
-  if (window.__PORTAL_DEDUPE_V5__) return;
-  window.__PORTAL_DEDUPE_V5__ = true;
+  if (window.__PORTAL_CONSOLIDATED_PATCH__) return;
+  window.__PORTAL_CONSOLIDATED_PATCH__ = true;
 
-  /* ---------- helpers ---------- */
-  function htmlDecode(s){ if(s==null) return s; const d=document.createElement('textarea'); d.innerHTML=String(s); return d.value; }
-  function extractDOI(s){ const m=String(s||'').match(/\b10\.\d{4,9}\/\S+\b/i); return m ? m[0] : ''; }
+  /* ---------------- small helpers ---------------- */
+  const arr = v => Array.isArray(v) ? v :
+                   (typeof v === 'string' ? v.split(/[,;]\s*/) : []);
+  function htmlDecode(s){
+    if (s==null) return s;
+    const d = document.createElement('textarea');
+    d.innerHTML = String(s);
+    return d.value;
+  }
+  function extractDOI(s){
+    const m = String(s||'').match(/\b10\.\d{4,9}\/\S+\b/i);
+    return m ? m[0] : '';
+  }
   function canonicalDoi(x){
     const raw = extractDOI(x) || x;
-    let s = String(raw||'').trim();
+    let s = String(raw || '').trim();
     s = s.replace(/^https?:\/\/(dx\.)?doi\.org\//i,'');
     return s.toLowerCase();
   }
@@ -2392,61 +2401,160 @@ document.addEventListener('DOMContentLoaded', renderCountryMapFocused);
       .replace(/\s+/g,' ')
       .trim();
   }
+  const normTitle  = t => normTxt(t);
+  const normIssn   = s => {
+    const x = String(s||'').replace(/[^0-9xX]/g,'').toUpperCase();
+    const eight = x.length===8 ? x : (x.length===7 ? '0'+x : '');
+    return eight ? (eight.slice(0,4)+'-'+eight.slice(4)) : '';
+  };
   function venueOf(p){
-    return normTxt(p?.journal || p?.host_venue?.display_name || p?.primary_location?.source?.display_name || '');
+    return normTxt(
+      p?.journal ||
+      p?.host_venue?.display_name ||
+      p?.primary_location?.source?.display_name || ''
+    );
   }
-  const arr = v => Array.isArray(v)?v:(typeof v==='string'?v.split(/[,;]\s*/):[]);
 
-  function normalizeType(raw){
-    const s=String(raw||'').toLowerCase().trim();
-    if (s==='journal-article'||s==='journal article'||s==='article'||s==='research article'||s==='journal') return 'article';
-    if (s.includes('conference')||s.includes('proceed')||s.includes('symposium')||s.includes('workshop')) return 'conference';
-    if (s.includes('book-chapter')||s.includes('book part')||s.includes('book-part')||s.includes('book section')||s.includes('book-section')||s==='chapter') return 'book-chapter';
-    if (s.startsWith('book')||s==='monograph'||s==='edited-book'||s==='reference-book') return 'book';
-    if (s==='review'||s==='systematic review'||s==='meta analysis') return 'review';
+  /* ---------------- type normalization ---------------- */
+  function normTypeToken(raw){
+    const s = String(raw||'').toLowerCase().trim();
+    if (!s) return 'unknown';
+
+    // obvious exacts/aliases
+    if (s==='journal-article' || s==='journal article' || s==='article' || s==='research article' || s==='journal')
+      return 'article';
+    if (s==='review' || s.includes('systematic review') || s.includes('meta analysis'))
+      return 'review';
+    if (s.includes('conference') || s.includes('proceed') || s.includes('symposium') || s.includes('workshop'))
+      return 'conference';
+    if (s.includes('book-chapter') || s.includes('book part') || s.includes('book-part') ||
+        s.includes('book section')  || s.includes('book-section') || s==='chapter' || s==='chapter article')
+      return 'book-chapter';
+    if (s.startsWith('book') || s==='monograph' || s==='edited-book' || s==='reference-book')
+      return 'book';
     if (s==='editorial') return 'editorial';
-    if (s==='letter') return 'letter';
-    return s || 'unknown';
-  }
-  function chooseBestType(types, titleNorm){
-    if (types.some(t=>t==='conference') || /\bproceedings?\b/.test(titleNorm)) return 'conference';
-    if (types.some(t=>t==='book-chapter')) return 'book-chapter';
-    if (types.some(t=>t==='book'))        return 'book';
-    if (types.some(t=>t==='review'))      return 'review';
-    if (types.some(t=>t==='editorial'))   return 'editorial';
-    if (types.some(t=>t==='letter'))      return 'letter';
-    if (types.some(t=>t==='article'))     return 'article';
-    return types.find(t=>t!=='unknown') || 'article';
+    if (s==='letter')    return 'letter';
+    if (s.includes('preprint') || s.includes('posted content'))
+      return 'preprint';
+    if (s.includes('dataset') || s==='data paper')
+      return 'dataset';
+    return 'unknown';
   }
 
+  const TYPE_LABEL = (k) => ({
+    'article'      : 'Journal',
+    'review'       : 'Review',
+    'conference'   : 'Conference',
+    'book'         : 'Book',
+    'book-chapter' : 'Book Chapter',
+    'editorial'    : 'Editorial',
+    'letter'       : 'Letter',
+    'preprint'     : 'PrePrint',
+    'dataset'      : 'Dataset',
+    'unknown'      : 'Other'
+  }[k] || 'Other');
+
+  function categoryFromType(k){
+    switch (k){
+      case 'article':     return 'Journal Article';
+      case 'review':      return 'Review';
+      case 'conference':  return 'Conference Paper';
+      case 'book':        return 'Book';
+      case 'book-chapter':return 'Book Chapter';
+      case 'editorial':   return 'Editorial';
+      case 'letter':      return 'Letter';
+      case 'preprint':    return 'PrePrint';
+      case 'dataset':     return 'Dataset';
+      default:            return 'Others';
+    }
+  }
+
+  /* ---------------- consensus type (votes + evidence) ---------------- */
+  function consensusTypeFor(p){
+    // 1) gather raw type hints from multiple sources
+    const rawHints = [
+      p?.type, p?.type_crossref, p?.document_type, p?.genre,
+      p?.host_venue?.type,
+      p?.primary_location?.source?.type
+    ].filter(Boolean);
+
+    // 2) normalize and score
+    const score = new Map();
+    const bump  = (k,w)=> score.set(k, (score.get(k)||0)+w);
+
+    // direct signals (strong)
+    rawHints.forEach(h => bump(normTypeToken(h), 1.0));
+
+    // 3) evidence-based heuristics (medium)
+    const title = normTxt(p?.title||'');
+    const venue = venueOf(p);
+
+    if (/\bproceedings?\b/.test(title) || /\bproceedings?\b/.test(venue)) bump('conference', 0.7);
+    if (/\bconference|symposium|workshop\b/.test(title) || /\bconference|symposium|workshop\b/.test(venue)) bump('conference', 0.6);
+    if (/\bchapter\b/.test(title) && !/\bchapter\s*article\b/.test(title)) bump('book-chapter', 0.6);
+    if (/\breview\b/.test(title) && !/\bpreview\b/.test(title)) bump('review', 0.5);
+    if (/\beditorial\b/.test(title)) bump('editorial', 0.6);
+    if (/\bletter\b/.test(title)) bump('letter', 0.5);
+    if (/\bpreprint|posted content\b/.test(title)) bump('preprint', 0.6);
+    if (/\bdataset|data paper\b/.test(title)) bump('dataset', 0.6);
+
+    // 4) DOI-based priors (light but helpful)
+    const doi = canonicalDoi(p?.doi || p?.url || '');
+    if (doi){
+      if (/^10\.1109\//.test(doi) || /^10\.1145\//.test(doi)) bump('conference', 0.4); // IEEE/ACM skew conf
+      if (/^10\.1007\//.test(doi)) bump('article', 0.2);   // Springer (weak)
+      if (/^10\.3390\//.test(doi)) bump('article', 0.3);   // MDPI journals
+    }
+
+    // 5) fallbacks
+    if (!score.size) bump('article', 0.4);
+
+    // pick best with tie-break preference
+    const pref = ['conference','book-chapter','book','review','editorial','letter','article','preprint','dataset','unknown'];
+    let best = 'unknown', bestScore = -1;
+    for (const [k,v] of score.entries()){
+      if (v > bestScore || (v===bestScore && pref.indexOf(k) < pref.indexOf(best))){
+        best = k; bestScore = v;
+      }
+    }
+
+    // confidence mapped to 0..1 (cap at ~2.5)
+    const conf = Math.max(0, Math.min(1, bestScore / 2.5));
+    return {
+      key: best,
+      label: TYPE_LABEL(best),
+      confidence: conf
+    };
+  }
+
+  /* ---------------- merge + dedupe ---------------- */
   function mergeRecords(a,b){
     const out = Object.assign({}, a);
-    // title / journal (prefer longer / decoded)
-    const at=htmlDecode(a.title||''), bt=htmlDecode(b.title||''); out.title=(at.length>=bt.length?at:bt)||at||bt||'';
-    const aj=htmlDecode(a.journal||a?.host_venue?.display_name||''), bj=htmlDecode(b.journal||b?.host_venue?.display_name||'');
-    out.journal=(aj.length>=bj.length?aj:bj)||aj||bj||'';
 
-    // DOI / URL
+    // Title/Journal: decode & keep longest
+    const at=htmlDecode(a.title||''), bt=htmlDecode(b.title||'');
+    out.title = (at.length>=bt.length ? at : bt) || at || bt || '';
+
+    const aj=htmlDecode(a.journal||a?.host_venue?.display_name||'');
+    const bj=htmlDecode(b.journal||b?.host_venue?.display_name||'');
+    out.journal = (aj.length>=bj.length ? aj : bj) || aj || bj || '';
+
+    // DOI/URL
     const ad = canonicalDoi(a.doi) || canonicalDoi(a.url);
     const bd = canonicalDoi(b.doi) || canonicalDoi(b.url);
     out.doi  = ad || bd || a.doi || b.doi || '';
     out.url  = a.url || b.url || (out.doi ? ('https://doi.org/'+canonicalDoi(out.doi)) : '');
 
-    // year / citations
-    out.year = a.year ?? b.year ?? null;
+    // Year/Citations
+    out.year      = a.year ?? b.year ?? null;
     out.citations = Math.max(Number(a.citations||0), Number(b.citations||0));
 
-    // arrays => unions
-    out.issns        = [...new Set([...(a.issns||[]), ...(b.issns||[])])];
+    // Arrays: unions
+    out.issns        = [...new Set([...(a.issns||[]), ...(b.issns||[])] )];
     out.authors      = [...new Set([...(arr(a.authors)), ...(arr(b.authors))])].filter(Boolean);
     out.home_authors = [...new Set([...(a.home_authors||[]), ...(b.home_authors||[])])];
 
-    // type => best pick, keep "journal-article" for article
-    const types=[ normalizeType(a.type||a.type_crossref||a.document_type||a.genre),
-                  normalizeType(b.type||b.type_crossref||b.document_type||b.genre) ];
-    const best = chooseBestType(types, normTxt(out.title));
-    out.type = (best==='article') ? 'journal-article' : best;
-
+    // Keep all raw type hints around; consensus computed after dedupe
     return out;
   }
 
@@ -2477,11 +2585,11 @@ document.addEventListener('DOMContentLoaded', renderCountryMapFocused);
       else byDoi.set(key, p);
     }
 
-    // 2) Title+Year+Venue (for those without DOI)
+    // 2) Title+Year+Venue fallback (safe)
     const rest = items.filter(p => !(canonicalDoi(p.doi) || canonicalDoi(p.url)));
     const groups = [];
     for (const p of rest){
-      const t = normTxt(p.title);
+      const t = normTitle(p.title);
       const y = p.year ?? '';
       const v = venueOf(p);
       const a = new Set(arr(p.authors).map(x=>String(x).toLowerCase()));
@@ -2505,26 +2613,140 @@ document.addEventListener('DOMContentLoaded', renderCountryMapFocused);
       if (!merged) groups.push({ p, t, y, v, a });
     }
 
-    return [...byDoi.values(), ...groups.map(x=>x.p)];
+    const merged = [...byDoi.values(), ...groups.map(x=>x.p)];
+
+    // 3) compute consensus type + category for each merged record
+    merged.forEach(enrichConsensus);
+    return merged;
   }
 
-  /* ---------- wrap the data loader ---------- */
-  const origLoad = window.loadInstitutionData;
-  if (typeof origLoad === 'function' && !origLoad.__dedupeWrapped){
-    const wrapped = async function(...args){
-      const data = await origLoad.apply(this, args);
-      try{
-        if (data && Array.isArray(data.items)) {
-          data.items = dedupeArray(data.items);
-        } else if (Array.isArray(data)) {
-          // if someone returns a bare array, normalize to {items:[…]}
-          return { items: dedupeArray(data) };
+  function enrichConsensus(p){
+    const best = consensusTypeFor(p);
+    p._best_type   = best.key;
+    p._type_label  = best.label;
+    p._type_conf   = best.confidence;
+    p.category     = categoryFromType(best.key);
+    // also set a normalized 'type' for components that use it
+    p.type = (best.key === 'article') ? 'journal-article' : best.key;
+    return p;
+  }
+
+  function dedupeInPlace(){
+    try {
+      if (Array.isArray(window.all))      window.all      = dedupeArray(window.all);
+      if (Array.isArray(window.filtered)) window.filtered = dedupeArray(window.filtered);
+    } catch (e) { console.warn('[ConsolidatedPatch] dedupe error', e); }
+  }
+
+  /* ---------------- ensure Category column ---------------- */
+  function ensureCategoryColumn(){
+    try{
+      if (typeof KNOWN_COLUMNS!=='undefined' && !KNOWN_COLUMNS.some(c=>c.key==='category')) {
+        const def = { key:'category', label:'Category', default:true };
+        const i = KNOWN_COLUMNS.findIndex(c=>c.key==='publisher');
+        if (i>=0) KNOWN_COLUMNS.splice(i+1,0,def); else KNOWN_COLUMNS.push(def);
+      }
+      if (typeof ALL_COLUMNS!=='undefined' && !ALL_COLUMNS.some(c=>c.key==='category')) {
+        const def = { key:'category', label:'Category', default:true };
+        const i = ALL_COLUMNS.findIndex(c=>c.key==='publisher');
+        if (i>=0) ALL_COLUMNS.splice(i+1,0,def); else ALL_COLUMNS.push(def);
+      }
+      if (typeof selectedColumns!=='undefined' && !selectedColumns.some(c=>c.key==='category')) {
+        const entry = { key:'category', label:'Category' };
+        const i = selectedColumns.findIndex(c=>c.key==='publisher');
+        if (i>=0) selectedColumns.splice(i+1,0,entry); else selectedColumns.push(entry);
+        try{ localStorage.setItem('pub_columns', JSON.stringify(selectedColumns)); }catch(_){}
+      }
+    }catch(_){}
+  }
+
+  /* ---------------- patch renderers (table/CSV/JSON) ---------------- */
+  function patchRenderers(){
+    // table cells
+    try{
+      const prev = window.renderCell;
+      window.renderCell = function(key,p){
+        if (key==='category'){
+          // always from consensus
+          return categoryFromType(p?._best_type || p?.type || '');
         }
-      } catch (e) { console.warn('[dedupe v5] failed to dedupe', e); }
-      return data;
+        if (key==='type'){
+          const label = p?._type_label || TYPE_LABEL('unknown');
+          const warn  = (p?._type_conf ?? 1) < 0.6;
+          return warn
+            ? `<span title="Low confidence (${Math.round((p._type_conf||0)*100)}%)">⚠️ ${label}</span>`
+            : label;
+        }
+        if (key==='doi'){
+          const d = p?.doi ? canonicalDoi(p.doi) : canonicalDoi(p?.url);
+          return d ? `<a class="text-indigo-600 hover:underline" href="https://doi.org/${d}" target="_blank">${d}</a>` : '';
+        }
+        if (key==='title'){
+          const t = (typeof p?.title==='string') ? htmlDecode(p.title) : (p?.title??'');
+          return p?.url
+            ? `<a class="text-indigo-600 hover:underline" href="${p.url}" target="_blank">${(typeof esc==='function'?esc(t):t)}</a>`
+            : (typeof esc==='function'?esc(t):t);
+        }
+        if (key==='journal'){
+          const j = (typeof p?.journal==='string') ? htmlDecode(p.journal) : (p?.journal??'');
+          return (typeof esc==='function'?esc(j):j);
+        }
+        return prev ? prev(key,p) : '';
+      };
+    }catch(_){}
+
+    // CSV text
+    try{
+      const prev = window.textForExport;
+      window.textForExport = function(key,p){
+        if (key==='category') return categoryFromType(p?._best_type || p?.type || '');
+        if (key==='type')     return p?._type_label || TYPE_LABEL('unknown');
+        if (key==='title')    return htmlDecode(p?.title??'');
+        if (key==='journal')  return htmlDecode(p?.journal??'');
+        if (key==='doi'){ const d = p?.doi ? canonicalDoi(p.doi) : canonicalDoi(p?.url); return d || ''; }
+        return prev ? prev(key,p) : '';
+      };
+    }catch(_){}
+
+    // JSON raw
+    try{
+      const prev = window.rawForExport;
+      window.rawForExport = function(key,p){
+        if (key==='category') return categoryFromType(p?._best_type || p?.type || '');
+        if (key==='type')     return p?._type_label || TYPE_LABEL('unknown');
+        if (key==='title')    return htmlDecode(p?.title??'');
+        if (key==='journal')  return htmlDecode(p?.journal??'');
+        if (key==='doi'){ const d = p?.doi ? canonicalDoi(p.doi) : canonicalDoi(p?.url); return d || ''; }
+        return prev ? prev(key,p) : (p && p[key]);
+      };
+    }catch(_){}
+  }
+
+  /* ---------------- hook into app ---------------- */
+  (function hookAll(){
+    ensureCategoryColumn();
+    patchRenderers();
+
+    // hook applyFilters => always dedupe+enrich first
+    const originalApply = window.applyFilters;
+    window.applyFilters = function(...args){
+      dedupeInPlace();
+      return originalApply ? originalApply.apply(this, args) : undefined;
     };
-    wrapped.__dedupeWrapped = true;
-    window.loadInstitutionData = wrapped;
+
+    // hook renderTable => safety dedupe right before paint
+    const originalRender = window.renderTable;
+    window.renderTable = function(...args){
+      dedupeInPlace();
+      return originalRender ? originalRender.apply(this, args) : undefined;
+    };
+  })();
+
+  // one initial refresh after load
+  if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', () => { try { if (typeof applyFilters==='function') applyFilters(1); } catch(_){}} );
+  } else {
+    try { if (typeof applyFilters==='function') applyFilters(1); } catch(_){}
   }
 })();
 </script>
