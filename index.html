@@ -2530,18 +2530,16 @@ document.addEventListener('DOMContentLoaded', renderCountryMapFocused);
 </script>
 <script>
 /* =====================================================================
-   COEXIST PATCH — Latest-per-DOI (keep newest; ignore title)
-   - Paste as the LAST <script> before </body>.
-   - Does NOT require removing your old load-hook; it simply overrides
-     what the app uses by providing its own robust loader + deduper.
-   - For items WITH DOI: one newest row per DOI.
-   - For items WITHOUT DOI: light Title+Year+Venue merge (like your v5).
-   - Re-applies the same "category/type" heuristics.
+   HARD-LOCK COEXIST PATCH — Latest-per-DOI (keep newest; ignore title)
+   - Leave your old load-hook script in place.
+   - Paste THIS as the LAST <script> before </body>.
+   - It overrides and then hard-locks window.loadInstitutionData so nothing
+     can re-wrap it after. Preserves "category/type" heuristics.
    ===================================================================== */
 (function () {
   'use strict';
-  if (window.__COEXIST_DOI_LATEST_PATCH__) return;
-  window.__COEXIST_DOI_LATEST_PATCH__ = true;
+  if (window.__HARDLOCK_DOI_LATEST_PATCH__) return;
+  window.__HARDLOCK_DOI_LATEST_PATCH__ = true;
 
   /* --------------------------- helpers --------------------------- */
   function htmlDecode(s){ if(s==null) return s; const d=document.createElement('textarea'); d.innerHTML=String(s); return d.value; }
@@ -2564,7 +2562,6 @@ document.addEventListener('DOMContentLoaded', renderCountryMapFocused);
       p?.url || (Array.isArray(p?.urls) ? p.urls.join(' ') : '')
     );
   }
-
   function normTxt(s){
     return htmlDecode(String(s||'').toLowerCase())
       .replace(/&amp;/g,'&')
@@ -2577,14 +2574,14 @@ document.addEventListener('DOMContentLoaded', renderCountryMapFocused);
   }
   const asArr = v => Array.isArray(v) ? v : (typeof v==='string' ? v.split(/[,;]\s*/) : []);
 
-  // --- type/category heuristics (mirrors your old load-hook) ---
+  // --- type/category heuristics (mirror of your old load-hook) ---
   function normalizeType(raw){
     const s = String(raw||'').toLowerCase().trim();
     if (s==='journal-article'||s==='journal article'||s==='article'||s==='research article'||s==='journal') return 'article';
     if (s.includes('conference')||s.includes('proceed')||s.includes('symposium')||s.includes('workshop')) return 'conference';
     if (s.includes('book-chapter')||s.includes('book part')||s.includes('book-part')||s.includes('book section')||s.includes('book-section')||s==='chapter') return 'book-chapter';
     if (s.startsWith('book')||s==='monograph'||s==='edited-book'||s==='reference-book') return 'book';
-    if (s==='review'||s==='systematic review'||s==='meta analysis') return 'review';
+    if (s==='review'||s==='systematic review'||s==='meta analysis')) return 'review';
     if (s==='editorial') return 'editorial';
     if (s==='letter') return 'letter';
     return s || 'unknown';
@@ -2600,9 +2597,10 @@ document.addEventListener('DOMContentLoaded', renderCountryMapFocused);
     return types.find(t=>t!=='unknown') || 'article';
   }
 
-  // --- merge helper used ONLY for non-DOI duplicates (keeps fields rich) ---
+  // --- non-DOI merge (only used for items lacking DOI) ---
   function mergeRecords(a,b){
     const out = Object.assign({}, a);
+
     // title / journal (prefer longer / decoded)
     const at=htmlDecode(a.title||''), bt=htmlDecode(b.title||''); out.title=(at.length>=bt.length?at:bt)||at||bt||'';
     const aj=htmlDecode(a.journal||a?.host_venue?.display_name||''), bj=htmlDecode(b.journal||b?.host_venue?.display_name||'');
@@ -2623,7 +2621,7 @@ document.addEventListener('DOMContentLoaded', renderCountryMapFocused);
     out.authors      = [...new Set([...(asArr(a.authors)), ...(asArr(b.authors))])].filter(Boolean);
     out.home_authors = [...new Set([...(a.home_authors||[]), ...(b.home_authors||[])])];
 
-    // type => choose best category
+    // type/category
     const types = [
       normalizeType(a.type||a.type_crossref||a.document_type||a.genre),
       normalizeType(b.type||b.type_crossref||b.document_type||b.genre)
@@ -2634,7 +2632,7 @@ document.addEventListener('DOMContentLoaded', renderCountryMapFocused);
     return out;
   }
 
-  // --- "latest" chooser for same DOI ---
+  // --- DOI "latest" chooser ---
   function bestTimestamp(p){
     const cands = [
       p?.updated, p?.updated_at, p?.updated_date, p?.last_updated,
@@ -2660,15 +2658,14 @@ document.addEventListener('DOMContentLoaded', renderCountryMapFocused);
     if (ta !== tb) return ta > tb ? a : b;
     const sa = infoScore(a), sb = infoScore(b);
     if (sa !== sb) return sa > sb ? a : b;
-    if (!!a?.is_retracted !== !!b?.is_retracted) return a.is_retracted ? b : a; // prefer non-retracted
+    if (!!a?.is_retracted !== !!b?.is_retracted) return a.is_retracted ? b : a; // prefer non-retracted on tie
     return a;
   }
 
-  // --- core deduper: DOI-first (latest), then non-DOI merge like v5 ---
   function dedupeLatestByDOIWithFallback(items){
     if (!Array.isArray(items) || !items.length) return [];
 
-    // Pre-clean titles/journals; also try to fill missing DOI from URLs
+    // pre-clean
     for (const p of items){
       if (typeof p.title==='string')   p.title   = htmlDecode(p.title);
       if (typeof p.journal==='string') p.journal = htmlDecode(p.journal);
@@ -2686,7 +2683,6 @@ document.addEventListener('DOMContentLoaded', renderCountryMapFocused);
       if (!doi){ noDoi.push(p); continue; }
       const entry = groupsByDoi.get(doi) || { best:null, types:[] };
       entry.best = entry.best ? pickLatest(entry.best, p) : p;
-      // collect possible type signals for fallback categorization
       entry.types.push(normalizeType(p.type||p.type_crossref||p.document_type||p.genre));
       groupsByDoi.set(doi, entry);
     }
@@ -2694,7 +2690,6 @@ document.addEventListener('DOMContentLoaded', renderCountryMapFocused);
     for (const [doi, entry] of groupsByDoi.entries()){
       const chosen = entry.best;
       if (!chosen) continue;
-      // ensure a good "category/type"
       const tnorm = normTxt(chosen.title);
       const bestT = chooseBestType(entry.types.filter(Boolean), tnorm);
       if (!chosen.type || chosen.type==='unknown'){
@@ -2703,7 +2698,7 @@ document.addEventListener('DOMContentLoaded', renderCountryMapFocused);
       doiPicks.push(chosen);
     }
 
-    // 2) Non-DOI: Title+Year+Venue merge (lightweight v5)
+    // 2) Non-DOI: Title+Year+Venue merge (light v5-like)
     const mergedNoDoi = [];
     const groups = []; // { p, t, y, v, a }
     for (const p of noDoi){
@@ -2753,7 +2748,7 @@ document.addEventListener('DOMContentLoaded', renderCountryMapFocused);
     const gz = await fetch("institution_data.json.gz", { cache: "no-store" });
     if (!gz.ok) throw new Error("institution_data.json(.gz) not found");
 
-    // Use native DecompressionStream if available; otherwise load pako on the fly
+    // Use native DecompressionStream if available; otherwise pako
     if ("DecompressionStream" in window) {
       const stream = gz.body.pipeThrough(new DecompressionStream("gzip"));
       const txt = await new Response(stream).text();
@@ -2770,23 +2765,43 @@ document.addEventListener('DOMContentLoaded', renderCountryMapFocused);
     }
   }
 
-  /* ---------------- final override used by the app ---------------- */
-  // We don't delete your old load-hook. We just supply a final, clean loader
-  // that the app will call (since this script runs last).
-  window.loadInstitutionData = async function () {
+  /* --------- final function & HARD-LOCK the global symbol --------- */
+  const finalLoader = async function () {
     const j = await loadInstitutionDataRaw();
     try {
       if (j && Array.isArray(j.items)) {
+        const before = j.items.length;
         j.items = dedupeLatestByDOIWithFallback(j.items);
-        j.__dedup_strategy = 'doi_latest+no_doi_merge';
+        j.__dedup_strategy = 'doi_latest+no_doi_merge (hardlock)';
+        try { console.info(`[dedupe] Hardlock active: ${before} → ${j.items.length} items`); } catch(_){}
       } else if (Array.isArray(j)) {
-        return { items: dedupeLatestByDOIWithFallback(j), __dedup_strategy: 'doi_latest+no_doi_merge' };
+        const before = j.length;
+        const items = dedupeLatestByDOIWithFallback(j);
+        try { console.info(`[dedupe] Hardlock active: ${before} → ${items.length} items`); } catch(_){}
+        return { items, __dedup_strategy: 'doi_latest+no_doi_merge (hardlock)' };
       }
     } catch(_) {}
     return j;
   };
+  // mark as "already wrapped" so later wrappers won't wrap again
+  finalLoader.__dedupeWrapped = true;
 
-  try { console.info('[dedupe] Coexist patch active: latest-per-DOI + non-DOI fallback.'); } catch(_){}
+  // Replace and LOCK the global loader so later scripts cannot change it
+  try {
+    Object.defineProperty(window, 'loadInstitutionData', {
+      configurable: false, // cannot redefine later
+      enumerable: true,
+      get: () => finalLoader,
+      set: () => true // ignore attempts to overwrite
+    });
+  } catch {
+    // Fallback: assignment + freeze (in case defineProperty fails)
+    window.loadInstitutionData = finalLoader;
+    try { Object.freeze(window.loadInstitutionData); } catch {}
+  }
+
+  // Also expose the deduper for manual checks if needed
+  window.dedupeLatestByDOI = (arr) => dedupeLatestByDOIWithFallback(arr || []);
 })();
 </script>
 
