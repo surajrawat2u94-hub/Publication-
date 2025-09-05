@@ -2529,104 +2529,264 @@ document.addEventListener('DOMContentLoaded', renderCountryMapFocused);
 })();
 </script>
 <script>
-/* ============================================================
-   Latest-per-DOI deduper (keep newest; ignore title)
-   Drop-in: patches window.loadInstitutionData() so j.items is deduped.
-   Safe to include multiple times; no other code changes required.
-   ============================================================ */
+/* =====================================================================
+   COEXIST PATCH — Latest-per-DOI (keep newest; ignore title)
+   - Paste as the LAST <script> before </body>.
+   - Does NOT require removing your old load-hook; it simply overrides
+     what the app uses by providing its own robust loader + deduper.
+   - For items WITH DOI: one newest row per DOI.
+   - For items WITHOUT DOI: light Title+Year+Venue merge (like your v5).
+   - Re-applies the same "category/type" heuristics.
+   ===================================================================== */
 (function () {
   'use strict';
-  if (window.__DEDUP_DOI_LATEST_PATCHED__) return;
-  window.__DEDUP_DOI_LATEST_PATCHED__ = true;
+  if (window.__COEXIST_DOI_LATEST_PATCH__) return;
+  window.__COEXIST_DOI_LATEST_PATCH__ = true;
 
-  /* ---------- helpers ---------- */
-  const DOI_RE = /\b10\.\d{4,9}\/\S+\b/i;
+  /* --------------------------- helpers --------------------------- */
+  function htmlDecode(s){ if(s==null) return s; const d=document.createElement('textarea'); d.innerHTML=String(s); return d.value; }
+  const DOI_RE = /\b(10\.\d{4,9}\/\S+)\b/i;
 
+  function extractDOI(x){
+    const m = String(x||'').match(DOI_RE);
+    return m ? m[1] : '';
+  }
   function canonicalDoi(x){
-    let s = String(x || '').trim();
+    const raw = extractDOI(x) || x;
+    let s = String(raw||'').trim();
     if (!s) return '';
-    const m = s.match(DOI_RE);
-    s = (m ? m[0] : s).replace(/^https?:\/\/(dx\.)?doi\.org\//i,'');
+    s = s.replace(/^https?:\/\/(dx\.)?doi\.org\//i,'');
     return s.toLowerCase();
   }
+  function doiFromAny(p){
+    return canonicalDoi(
+      p?.doi || p?.DOI || p?.id ||
+      p?.url || (Array.isArray(p?.urls) ? p.urls.join(' ') : '')
+    );
+  }
 
-  // pick the freshest timestamp; fallback to year; else 0
+  function normTxt(s){
+    return htmlDecode(String(s||'').toLowerCase())
+      .replace(/&amp;/g,'&')
+      .replace(/[^\p{L}\p{N}\s]/gu,' ')
+      .replace(/\s+/g,' ')
+      .trim();
+  }
+  function venueOf(p){
+    return normTxt(p?.journal || p?.host_venue?.display_name || p?.primary_location?.source?.display_name || '');
+  }
+  const asArr = v => Array.isArray(v) ? v : (typeof v==='string' ? v.split(/[,;]\s*/) : []);
+
+  // --- type/category heuristics (mirrors your old load-hook) ---
+  function normalizeType(raw){
+    const s = String(raw||'').toLowerCase().trim();
+    if (s==='journal-article'||s==='journal article'||s==='article'||s==='research article'||s==='journal') return 'article';
+    if (s.includes('conference')||s.includes('proceed')||s.includes('symposium')||s.includes('workshop')) return 'conference';
+    if (s.includes('book-chapter')||s.includes('book part')||s.includes('book-part')||s.includes('book section')||s.includes('book-section')||s==='chapter') return 'book-chapter';
+    if (s.startsWith('book')||s==='monograph'||s==='edited-book'||s==='reference-book') return 'book';
+    if (s==='review'||s==='systematic review'||s==='meta analysis') return 'review';
+    if (s==='editorial') return 'editorial';
+    if (s==='letter') return 'letter';
+    return s || 'unknown';
+  }
+  function chooseBestType(types, titleNorm){
+    if (types.some(t=>t==='conference') || /\bproceedings?\b/.test(titleNorm)) return 'conference';
+    if (types.some(t=>t==='book-chapter')) return 'book-chapter';
+    if (types.some(t=>t==='book'))        return 'book';
+    if (types.some(t=>t==='review'))      return 'review';
+    if (types.some(t=>t==='editorial'))   return 'editorial';
+    if (types.some(t=>t==='letter'))      return 'letter';
+    if (types.some(t=>t==='article'))     return 'article';
+    return types.find(t=>t!=='unknown') || 'article';
+  }
+
+  // --- merge helper used ONLY for non-DOI duplicates (keeps fields rich) ---
+  function mergeRecords(a,b){
+    const out = Object.assign({}, a);
+    // title / journal (prefer longer / decoded)
+    const at=htmlDecode(a.title||''), bt=htmlDecode(b.title||''); out.title=(at.length>=bt.length?at:bt)||at||bt||'';
+    const aj=htmlDecode(a.journal||a?.host_venue?.display_name||''), bj=htmlDecode(b.journal||b?.host_venue?.display_name||'');
+    out.journal=(aj.length>=bj.length?aj:bj)||aj||bj||'';
+
+    // DOI / URL
+    const ad = canonicalDoi(a.doi) || canonicalDoi(a.url);
+    const bd = canonicalDoi(b.doi) || canonicalDoi(b.url);
+    out.doi  = ad || bd || a.doi || b.doi || '';
+    out.url  = a.url || b.url || (out.doi ? ('https://doi.org/'+canonicalDoi(out.doi)) : '');
+
+    // year / citations
+    out.year = a.year ?? b.year ?? null;
+    out.citations = Math.max(Number(a.citations||0), Number(b.citations||0));
+
+    // arrays => unions
+    out.issns        = [...new Set([...(a.issns||[]), ...(b.issns||[])])];
+    out.authors      = [...new Set([...(asArr(a.authors)), ...(asArr(b.authors))])].filter(Boolean);
+    out.home_authors = [...new Set([...(a.home_authors||[]), ...(b.home_authors||[])])];
+
+    // type => choose best category
+    const types = [
+      normalizeType(a.type||a.type_crossref||a.document_type||a.genre),
+      normalizeType(b.type||b.type_crossref||b.document_type||b.genre)
+    ];
+    const best = chooseBestType(types, normTxt(out.title));
+    out.type = (best==='article') ? 'journal-article' : best;
+
+    return out;
+  }
+
+  // --- "latest" chooser for same DOI ---
   function bestTimestamp(p){
     const cands = [
-      p.updated, p.updated_at, p.updated_date, p.last_updated,
-      p.oa_updated, p.crossref_updated, p.published, p.published_date,
-      p.issued, p.created, p['@timestamp']
+      p?.updated, p?.updated_at, p?.updated_date, p?.last_updated,
+      p?.oa_updated, p?.crossref_updated, p?.published, p?.published_date,
+      p?.issued, p?.created, p?.['@timestamp']
     ].map(v => Date.parse(v)).filter(Number.isFinite);
     if (cands.length) return Math.max(...cands);
-    const y = parseInt(p.year, 10);
+    const y = parseInt(p?.year, 10);
     return Number.isFinite(y) ? Date.UTC(y, 0, 1) : 0;
   }
-
-  // tie-breaker if timestamps are equal
   function infoScore(p){
     let s = 0;
-    if (p.citations) s += Math.min(1000, +p.citations);
-    if (p.abstract) s += 5;
-    if (Array.isArray(p.issns) && p.issns.length) s += 3;
-    if (p.url) s += 2;
-    if (Array.isArray(p.authorships) && p.authorships.length) s += 2;
-    if (Array.isArray(p.authors) && p.authors.length) s += 2;
+    if (p?.citations) s += Math.min(1000, +p.citations);
+    if (p?.abstract) s += 5;
+    if (Array.isArray(p?.issns) && p.issns.length) s += 3;
+    if (p?.url) s += 2;
+    if (Array.isArray(p?.authorships) && p.authorships.length) s += 2;
+    if (Array.isArray(p?.authors) && p.authors.length) s += 2;
     return s;
   }
-
   function pickLatest(a, b){
     const ta = bestTimestamp(a), tb = bestTimestamp(b);
     if (ta !== tb) return ta > tb ? a : b;
     const sa = infoScore(a), sb = infoScore(b);
     if (sa !== sb) return sa > sb ? a : b;
-    // final gentle preference: if only one is flagged retracted, prefer the non-retracted
-    if (!!a.is_retracted !== !!b.is_retracted) return a.is_retracted ? b : a;
-    return a; // stable
+    if (!!a?.is_retracted !== !!b?.is_retracted) return a.is_retracted ? b : a; // prefer non-retracted
+    return a;
   }
 
-  function dedupeLatestByDOI(items){
-    const by = new Map();     // doi -> best record (in first-seen order)
-    const passthrough = [];   // items without a DOI
+  // --- core deduper: DOI-first (latest), then non-DOI merge like v5 ---
+  function dedupeLatestByDOIWithFallback(items){
+    if (!Array.isArray(items) || !items.length) return [];
 
-    for (const p of (items || [])){
-      const doi = canonicalDoi(p.doi || p.DOI || p.id || '');
-      if (!doi){ passthrough.push(p); continue; }
-      const cur = by.get(doi);
-      by.set(doi, cur ? pickLatest(cur, p) : p);
+    // Pre-clean titles/journals; also try to fill missing DOI from URLs
+    for (const p of items){
+      if (typeof p.title==='string')   p.title   = htmlDecode(p.title);
+      if (typeof p.journal==='string') p.journal = htmlDecode(p.journal);
+      if (!p.doi){
+        const fromUrl = extractDOI(p.url) || extractDOI((p.urls||[]).join(' '));
+        if (fromUrl) p.doi = fromUrl;
+      }
     }
-    return passthrough.concat([...by.values()]);
-  }
 
-  // expose in case you want to call it manually
-  window.dedupeLatestByDOI = dedupeLatestByDOI;
+    // 1) DOI groups -> pick latest per DOI
+    const groupsByDoi = new Map(); // doi -> {best, types[]}
+    const noDoi = [];
+    for (const p of items){
+      const doi = doiFromAny(p);
+      if (!doi){ noDoi.push(p); continue; }
+      const entry = groupsByDoi.get(doi) || { best:null, types:[] };
+      entry.best = entry.best ? pickLatest(entry.best, p) : p;
+      // collect possible type signals for fallback categorization
+      entry.types.push(normalizeType(p.type||p.type_crossref||p.document_type||p.genre));
+      groupsByDoi.set(doi, entry);
+    }
+    const doiPicks = [];
+    for (const [doi, entry] of groupsByDoi.entries()){
+      const chosen = entry.best;
+      if (!chosen) continue;
+      // ensure a good "category/type"
+      const tnorm = normTxt(chosen.title);
+      const bestT = chooseBestType(entry.types.filter(Boolean), tnorm);
+      if (!chosen.type || chosen.type==='unknown'){
+        chosen.type = (bestT==='article') ? 'journal-article' : bestT;
+      }
+      doiPicks.push(chosen);
+    }
 
-  /* ---------- patch the loader ---------- */
-  function patchLoader(){
-    const orig = window.loadInstitutionData;
-    if (typeof orig !== 'function') return false;
+    // 2) Non-DOI: Title+Year+Venue merge (lightweight v5)
+    const mergedNoDoi = [];
+    const groups = []; // { p, t, y, v, a }
+    for (const p of noDoi){
+      const t = normTxt(p.title);
+      const y = p.year ?? '';
+      const v = venueOf(p);
+      const a = new Set(asArr(p.authors).map(x=>String(x).toLowerCase()));
+      let merged = false;
 
-    window.loadInstitutionData = async function patchedLoadInstitutionData(...args){
-      const j = await orig.apply(this, args);
-      try{
-        if (j && Array.isArray(j.items)){
-          j.items = dedupeLatestByDOI(j.items);
-          j.__dedup_strategy = 'doi_latest';
-        } else if (Array.isArray(j)) {
-          // in case the loader returns a bare array
-          const arr = dedupeLatestByDOI(j);
-          arr.__dedup_strategy = 'doi_latest';
-          return arr;
+      for (const g of groups){
+        if (g.t !== t) continue;
+        const yearOK = (g.y === y) || (!g.y || !y);
+        let overlap = 0; a.forEach(x=>{ if(g.a.has(x)) overlap++; });
+        const authorOK = (overlap / Math.min(g.a.size||1, a.size||1)) >= 0.5;
+        const venueOK  = (!g.v || !v) || (g.v === v);
+
+        if (yearOK && (venueOK || authorOK)) {
+          g.p = mergeRecords(g.p, p);
+          g.a = new Set([...g.a, ...a]);
+          if (!g.v && v) g.v = v;
+          merged = true;
+          break;
         }
-      } catch(_) {}
-      return j;
-    };
-    return true;
+      }
+      if (!merged) groups.push({ p, t, y, v, a });
+    }
+    for (const g of groups) mergedNoDoi.push(g.p);
+
+    return doiPicks.concat(mergedNoDoi);
   }
 
-  if (!patchLoader()){
-    // if the loader isn't defined yet, patch after DOM is ready
-    document.addEventListener('DOMContentLoaded', patchLoader, { once: true });
+  /* ---------------- robust loader (JSON -> .gz fallback) ---------------- */
+  async function loadInstitutionDataRaw(){
+    // 1) Try plain JSON first
+    try {
+      const r = await fetch("institution_data.json", { cache: "no-store" });
+      if (r.ok) {
+        const txt = await r.clone().text();
+        // If not a Git LFS pointer, parse it
+        if (!/^version https:\/\/git-lfs.github.com\/spec\/v1/m.test(txt)) {
+          return JSON.parse(txt);
+        }
+      }
+    } catch (_) {}
+
+    // 2) Fallback to .gz
+    const gz = await fetch("institution_data.json.gz", { cache: "no-store" });
+    if (!gz.ok) throw new Error("institution_data.json(.gz) not found");
+
+    // Use native DecompressionStream if available; otherwise load pako on the fly
+    if ("DecompressionStream" in window) {
+      const stream = gz.body.pipeThrough(new DecompressionStream("gzip"));
+      const txt = await new Response(stream).text();
+      return JSON.parse(txt);
+    } else {
+      await new Promise((res, rej) => {
+        const s = document.createElement("script");
+        s.src = "https://cdn.jsdelivr.net/npm/pako@2.1.0/dist/pako.min.js";
+        s.onload = res; s.onerror = rej; document.head.appendChild(s);
+      });
+      const buf = new Uint8Array(await gz.arrayBuffer());
+      const txt = window.pako.ungzip(buf, { to: "string" });
+      return JSON.parse(txt);
+    }
   }
+
+  /* ---------------- final override used by the app ---------------- */
+  // We don't delete your old load-hook. We just supply a final, clean loader
+  // that the app will call (since this script runs last).
+  window.loadInstitutionData = async function () {
+    const j = await loadInstitutionDataRaw();
+    try {
+      if (j && Array.isArray(j.items)) {
+        j.items = dedupeLatestByDOIWithFallback(j.items);
+        j.__dedup_strategy = 'doi_latest+no_doi_merge';
+      } else if (Array.isArray(j)) {
+        return { items: dedupeLatestByDOIWithFallback(j), __dedup_strategy: 'doi_latest+no_doi_merge' };
+      }
+    } catch(_) {}
+    return j;
+  };
+
+  try { console.info('[dedupe] Coexist patch active: latest-per-DOI + non-DOI fallback.'); } catch(_){}
 })();
 </script>
 
