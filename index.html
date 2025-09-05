@@ -2368,18 +2368,18 @@ document.addEventListener('DOMContentLoaded', renderCountryMapFocused);
 </script>
 <script>
 /* =====================================================================
-   HARD-LOCK COEXIST PATCH — Latest-per-DOI (keep newest; ignore title)
-   - Leave your old load-hook script in place.
-   - Paste THIS as the LAST <script> before </body>.
-   - It overrides and then hard-locks window.loadInstitutionData so nothing
-     can re-wrap it after. Preserves "category/type" heuristics.
+   HARD-LOCK DOI LATEST — final
+   - Keep newest record per DOI (title ignored)
+   - Dedupes j.items, j.filtered, j.all (and guards future sets)
+   - Leaves non-DOI rows as-is; preserves type/category heuristics
+   - Safe alongside your existing load-hook (keeps categories)
    ===================================================================== */
 (function () {
   'use strict';
-  if (window.__HARDLOCK_DOI_LATEST_PATCH__) return;
-  window.__HARDLOCK_DOI_LATEST_PATCH__ = true;
+  if (window.__HARDLOCK_DOI_LATEST_FINAL__) return;
+  window.__HARDLOCK_DOI_LATEST_FINAL__ = true;
 
-  /* --------------------------- helpers --------------------------- */
+  /* ---------------- helpers ---------------- */
   function htmlDecode(s){ if(s==null) return s; const d=document.createElement('textarea'); d.innerHTML=String(s); return d.value; }
   const DOI_RE = /\b(10\.\d{4,9}\/\S+)\b/i;
 
@@ -2392,6 +2392,8 @@ document.addEventListener('DOMContentLoaded', renderCountryMapFocused);
     let s = String(raw||'').trim();
     if (!s) return '';
     s = s.replace(/^https?:\/\/(dx\.)?doi\.org\//i,'');
+    // strip very common trailing punctuation or quotes
+    s = s.replace(/[)\].,;:'"]+$/,'');
     return s.toLowerCase();
   }
   function doiFromAny(p){
@@ -2400,26 +2402,16 @@ document.addEventListener('DOMContentLoaded', renderCountryMapFocused);
       p?.url || (Array.isArray(p?.urls) ? p.urls.join(' ') : '')
     );
   }
-  function normTxt(s){
-    return htmlDecode(String(s||'').toLowerCase())
-      .replace(/&amp;/g,'&')
-      .replace(/[^\p{L}\p{N}\s]/gu,' ')
-      .replace(/\s+/g,' ')
-      .trim();
-  }
-  function venueOf(p){
-    return normTxt(p?.journal || p?.host_venue?.display_name || p?.primary_location?.source?.display_name || '');
-  }
-  const asArr = v => Array.isArray(v) ? v : (typeof v==='string' ? v.split(/[,;]\s*/) : []);
 
-  // --- type/category heuristics (mirror of your old load-hook) ---
+  // --- category/type heuristics (kept) ---
   function normalizeType(raw){
     const s = String(raw||'').toLowerCase().trim();
-    if (s==='journal-article'||s==='journal article'||s==='article'||s==='research article'||s==='journal') return 'article';
-    if (s.includes('conference')||s.includes('proceed')||s.includes('symposium')||s.includes('workshop')) return 'conference';
-    if (s.includes('book-chapter')||s.includes('book part')||s.includes('book-part')||s.includes('book section')||s.includes('book-section')||s==='chapter') return 'book-chapter';
-    if (s.startsWith('book')||s==='monograph'||s==='edited-book'||s==='reference-book') return 'book';
-    if (s==='review'||s==='systematic review'||s==='meta analysis')) return 'review';
+    if (s==='journal-article' || s==='journal article' || s==='article' || s==='research article' || s==='journal') return 'article';
+    if (s.includes('conference') || s.includes('proceed') || s.includes('symposium') || s.includes('workshop')) return 'conference';
+    if (s.includes('book-chapter') || s.includes('book part') || s.includes('book-part') ||
+        s.includes('book section') || s.includes('book-section') || s==='chapter') return 'book-chapter';
+    if (s.startsWith('book') || s==='monograph' || s==='edited-book' || s==='reference-book') return 'book';
+    if (s==='review' || s==='systematic review' || s==='meta analysis') return 'review'; // ← fixed typo here
     if (s==='editorial') return 'editorial';
     if (s==='letter') return 'letter';
     return s || 'unknown';
@@ -2435,42 +2427,7 @@ document.addEventListener('DOMContentLoaded', renderCountryMapFocused);
     return types.find(t=>t!=='unknown') || 'article';
   }
 
-  // --- non-DOI merge (only used for items lacking DOI) ---
-  function mergeRecords(a,b){
-    const out = Object.assign({}, a);
-
-    // title / journal (prefer longer / decoded)
-    const at=htmlDecode(a.title||''), bt=htmlDecode(b.title||''); out.title=(at.length>=bt.length?at:bt)||at||bt||'';
-    const aj=htmlDecode(a.journal||a?.host_venue?.display_name||''), bj=htmlDecode(b.journal||b?.host_venue?.display_name||'');
-    out.journal=(aj.length>=bj.length?aj:bj)||aj||bj||'';
-
-    // DOI / URL
-    const ad = canonicalDoi(a.doi) || canonicalDoi(a.url);
-    const bd = canonicalDoi(b.doi) || canonicalDoi(b.url);
-    out.doi  = ad || bd || a.doi || b.doi || '';
-    out.url  = a.url || b.url || (out.doi ? ('https://doi.org/'+canonicalDoi(out.doi)) : '');
-
-    // year / citations
-    out.year = a.year ?? b.year ?? null;
-    out.citations = Math.max(Number(a.citations||0), Number(b.citations||0));
-
-    // arrays => unions
-    out.issns        = [...new Set([...(a.issns||[]), ...(b.issns||[])])];
-    out.authors      = [...new Set([...(asArr(a.authors)), ...(asArr(b.authors))])].filter(Boolean);
-    out.home_authors = [...new Set([...(a.home_authors||[]), ...(b.home_authors||[])])];
-
-    // type/category
-    const types = [
-      normalizeType(a.type||a.type_crossref||a.document_type||a.genre),
-      normalizeType(b.type||b.type_crossref||b.document_type||b.genre)
-    ];
-    const best = chooseBestType(types, normTxt(out.title));
-    out.type = (best==='article') ? 'journal-article' : best;
-
-    return out;
-  }
-
-  // --- DOI "latest" chooser ---
+  // Timestamp chooser: newest wins; fallback to year
   function bestTimestamp(p){
     const cands = [
       p?.updated, p?.updated_at, p?.updated_date, p?.last_updated,
@@ -2481,6 +2438,7 @@ document.addEventListener('DOMContentLoaded', renderCountryMapFocused);
     const y = parseInt(p?.year, 10);
     return Number.isFinite(y) ? Date.UTC(y, 0, 1) : 0;
   }
+  // Tie-break: richer record wins (then prefer non-retracted)
   function infoScore(p){
     let s = 0;
     if (p?.citations) s += Math.min(1000, +p.citations);
@@ -2496,150 +2454,138 @@ document.addEventListener('DOMContentLoaded', renderCountryMapFocused);
     if (ta !== tb) return ta > tb ? a : b;
     const sa = infoScore(a), sb = infoScore(b);
     if (sa !== sb) return sa > sb ? a : b;
-    if (!!a?.is_retracted !== !!b?.is_retracted) return a.is_retracted ? b : a; // prefer non-retracted on tie
+    if (!!a?.is_retracted !== !!b?.is_retracted) return a.is_retracted ? b : a;
     return a;
   }
 
-  function dedupeLatestByDOIWithFallback(items){
+  function dedupeLatestPerDOI(items){
     if (!Array.isArray(items) || !items.length) return [];
 
-    // pre-clean
+    // pre-clean decode + try to pull DOI from URLs
     for (const p of items){
-      if (typeof p.title==='string')   p.title   = htmlDecode(p.title);
-      if (typeof p.journal==='string') p.journal = htmlDecode(p.journal);
+      if (typeof p.title   === 'string') p.title   = htmlDecode(p.title);
+      if (typeof p.journal === 'string') p.journal = htmlDecode(p.journal);
       if (!p.doi){
         const fromUrl = extractDOI(p.url) || extractDOI((p.urls||[]).join(' '));
         if (fromUrl) p.doi = fromUrl;
       }
     }
 
-    // 1) DOI groups -> pick latest per DOI
-    const groupsByDoi = new Map(); // doi -> {best, types[]}
-    const noDoi = [];
+    const withDOI = new Map();   // doi -> chosen latest record
+    const noDOI   = [];          // passthrough
+
     for (const p of items){
       const doi = doiFromAny(p);
-      if (!doi){ noDoi.push(p); continue; }
-      const entry = groupsByDoi.get(doi) || { best:null, types:[] };
-      entry.best = entry.best ? pickLatest(entry.best, p) : p;
-      entry.types.push(normalizeType(p.type||p.type_crossref||p.document_type||p.genre));
-      groupsByDoi.set(doi, entry);
+      if (!doi){ noDOI.push(p); continue; }
+      const cur = withDOI.get(doi);
+      withDOI.set(doi, cur ? pickLatest(cur, p) : p);
     }
-    const doiPicks = [];
-    for (const [doi, entry] of groupsByDoi.entries()){
-      const chosen = entry.best;
-      if (!chosen) continue;
-      const tnorm = normTxt(chosen.title);
-      const bestT = chooseBestType(entry.types.filter(Boolean), tnorm);
-      if (!chosen.type || chosen.type==='unknown'){
-        chosen.type = (bestT==='article') ? 'journal-article' : bestT;
+
+    // ensure chosen record has a normalized/filled type
+    const result = [];
+    for (const chosen of withDOI.values()){
+      const t0 = normalizeType(chosen.type || chosen.type_crossref || chosen.document_type || chosen.genre);
+      const bestT = chooseBestType([t0].filter(Boolean), String(chosen.title||'').toLowerCase());
+      if (!chosen.type || chosen.type === 'unknown'){
+        chosen.type = (bestT === 'article') ? 'journal-article' : bestT;
       }
-      doiPicks.push(chosen);
+      result.push(chosen);
     }
 
-    // 2) Non-DOI: Title+Year+Venue merge (light v5-like)
-    const mergedNoDoi = [];
-    const groups = []; // { p, t, y, v, a }
-    for (const p of noDoi){
-      const t = normTxt(p.title);
-      const y = p.year ?? '';
-      const v = venueOf(p);
-      const a = new Set(asArr(p.authors).map(x=>String(x).toLowerCase()));
-      let merged = false;
-
-      for (const g of groups){
-        if (g.t !== t) continue;
-        const yearOK = (g.y === y) || (!g.y || !y);
-        let overlap = 0; a.forEach(x=>{ if(g.a.has(x)) overlap++; });
-        const authorOK = (overlap / Math.min(g.a.size||1, a.size||1)) >= 0.5;
-        const venueOK  = (!g.v || !v) || (g.v === v);
-
-        if (yearOK && (venueOK || authorOK)) {
-          g.p = mergeRecords(g.p, p);
-          g.a = new Set([...g.a, ...a]);
-          if (!g.v && v) g.v = v;
-          merged = true;
-          break;
-        }
-      }
-      if (!merged) groups.push({ p, t, y, v, a });
-    }
-    for (const g of groups) mergedNoDoi.push(g.p);
-
-    return doiPicks.concat(mergedNoDoi);
+    return result.concat(noDOI);
   }
 
-  /* ---------------- robust loader (JSON -> .gz fallback) ---------------- */
-  async function loadInstitutionDataRaw(){
-    // 1) Try plain JSON first
-    try {
-      const r = await fetch("institution_data.json", { cache: "no-store" });
-      if (r.ok) {
-        const txt = await r.clone().text();
-        // If not a Git LFS pointer, parse it
-        if (!/^version https:\/\/git-lfs.github.com\/spec\/v1/m.test(txt)) {
-          return JSON.parse(txt);
-        }
-      }
-    } catch (_) {}
-
-    // 2) Fallback to .gz
-    const gz = await fetch("institution_data.json.gz", { cache: "no-store" });
-    if (!gz.ok) throw new Error("institution_data.json(.gz) not found");
-
-    // Use native DecompressionStream if available; otherwise pako
-    if ("DecompressionStream" in window) {
-      const stream = gz.body.pipeThrough(new DecompressionStream("gzip"));
-      const txt = await new Response(stream).text();
-      return JSON.parse(txt);
-    } else {
-      await new Promise((res, rej) => {
-        const s = document.createElement("script");
-        s.src = "https://cdn.jsdelivr.net/npm/pako@2.1.0/dist/pako.min.js";
-        s.onload = res; s.onerror = rej; document.head.appendChild(s);
-      });
-      const buf = new Uint8Array(await gz.arrayBuffer());
-      const txt = window.pako.ungzip(buf, { to: "string" });
-      return JSON.parse(txt);
+  function applyEverywhere(j){
+    if (!j || typeof j !== 'object') return j;
+    const keys = ['items','filtered','all'];
+    for (const k of keys){
+      if (Array.isArray(j[k])) j[k] = dedupeLatestPerDOI(j[k]);
     }
-  }
-
-  /* --------- final function & HARD-LOCK the global symbol --------- */
-  const finalLoader = async function () {
-    const j = await loadInstitutionDataRaw();
-    try {
-      if (j && Array.isArray(j.items)) {
-        const before = j.items.length;
-        j.items = dedupeLatestByDOIWithFallback(j.items);
-        j.__dedup_strategy = 'doi_latest+no_doi_merge (hardlock)';
-        try { console.info(`[dedupe] Hardlock active: ${before} → ${j.items.length} items`); } catch(_){}
-      } else if (Array.isArray(j)) {
-        const before = j.length;
-        const items = dedupeLatestByDOIWithFallback(j);
-        try { console.info(`[dedupe] Hardlock active: ${before} → ${items.length} items`); } catch(_){}
-        return { items, __dedup_strategy: 'doi_latest+no_doi_merge (hardlock)' };
-      }
-    } catch(_) {}
     return j;
-  };
-  // mark as "already wrapped" so later wrappers won't wrap again
-  finalLoader.__dedupeWrapped = true;
-
-  // Replace and LOCK the global loader so later scripts cannot change it
-  try {
-    Object.defineProperty(window, 'loadInstitutionData', {
-      configurable: false, // cannot redefine later
-      enumerable: true,
-      get: () => finalLoader,
-      set: () => true // ignore attempts to overwrite
-    });
-  } catch {
-    // Fallback: assignment + freeze (in case defineProperty fails)
-    window.loadInstitutionData = finalLoader;
-    try { Object.freeze(window.loadInstitutionData); } catch {}
   }
 
-  // Also expose the deduper for manual checks if needed
-  window.dedupeLatestByDOI = (arr) => dedupeLatestByDOIWithFallback(arr || []);
+  function proxify(j){
+    try {
+      return new Proxy(j, {
+        set(obj, prop, val){
+          if (['items','filtered','all'].includes(String(prop)) && Array.isArray(val)){
+            val = dedupeLatestPerDOI(val);
+          }
+          obj[prop] = val;
+          return true;
+        }
+      });
+    } catch { return j; }
+  }
+
+  /* ---------------- patch the loader ---------------- */
+  function wrapLoader(orig){
+    if (typeof orig !== 'function') return null;
+    if (orig.__doiLatestWrapped)    return orig;
+
+    const wrapped = async function(...args){
+      const data = await orig.apply(this, args);
+      try {
+        if (Array.isArray(data)) {
+          // keep original shape (array stays array)
+          const before = data.length;
+          const out = dedupeLatestPerDOI(data);
+          try { console.info(`[dedupe] DOI-latest (array): ${before} → ${out.length}`); } catch(_){}
+          return out;
+        } else if (data && typeof data === 'object') {
+          const before = {
+            items: Array.isArray(data.items) ? data.items.length : 0,
+            filtered: Array.isArray(data.filtered) ? data.filtered.length : 0,
+            all: Array.isArray(data.all) ? data.all.length : 0
+          };
+          const out = applyEverywhere(data);
+          try { console.info(`[dedupe] DOI-latest (obj): items ${before.items}→${(out.items||[]).length}, filtered ${before.filtered}→${(out.filtered||[]).length}, all ${before.all}→${(out.all||[]).length}`); } catch(_){}
+          return proxify(out);
+        }
+      } catch (e) {
+        console.warn('[doi-latest] wrapper failed', e);
+      }
+      return data;
+    };
+    wrapped.__doiLatestWrapped = true;
+    return wrapped;
+  }
+
+  function hardlock(fn){
+    // Replace and LOCK the global loader so later scripts cannot change it
+    try {
+      Object.defineProperty(window, 'loadInstitutionData', {
+        configurable: false,
+        enumerable: true,
+        get: () => fn,
+        set: () => true
+      });
+    } catch {
+      window.loadInstitutionData = fn;
+      try { Object.freeze(window.loadInstitutionData); } catch {}
+    }
+  }
+
+  // If loader already exists, wrap & hardlock now; else do it after DOMReady
+  if (typeof window.loadInstitutionData === 'function'){
+    const w = wrapLoader(window.loadInstitutionData);
+    if (w) hardlock(w);
+  } else {
+    document.addEventListener('DOMContentLoaded', () => {
+      const w = wrapLoader(window.loadInstitutionData);
+      if (w) hardlock(w);
+    }, { once:true });
+  }
+
+  // Best-effort: if some code captured a stale pointer and then writes globals,
+  // also dedupe any global arrays named "all"/"filtered" once per load.
+  setTimeout(() => {
+    try {
+      if (Array.isArray(window.all))      window.all      = dedupeLatestPerDOI(window.all);
+      if (Array.isArray(window.filtered)) window.filtered = dedupeLatestPerDOI(window.filtered);
+    } catch(_) {}
+  }, 0);
+
 })();
 </script>
 
