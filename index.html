@@ -2528,6 +2528,107 @@ document.addEventListener('DOMContentLoaded', renderCountryMapFocused);
   }
 })();
 </script>
+<script>
+/* ============================================================
+   Latest-per-DOI deduper (keep newest; ignore title)
+   Drop-in: patches window.loadInstitutionData() so j.items is deduped.
+   Safe to include multiple times; no other code changes required.
+   ============================================================ */
+(function () {
+  'use strict';
+  if (window.__DEDUP_DOI_LATEST_PATCHED__) return;
+  window.__DEDUP_DOI_LATEST_PATCHED__ = true;
+
+  /* ---------- helpers ---------- */
+  const DOI_RE = /\b10\.\d{4,9}\/\S+\b/i;
+
+  function canonicalDoi(x){
+    let s = String(x || '').trim();
+    if (!s) return '';
+    const m = s.match(DOI_RE);
+    s = (m ? m[0] : s).replace(/^https?:\/\/(dx\.)?doi\.org\//i,'');
+    return s.toLowerCase();
+  }
+
+  // pick the freshest timestamp; fallback to year; else 0
+  function bestTimestamp(p){
+    const cands = [
+      p.updated, p.updated_at, p.updated_date, p.last_updated,
+      p.oa_updated, p.crossref_updated, p.published, p.published_date,
+      p.issued, p.created, p['@timestamp']
+    ].map(v => Date.parse(v)).filter(Number.isFinite);
+    if (cands.length) return Math.max(...cands);
+    const y = parseInt(p.year, 10);
+    return Number.isFinite(y) ? Date.UTC(y, 0, 1) : 0;
+  }
+
+  // tie-breaker if timestamps are equal
+  function infoScore(p){
+    let s = 0;
+    if (p.citations) s += Math.min(1000, +p.citations);
+    if (p.abstract) s += 5;
+    if (Array.isArray(p.issns) && p.issns.length) s += 3;
+    if (p.url) s += 2;
+    if (Array.isArray(p.authorships) && p.authorships.length) s += 2;
+    if (Array.isArray(p.authors) && p.authors.length) s += 2;
+    return s;
+  }
+
+  function pickLatest(a, b){
+    const ta = bestTimestamp(a), tb = bestTimestamp(b);
+    if (ta !== tb) return ta > tb ? a : b;
+    const sa = infoScore(a), sb = infoScore(b);
+    if (sa !== sb) return sa > sb ? a : b;
+    // final gentle preference: if only one is flagged retracted, prefer the non-retracted
+    if (!!a.is_retracted !== !!b.is_retracted) return a.is_retracted ? b : a;
+    return a; // stable
+  }
+
+  function dedupeLatestByDOI(items){
+    const by = new Map();     // doi -> best record (in first-seen order)
+    const passthrough = [];   // items without a DOI
+
+    for (const p of (items || [])){
+      const doi = canonicalDoi(p.doi || p.DOI || p.id || '');
+      if (!doi){ passthrough.push(p); continue; }
+      const cur = by.get(doi);
+      by.set(doi, cur ? pickLatest(cur, p) : p);
+    }
+    return passthrough.concat([...by.values()]);
+  }
+
+  // expose in case you want to call it manually
+  window.dedupeLatestByDOI = dedupeLatestByDOI;
+
+  /* ---------- patch the loader ---------- */
+  function patchLoader(){
+    const orig = window.loadInstitutionData;
+    if (typeof orig !== 'function') return false;
+
+    window.loadInstitutionData = async function patchedLoadInstitutionData(...args){
+      const j = await orig.apply(this, args);
+      try{
+        if (j && Array.isArray(j.items)){
+          j.items = dedupeLatestByDOI(j.items);
+          j.__dedup_strategy = 'doi_latest';
+        } else if (Array.isArray(j)) {
+          // in case the loader returns a bare array
+          const arr = dedupeLatestByDOI(j);
+          arr.__dedup_strategy = 'doi_latest';
+          return arr;
+        }
+      } catch(_) {}
+      return j;
+    };
+    return true;
+  }
+
+  if (!patchLoader()){
+    // if the loader isn't defined yet, patch after DOM is ready
+    document.addEventListener('DOMContentLoaded', patchLoader, { once: true });
+  }
+})();
+</script>
 
 </body>
 </html>
