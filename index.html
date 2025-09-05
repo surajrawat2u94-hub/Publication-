@@ -2368,32 +2368,25 @@ document.addEventListener('DOMContentLoaded', renderCountryMapFocused);
 </script>
 <script>
 /* =====================================================================
-   HARD-LOCK DOI LATEST — final
-   - Keep newest record per DOI (title ignored)
-   - Dedupes j.items, j.filtered, j.all (and guards future sets)
-   - Leaves non-DOI rows as-is; preserves type/category heuristics
-   - Safe alongside your existing load-hook (keeps categories)
+   DOI-LATEST (standalone) — keep newest per DOI, preserve categories
+   + Drop rows with blank/placeholder titles
+   - Dedupes j.items, j.filtered, j.all and guards future assignments
    ===================================================================== */
 (function () {
   'use strict';
-  if (window.__HARDLOCK_DOI_LATEST_FINAL__) return;
-  window.__HARDLOCK_DOI_LATEST_FINAL__ = true;
+  if (window.__DOI_LATEST_STANDALONE__) return;
+  window.__DOI_LATEST_STANDALONE__ = true;
 
   /* ---------------- helpers ---------------- */
   function htmlDecode(s){ if(s==null) return s; const d=document.createElement('textarea'); d.innerHTML=String(s); return d.value; }
   const DOI_RE = /\b(10\.\d{4,9}\/\S+)\b/i;
 
-  function extractDOI(x){
-    const m = String(x||'').match(DOI_RE);
-    return m ? m[1] : '';
-  }
+  function extractDOI(x){ const m = String(x||'').match(DOI_RE); return m ? m[1] : ''; }
   function canonicalDoi(x){
     const raw = extractDOI(x) || x;
     let s = String(raw||'').trim();
     if (!s) return '';
-    s = s.replace(/^https?:\/\/(dx\.)?doi\.org\//i,'');
-    // strip very common trailing punctuation or quotes
-    s = s.replace(/[)\].,;:'"]+$/,'');
+    s = s.replace(/^https?:\/\/(dx\.)?doi\.org\//i,'').replace(/[)\].,;:'"]+$/,'');
     return s.toLowerCase();
   }
   function doiFromAny(p){
@@ -2403,7 +2396,16 @@ document.addEventListener('DOMContentLoaded', renderCountryMapFocused);
     );
   }
 
-  // --- category/type heuristics (kept) ---
+  // title must contain at least one letter/number; reject placeholders
+  function hasMeaningfulTitle(title){
+    const t = htmlDecode(String(title ?? '')).replace(/\s+/g,' ').trim();
+    if (!t) return false;
+    if (!/[0-9\p{L}]/u.test(t)) return false;
+    if (/^(?:n\/?a|na|null|undefined|untitled|unknown|\.|—|–|-)$/iu.test(t)) return false;
+    return true;
+  }
+
+  // --- category/type mapping ---
   function normalizeType(raw){
     const s = String(raw||'').toLowerCase().trim();
     if (s==='journal-article' || s==='journal article' || s==='article' || s==='research article' || s==='journal') return 'article';
@@ -2411,23 +2413,25 @@ document.addEventListener('DOMContentLoaded', renderCountryMapFocused);
     if (s.includes('book-chapter') || s.includes('book part') || s.includes('book-part') ||
         s.includes('book section') || s.includes('book-section') || s==='chapter') return 'book-chapter';
     if (s.startsWith('book') || s==='monograph' || s==='edited-book' || s==='reference-book') return 'book';
-    if (s==='review' || s==='systematic review' || s==='meta analysis') return 'review'; // ← fixed typo here
+    if (s==='review' || s==='systematic review' || s==='meta analysis') return 'review';
     if (s==='editorial') return 'editorial';
     if (s==='letter') return 'letter';
     return s || 'unknown';
   }
-  function chooseBestType(types, titleNorm){
-    if (types.some(t=>t==='conference') || /\bproceedings?\b/.test(titleNorm)) return 'conference';
-    if (types.some(t=>t==='book-chapter')) return 'book-chapter';
-    if (types.some(t=>t==='book'))        return 'book';
-    if (types.some(t=>t==='review'))      return 'review';
-    if (types.some(t=>t==='editorial'))   return 'editorial';
-    if (types.some(t=>t==='letter'))      return 'letter';
-    if (types.some(t=>t==='article'))     return 'article';
-    return types.find(t=>t!=='unknown') || 'article';
+  function prettyCategory(t){
+    switch (t){
+      case 'article':       return 'Article';
+      case 'conference':    return 'Conference';
+      case 'book-chapter':  return 'Book Chapter';
+      case 'book':          return 'Book';
+      case 'review':        return 'Review';
+      case 'editorial':     return 'Editorial';
+      case 'letter':        return 'Letter';
+      default:              return (t||'').replace(/\b\w/g, m=>m.toUpperCase());
+    }
   }
 
-  // Timestamp chooser: newest wins; fallback to year
+  // newest record chooser
   function bestTimestamp(p){
     const cands = [
       p?.updated, p?.updated_at, p?.updated_date, p?.last_updated,
@@ -2438,7 +2442,6 @@ document.addEventListener('DOMContentLoaded', renderCountryMapFocused);
     const y = parseInt(p?.year, 10);
     return Number.isFinite(y) ? Date.UTC(y, 0, 1) : 0;
   }
-  // Tie-break: richer record wins (then prefer non-retracted)
   function infoScore(p){
     let s = 0;
     if (p?.citations) s += Math.min(1000, +p.citations);
@@ -2458,49 +2461,52 @@ document.addEventListener('DOMContentLoaded', renderCountryMapFocused);
     return a;
   }
 
-  function dedupeLatestPerDOI(items){
-    if (!Array.isArray(items) || !items.length) return [];
+  function finalizeTypeAndCategory(p){
+    const t0 = normalizeType(p.type || p.type_crossref || p.document_type || p.genre);
+    if (!p.type || p.type==='unknown') p.type = (t0==='article') ? 'journal-article' : t0;
+    if (!p.main_category) p.main_category = prettyCategory(normalizeType(p.type));
+    return p;
+  }
 
-    // pre-clean decode + try to pull DOI from URLs
-    for (const p of items){
+  function dedupeLatestPerDOI(arr){
+    if (!Array.isArray(arr) || !arr.length) return [];
+
+    const withDOI = new Map();
+    const noDOI   = [];
+
+    for (const p of arr){
+      // decode fields for consistency
       if (typeof p.title   === 'string') p.title   = htmlDecode(p.title);
       if (typeof p.journal === 'string') p.journal = htmlDecode(p.journal);
+
+      // **DROP** if title is blank/placeholder
+      if (!hasMeaningfulTitle(p.title)) continue;
+
+      // try to pull DOI from URL(s) if missing
       if (!p.doi){
         const fromUrl = extractDOI(p.url) || extractDOI((p.urls||[]).join(' '));
         if (fromUrl) p.doi = fromUrl;
       }
-    }
 
-    const withDOI = new Map();   // doi -> chosen latest record
-    const noDOI   = [];          // passthrough
-
-    for (const p of items){
       const doi = doiFromAny(p);
-      if (!doi){ noDOI.push(p); continue; }
+      if (!doi){ noDOI.push(finalizeTypeAndCategory(p)); continue; }
+
       const cur = withDOI.get(doi);
       withDOI.set(doi, cur ? pickLatest(cur, p) : p);
     }
 
-    // ensure chosen record has a normalized/filled type
     const result = [];
-    for (const chosen of withDOI.values()){
-      const t0 = normalizeType(chosen.type || chosen.type_crossref || chosen.document_type || chosen.genre);
-      const bestT = chooseBestType([t0].filter(Boolean), String(chosen.title||'').toLowerCase());
-      if (!chosen.type || chosen.type === 'unknown'){
-        chosen.type = (bestT === 'article') ? 'journal-article' : bestT;
-      }
-      result.push(chosen);
+    for (const p of withDOI.values()){
+      result.push(finalizeTypeAndCategory(p));
     }
-
     return result.concat(noDOI);
   }
 
   function applyEverywhere(j){
     if (!j || typeof j !== 'object') return j;
-    const keys = ['items','filtered','all'];
-    for (const k of keys){
+    ['items','filtered','all'].forEach(k => {
       if (Array.isArray(j[k])) j[k] = dedupeLatestPerDOI(j[k]);
-    }
+    });
     return j;
   }
 
@@ -2518,7 +2524,7 @@ document.addEventListener('DOMContentLoaded', renderCountryMapFocused);
     } catch { return j; }
   }
 
-  /* ---------------- patch the loader ---------------- */
+  /* -------------- wrap loadInstitutionData if present -------------- */
   function wrapLoader(orig){
     if (typeof orig !== 'function') return null;
     if (orig.__doiLatestWrapped)    return orig;
@@ -2527,62 +2533,40 @@ document.addEventListener('DOMContentLoaded', renderCountryMapFocused);
       const data = await orig.apply(this, args);
       try {
         if (Array.isArray(data)) {
-          // keep original shape (array stays array)
-          const before = data.length;
-          const out = dedupeLatestPerDOI(data);
-          try { console.info(`[dedupe] DOI-latest (array): ${before} → ${out.length}`); } catch(_){}
-          return out;
+          return dedupeLatestPerDOI(data);
         } else if (data && typeof data === 'object') {
-          const before = {
-            items: Array.isArray(data.items) ? data.items.length : 0,
-            filtered: Array.isArray(data.filtered) ? data.filtered.length : 0,
-            all: Array.isArray(data.all) ? data.all.length : 0
-          };
-          const out = applyEverywhere(data);
-          try { console.info(`[dedupe] DOI-latest (obj): items ${before.items}→${(out.items||[]).length}, filtered ${before.filtered}→${(out.filtered||[]).length}, all ${before.all}→${(out.all||[]).length}`); } catch(_){}
-          return proxify(out);
+          return proxify(applyEverywhere(data));
         }
-      } catch (e) {
-        console.warn('[doi-latest] wrapper failed', e);
-      }
+      } catch(e){ console.warn('[doi-latest] wrapper failed', e); }
       return data;
     };
     wrapped.__doiLatestWrapped = true;
     return wrapped;
   }
 
-  function hardlock(fn){
-    // Replace and LOCK the global loader so later scripts cannot change it
-    try {
-      Object.defineProperty(window, 'loadInstitutionData', {
-        configurable: false,
-        enumerable: true,
-        get: () => fn,
-        set: () => true
-      });
-    } catch {
-      window.loadInstitutionData = fn;
-      try { Object.freeze(window.loadInstitutionData); } catch {}
-    }
+  // Try now and for a short while (handles late-defined loaders)
+  function tryWrapUntilFound(retries=20){
+    const wrap = () => {
+      if (typeof window.loadInstitutionData === 'function'){
+        const w = wrapLoader(window.loadInstitutionData);
+        if (w) window.loadInstitutionData = w;
+        return true;
+      }
+      return false;
+    };
+    if (wrap()) return;
+    let n = 0;
+    const t = setInterval(() => { if (wrap() || ++n >= retries) clearInterval(t); }, 100);
   }
+  tryWrapUntilFound();
+  document.addEventListener('DOMContentLoaded', tryWrapUntilFound, { once:true });
 
-  // If loader already exists, wrap & hardlock now; else do it after DOMReady
-  if (typeof window.loadInstitutionData === 'function'){
-    const w = wrapLoader(window.loadInstitutionData);
-    if (w) hardlock(w);
-  } else {
-    document.addEventListener('DOMContentLoaded', () => {
-      const w = wrapLoader(window.loadInstitutionData);
-      if (w) hardlock(w);
-    }, { once:true });
-  }
-
-  // Best-effort: if some code captured a stale pointer and then writes globals,
-  // also dedupe any global arrays named "all"/"filtered" once per load.
+  // Best-effort cleanup in case arrays are already global
   setTimeout(() => {
     try {
-      if (Array.isArray(window.all))      window.all      = dedupeLatestPerDOI(window.all);
+      if (Array.isArray(window.items))    window.items    = dedupeLatestPerDOI(window.items);
       if (Array.isArray(window.filtered)) window.filtered = dedupeLatestPerDOI(window.filtered);
+      if (Array.isArray(window.all))      window.all      = dedupeLatestPerDOI(window.all);
     } catch(_) {}
   }, 0);
 
