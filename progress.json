@@ -1,0 +1,32 @@
+{
+  "OA:ROR": {
+    "cursor": "Ils1Ni4wLCAwLCAnaHR0cHM6Ly9vcGVuYWxleC5vcmcvVzQ0MDMwNjAwNDgnXSI=",
+    "page": 56,
+    "total": 11081
+  },
+  "OA:AFFIL:university of petroleum and energy studies": {
+    "cursor": "IlszLjIzMDU3OSwgMTczNTY4OTYwMDAwMCwgJ2h0dHBzOi8vb3BlbmFsZXgub3JnL1c0NDEyNTQ5NTQ5J10i",
+    "page": 47,
+    "total": 8527
+  },
+  "OA:AFFIL:university of petroleum & energy studies": {
+    "cursor": "IlsyLjMwMjExMTYsIDE2NzI1MzEyMDAwMDAsICdodHRwczovL29wZW5hbGV4Lm9yZy9XNDM4NjU1NzY0MyddIg==",
+    "page": 51,
+    "total": 9417
+  },
+  "OA:AFFIL:upes": {
+    "cursor": "IlszLjA3Nzk2NjcsIDE2NzI1MzEyMDAwMDAsICdodHRwczovL29wZW5hbGV4Lm9yZy9XNDM2NzMzMjc1NyddIg==",
+    "page": 19,
+    "total": 3487
+  },
+  "OA:AFFIL:upes dehradun": {
+    "cursor": "IlsyLjQ5MDQ2MzMsIDE2NzI1MzEyMDAwMDAsICdodHRwczovL29wZW5hbGV4Lm9yZy9XNDM4NjU1NzY0MyddIg==",
+    "page": 17,
+    "total": 3154
+  },
+  "OA:AFFIL:university of petroleum and energy studies dehradun": {
+    "cursor": "Ils3NjcuMjk1OSwgMTQxODA4MzIwMDAwMCwgJ2h0dHBzOi8vb3BlbmFsZXgub3JnL1cyMDc5NTYwNDY5J10i",
+    "page": 1,
+    "total": 200
+  }
+}
